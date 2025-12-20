@@ -1,0 +1,1288 @@
+/* Copyright 2026 Advanced Micro Devices, Inc.
+ *
+ * For code from vkcube:
+ *    Copyright (c) 2012 Arvin Schnell <arvin.schnell@gmail.com>
+ *    Copyright (c) 2012 Rob Clark <rob@ti.com>
+ *    Copyright © 2015 Intel Corporation
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <assert.h>
+#include <alloca.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <shaderc/shaderc.h>
+
+#define VK_PRIVATE
+#include "common.h"
+
+#define vk_check(call) \
+   do { \
+      VkResult res = call; \
+      if (res != VK_SUCCESS) \
+         error("Vulkan call failed on line %u: %s = %u\n", __LINE__, #call, res); \
+   } while(0)
+
+static bool
+vk_has_validation_layer(void)
+{
+    uint32_t count;
+    vk_check(vkEnumerateInstanceLayerProperties(&count, NULL));
+    VkLayerProperties *props = alloca(sizeof(*props) * count);
+    vk_check(vkEnumerateInstanceLayerProperties(&count, props));
+
+    for (unsigned i = 0; i < count; i++) {
+        if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation"))
+            return true;
+    }
+
+    return false;
+}
+static unsigned
+vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
+{
+   VkMemoryPropertyFlags require_flags = 0, disallow_flags = 0;
+
+   switch (heap) {
+   case api_heap_vram:
+      require_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      break;
+   case api_heap_sysmem_uswc:
+      disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                       VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      break;
+   case api_heap_sysmem_cached:
+      require_flags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      break;
+   default:
+      error("invalid heap type");
+   }
+
+   for (unsigned i = 0; (1u << i) <= supported_heap_mask && i <= ctx->memory_properties.memoryTypeCount; i++) {
+      if (!(supported_heap_mask & (1u << i)))
+          continue;
+
+      VkMemoryPropertyFlags flags = ctx->memory_properties.memoryTypes[i].propertyFlags;
+
+      if (((flags & require_flags) == require_flags) && !(flags & disallow_flags))
+         return i;
+   }
+
+   error("can't find memory type for supported_heap_mask=0x%x, heap=%u",
+         supported_heap_mask, heap);
+   return 0;
+}
+
+static api_buffer *
+vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
+{
+   api_buffer *buf = calloc(1, sizeof(api_buffer));
+   buf->size = size;
+
+   vk_check(vkCreateBuffer(ctx->device,
+                           &(VkBufferCreateInfo) {
+                              .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                              .size = size,
+                              .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                              VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                              VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                              VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
+                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                              VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+                           },
+                           NULL, &buf->buffer));
+
+   VkMemoryRequirements reqs;
+   vkGetBufferMemoryRequirements(ctx->device, buf->buffer, &reqs);
+
+   vk_check(vkAllocateMemory(ctx->device,
+                             &(VkMemoryAllocateInfo) {
+                                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                .allocationSize = reqs.size,
+                                .memoryTypeIndex = vk_find_heap(ctx, reqs.memoryTypeBits, heap),
+                             },
+                             NULL, &buf->mem));
+   vk_check(vkBindBufferMemory(ctx->device, buf->buffer, buf->mem, 0));
+
+   if (heap == api_heap_vram)
+      ctx->vram_usage += reqs.size;
+   return buf;
+}
+
+static void
+vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
+{
+   vkCmdFillBuffer(ctx->current_cmd_buffer, buf->buffer, offset, size, value);
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .bufferMemoryBarrierCount = 1,
+                            .pBufferMemoryBarriers = &(VkBufferMemoryBarrier2) {
+                               .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                               .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                               .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                               .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
+                                                VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                               .buffer = buf->buffer,
+                               .offset = offset,
+                               .size = size,
+                            },
+                         });
+}
+
+static void
+vk_copy_buffer(struct api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_offset,
+               uint64_t src_offset, uint64_t size)
+{
+   vkCmdCopyBuffer2(ctx->current_cmd_buffer,
+                    &(VkCopyBufferInfo2){
+                       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+                       .srcBuffer = src->buffer,
+                       .dstBuffer = dst->buffer,
+                       .regionCount = 1,
+                       .pRegions = &(VkBufferCopy2){
+                          .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                          .srcOffset = src_offset,
+                          .dstOffset = dst_offset,
+                          .size = size,
+                       },
+                    });
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .bufferMemoryBarrierCount = 2,
+                            .pBufferMemoryBarriers = (VkBufferMemoryBarrier2[2]) {
+                               {
+                                  .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                                  .srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+                                  .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
+                                                   VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                  .buffer = src->buffer,
+                                  .offset = src_offset,
+                                  .size = size,
+                               },
+                               {
+                                  .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                                  .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                  .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
+                                                   VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                  .buffer = dst->buffer,
+                                  .offset = dst_offset,
+                                  .size = size,
+                               },
+                            },
+                         });
+}
+
+static api_image *
+vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned height,
+                unsigned samples, VkImageTiling tiling, api_heap_type heap,
+                VkImageLayout initial_layout)
+{
+   api_image *image = calloc(1, sizeof(api_image));
+   image->width = width;
+   image->height = height;
+   image->samples = samples;
+   image->format = format;
+
+   bool is_zs = format_is_depth_or_stencil(format);
+
+   vk_check(vkCreateImage(ctx->device,
+                          &(VkImageCreateInfo) {
+                             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                             .imageType = VK_IMAGE_TYPE_2D,
+                             .format = format,
+                             .extent = { .width = width, .height = height, .depth = 1 },
+                             .mipLevels = 1,
+                             .arrayLayers = 1,
+                             .samples = samples,
+                             .tiling = tiling,
+                             .usage = is_zs ?
+                                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
+                                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                         VK_IMAGE_USAGE_STORAGE_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                          },
+                          NULL, &image->image));
+
+   VkMemoryRequirements requirements;
+   vkGetImageMemoryRequirements(ctx->device, image->image, &requirements);
+   image->mem_size = requirements.size;
+
+   vk_check(vkAllocateMemory(ctx->device,
+                             &(VkMemoryAllocateInfo) {
+                                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                .allocationSize = requirements.size,
+                                .memoryTypeIndex = vk_find_heap(ctx, requirements.memoryTypeBits, heap),
+                             },
+                             NULL, &image->mem));
+   vk_check(vkBindImageMemory(ctx->device, image->image, image->mem, 0));
+   vk_check(vkCreateImageView(ctx->device,
+                              &(VkImageViewCreateInfo) {
+                                 .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                 .image = image->image,
+                                 .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                 .format = image->format,
+                                 .components = {
+                                    .r = VK_COMPONENT_SWIZZLE_R,
+                                    .g = VK_COMPONENT_SWIZZLE_G,
+                                    .b = VK_COMPONENT_SWIZZLE_B,
+                                    .a = VK_COMPONENT_SWIZZLE_A,
+                                 },
+                                 .subresourceRange = {
+                                    .aspectMask = format_is_depth_or_stencil(format) ?
+                                                      VK_IMAGE_ASPECT_DEPTH_BIT :
+                                                      VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .baseMipLevel = 0,
+                                    .levelCount = 1,
+                                    .baseArrayLayer = 0,
+                                    .layerCount = 1,
+                                 },
+                              },
+                              NULL, &image->view));
+
+   if (initial_layout) {
+      ctx->begin_cmdbuf(ctx);
+
+      vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                            &(VkDependencyInfo) {
+                               .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                               .imageMemoryBarrierCount = 1,
+                               .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
+                                  {
+                                     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                     .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                     .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+                                     .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                     .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+                                     .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                     .newLayout = initial_layout,
+                                     .image = image->image,
+                                     .subresourceRange = {
+                                        .aspectMask = format_is_depth_or_stencil(format) ?
+                                                         VK_IMAGE_ASPECT_DEPTH_BIT :
+                                                         VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .baseMipLevel = 0,
+                                        .levelCount = 1,
+                                        .baseArrayLayer = 0,
+                                        .layerCount = 1,
+                                     },
+                                  },
+                               },
+                            });
+
+      ctx->end_cmdbuf_and_submit(ctx);
+   }
+
+   if (heap == api_heap_vram)
+      ctx->vram_usage += image->mem_size;
+   return image;
+}
+
+static api_framebuffer *
+vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
+                      unsigned width, unsigned height, unsigned samples)
+{
+   api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
+   fb->width = width;
+   fb->height = height;
+   fb->samples = samples;
+   fb->colorbuf = colorbuf;
+   fb->zbuf = zbuf;
+
+   fb->colorbuf_att_index = 0;
+   fb->zbuf_att_index = 0;
+   fb->num_attachments = 0;
+
+   VkAttachmentDescription att_descs[2];
+   VkImageView att_views[2];
+
+   if (colorbuf) {
+      assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+      att_descs[fb->num_attachments] = (VkAttachmentDescription){
+         .format = colorbuf->format,
+         .samples = colorbuf->samples,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      };
+      att_views[fb->num_attachments] = colorbuf->view;
+      fb->colorbuf_att_index = fb->num_attachments;
+      fb->num_attachments++;
+   }
+
+   if (zbuf) {
+      assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+      att_descs[fb->num_attachments] = (VkAttachmentDescription){
+         .format = zbuf->format,
+         .samples = zbuf->samples,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+      };
+      att_views[fb->num_attachments] = zbuf->view;
+      fb->zbuf_att_index = fb->num_attachments;
+      fb->num_attachments++;
+   }
+
+   vk_check(vkCreateRenderPass(ctx->device,
+                               &(VkRenderPassCreateInfo) {
+                                  .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                                  .attachmentCount = fb->num_attachments,
+                                  .pAttachments = att_descs,
+                                  .subpassCount = 1,
+                                  .pSubpasses = (VkSubpassDescription[]) {
+                                     {
+                                        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        .colorAttachmentCount = 1,
+                                        .pColorAttachments = (VkAttachmentReference[]) {
+                                           {
+                                              .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
+                                              .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                           },
+                                        },
+                                        .pDepthStencilAttachment = &(VkAttachmentReference) {
+                                           .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
+                                           .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                        },
+                                     }
+                                  },
+                               },
+                               NULL, &fb->render_pass));
+
+   vk_check(vkCreateFramebuffer(ctx->device,
+                                &(VkFramebufferCreateInfo) {
+                                   .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                                   .renderPass = fb->render_pass,
+                                   .attachmentCount = fb->num_attachments,
+                                   .pAttachments = att_views,
+                                   .width = fb->width,
+                                   .height = fb->height,
+                                   .layers = 1,
+                                },
+                                NULL, &fb->fb));
+
+   return fb;
+}
+
+static api_shader *
+vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
+{
+   shaderc_shader_kind shaderc_type;
+
+   switch (type) {
+   case api_shader_vs:
+      shaderc_type = shaderc_glsl_vertex_shader;
+      break;
+   case api_shader_tcs:
+      shaderc_type = shaderc_glsl_tess_control_shader;
+      break;
+   case api_shader_tes:
+      shaderc_type = shaderc_glsl_tess_evaluation_shader;
+      break;
+   case api_shader_gs:
+      shaderc_type = shaderc_glsl_geometry_shader;
+      break;
+   case api_shader_fs:
+      shaderc_type = shaderc_glsl_fragment_shader;
+      break;
+   case api_shader_cs:
+      shaderc_type = shaderc_glsl_compute_shader;
+      break;
+   case api_shader_ts:
+      shaderc_type = shaderc_glsl_task_shader;
+      break;
+   case api_shader_ms:
+      shaderc_type = shaderc_glsl_mesh_shader;
+      break;
+   default:
+      error("invalid shader type");
+   }
+
+   shaderc_compilation_result_t result =
+       shaderc_compile_into_spv(ctx->glsl_compiler, source, strlen(source),
+                                shaderc_type, "", "main", ctx->glsl_compiler_options);
+   if (!result)
+      error("shaderc_compile_into_spv returned NULL");
+
+   if (shaderc_result_get_compilation_status(result) != shaderc_compilation_status_success) {
+      error("failed to compile shader to SPIR-V:\n%s\n\n%s", source,
+            shaderc_result_get_error_message(result));
+   }
+
+
+   api_shader *shader = calloc(1, sizeof(api_shader));
+
+   vk_check(vkCreateShaderModule(ctx->device,
+                                 &(VkShaderModuleCreateInfo) {
+                                    .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                    .codeSize = shaderc_result_get_length(result),
+                                    .pCode = (uint32_t*)shaderc_result_get_bytes(result),
+                                 },
+                                 NULL, &shader->module));
+   shaderc_result_release(result);
+   return shader;
+}
+
+static api_descriptor_set_layout *
+vk_create_descriptor_set_layout(struct api_context *ctx,
+                                const api_descriptor_set_layout_desc *desc)
+{
+   api_descriptor_set_layout *layout = calloc(1, sizeof(api_descriptor_set_layout));
+   layout->desc = *desc;
+
+   VkShaderStageFlags stage_flags = (ctx->has_mesh_shader ? VK_SHADER_STAGE_MESH_BIT_EXT : 0) |
+                                    VK_SHADER_STAGE_FRAGMENT_BIT;
+   unsigned num_bindings = 0;
+   VkDescriptorSetLayoutBinding desc_set_layout_bindings[8];
+
+   if (desc->uniform_buffer.array_size) {
+      assert(desc->uniform_buffer.array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
+      assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+
+      desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+         .binding = desc->uniform_buffer.vk_binding,
+         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+         .descriptorCount = desc->uniform_buffer.array_size,
+         .stageFlags = stage_flags,
+      };
+   }
+
+   for (unsigned i = 0; i < MAX_UNIFORM_TEXEL_BUFFER_BINDINGS; i++) {
+      if (desc->uniform_texel_buffer[i].array_size) {
+         assert(desc->uniform_texel_buffer[i].array_size <= MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE);
+         assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+
+         desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+            .binding = desc->uniform_texel_buffer[i].vk_binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+            .descriptorCount = desc->uniform_texel_buffer[i].array_size,
+            .stageFlags = stage_flags,
+         };
+      }
+   }
+
+   if (desc->storage_image.array_size) {
+      assert(desc->storage_image.array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
+      assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+
+      desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+         .binding = desc->storage_image.vk_binding,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .descriptorCount = desc->storage_image.array_size,
+         .stageFlags = stage_flags,
+      };
+   }
+
+   vk_check(vkCreateDescriptorSetLayout(ctx->device,
+                                        &(VkDescriptorSetLayoutCreateInfo) {
+                                           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                           .bindingCount = num_bindings,
+                                           .pBindings = desc_set_layout_bindings,
+                                        },
+                                        NULL, &layout->desc_set_layout));
+   vk_check(vkCreatePipelineLayout(ctx->device,
+                                   &(VkPipelineLayoutCreateInfo) {
+                                      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                      .setLayoutCount = 1,
+                                      .pSetLayouts = &layout->desc_set_layout,
+                                   },
+                                   NULL, &layout->pipeline_layout));
+   return layout;
+}
+
+static api_descriptor_set *
+vk_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
+{
+   api_descriptor_set *set = calloc(1, sizeof(api_descriptor_set));
+   set->layout = layout;
+
+   assert(ctx->num_allocated_desc_sets < MAX_DESCRIPTOR_SETS);
+
+   vk_check(vkAllocateDescriptorSets(ctx->device,
+                                     &(VkDescriptorSetAllocateInfo){
+                                        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                        .descriptorPool = ctx->descriptor_pool,
+                                        .descriptorSetCount = 1,
+                                        .pSetLayouts = &layout->desc_set_layout,
+                                     },
+                                     &set->set));
+   ctx->num_allocated_desc_sets++;
+   return set;
+}
+
+static void
+vk_set_uniform_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+                                  api_buffer *buffer, uint64_t offset, uint64_t size)
+{
+   assert(set->layout->desc.uniform_buffer.array_size);
+
+   vkUpdateDescriptorSets(ctx->device, 1,
+                          &(VkWriteDescriptorSet){
+                             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set->set,
+                             .dstBinding = set->layout->desc.uniform_buffer.vk_binding,
+                             .dstArrayElement = 0,
+                             .descriptorCount = 1,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                             .pBufferInfo = &(VkDescriptorBufferInfo){
+                                .buffer = buffer->buffer,
+                                .offset = offset,
+                                .range = size,
+                             },
+                          },
+                          0, NULL);
+}
+
+static void
+vk_set_uniform_texel_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+                                        unsigned binding_index, unsigned num_buffers,
+                                        api_buffer **buffers, VkFormat *formats,
+                                        uint64_t *offsets, uint64_t *sizes)
+{
+   assert(num_buffers <= set->layout->desc.uniform_texel_buffer[binding_index].array_size);
+
+   for (unsigned i = 0; i < num_buffers; i++) {
+      if (set->texel_buffer_views[binding_index][i])
+         vkDestroyBufferView(ctx->device, set->texel_buffer_views[binding_index][i], NULL);
+
+      vk_check(vkCreateBufferView(ctx->device, &(VkBufferViewCreateInfo){
+                                     .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
+                                     .buffer = buffers[i]->buffer,
+                                     .format = formats[i],
+                                     .offset = offsets[i],
+                                     .range = sizes[i],
+                                  },
+                                  NULL, &set->texel_buffer_views[binding_index][i]));
+   }
+
+   vkUpdateDescriptorSets(ctx->device, 1,
+                          &(VkWriteDescriptorSet){
+                             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set->set,
+                             .dstBinding = set->layout->desc.uniform_texel_buffer[binding_index].vk_binding,
+                             .dstArrayElement = 0,
+                             .descriptorCount = num_buffers,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                             .pTexelBufferView = set->texel_buffer_views[binding_index],
+                          },
+                          0, NULL);
+}
+
+static void
+vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned num_images,
+                                 api_image **images)
+{
+   assert(num_images <= set->layout->desc.storage_image.array_size);
+   VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_images);
+
+   for (unsigned i = 0; i < num_images; i++) {
+      image_infos[i].sampler = NULL;
+      image_infos[i].imageView = images[i]->view;
+      image_infos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+   }
+
+   vkUpdateDescriptorSets(ctx->device, 1,
+                          &(VkWriteDescriptorSet){
+                             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set->set,
+                             .dstBinding = set->layout->desc.storage_image.vk_binding,
+                             .dstArrayElement = 0,
+                             .descriptorCount = num_images,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                             .pImageInfo = image_infos,
+                          },
+                          0, NULL);
+}
+
+static void
+vk_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
+{
+   vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
+}
+
+static api_pipeline *
+vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
+{
+   api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
+   pipeline->fb = desc->fb;
+   pipeline->num_vb_desc = desc->num_vb_desc;
+
+   /* Vertex buffers and attributes. */
+   VkVertexInputBindingDescription vb_desc[MAX_VERTEX_BUFFERS];
+   VkVertexInputAttributeDescription attr_desc[MAX_VERTEX_BUFFERS];
+
+   assert(desc->num_vb_desc <= MAX_VERTEX_BUFFERS);
+
+   for (unsigned i = 0; i < desc->num_vb_desc; i++) {
+      vb_desc[i].binding = i;
+      vb_desc[i].stride = desc->vb_strides[i];
+      vb_desc[i].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+      attr_desc[i].location = i;
+      attr_desc[i].binding = i;
+      attr_desc[i].format = desc->vb_formats[i];
+      attr_desc[i].offset = 0;
+   }
+
+   VkPipelineVertexInputStateCreateInfo vi_create_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+      .vertexBindingDescriptionCount = desc->num_vb_desc,
+      .pVertexBindingDescriptions = vb_desc,
+      .vertexAttributeDescriptionCount = desc->num_vb_desc,
+      .pVertexAttributeDescriptions = attr_desc,
+   };
+
+   /* Shaders. */
+   VkPipelineShaderStageCreateInfo shaders[5];
+   unsigned num_shaders = 0;
+
+   if (desc->ms) {
+      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
+         .module = desc->ms->module,
+         .pName = "main",
+      };
+   }
+
+   if (desc->vs) {
+      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = desc->vs->module,
+         .pName = "main",
+      };
+   }
+
+   if (desc->fs && !desc->rasterizer_discard) {
+      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = desc->fs->module,
+         .pName = "main",
+      };
+   }
+
+   /* Create the graphics pipeline. */
+   VkGraphicsPipelineCreateInfo pipeline_info = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .stageCount = num_shaders,
+      .pStages = shaders,
+      .pVertexInputState = &vi_create_info,
+      .pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+         .topology = desc->topology,
+         .primitiveRestartEnable = desc->primitive_restart,
+      },
+      .pViewportState = &(VkPipelineViewportStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+         .viewportCount = 1,
+         .scissorCount = 1,
+      },
+      .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+         .rasterizerDiscardEnable = desc->rasterizer_discard,
+         .cullMode = desc->cull_mode,
+         .frontFace = VK_FRONT_FACE_CLOCKWISE,
+         .lineWidth = 1.0f,
+      },
+      .pMultisampleState = &(VkPipelineMultisampleStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+         .rasterizationSamples = desc->fb->samples,
+         .sampleShadingEnable = desc->sample_shading,
+         .minSampleShading = 1,
+         .alphaToCoverageEnable = desc->alpha_to_coverage,
+      },
+      .pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+         .depthTestEnable = desc->depth_enabled,
+         .depthWriteEnable = desc->depth_write_enabled,
+         .depthCompareOp = desc->depth_compare_op,
+      },
+      .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+         .attachmentCount = 1,
+         .pAttachments = (VkPipelineColorBlendAttachmentState[]) {
+            {
+               .blendEnable = desc->blend_src_color || desc->blend_src_alpha,
+               .srcColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_SRC_ALPHA :
+                                                              VK_BLEND_FACTOR_SRC_COLOR,
+               .dstColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA :
+                                                              VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+               .colorBlendOp = VK_BLEND_OP_ADD,
+               .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+               .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+               .colorBlendOp = VK_BLEND_OP_ADD,
+               .colorWriteMask = desc->colormask,
+            },
+         },
+      },
+      .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+         .dynamicStateCount = 2,
+         .pDynamicStates = (VkDynamicState[]) {
+             VK_DYNAMIC_STATE_VIEWPORT,
+             VK_DYNAMIC_STATE_SCISSOR,
+         },
+      },
+      .layout = desc->desc_set_layout ? desc->desc_set_layout->pipeline_layout :
+                                        ctx->empty_pipeline_layout,
+      .renderPass = desc->fb->render_pass,
+   };
+
+   assert(desc->vrs_fragment_size[0] && desc->vrs_fragment_size[1]);
+   assert(ctx->has_vrs || (desc->vrs_fragment_size[0] == 1 && desc->vrs_fragment_size[1] == 1));
+
+   VkPipelineFragmentShadingRateStateCreateInfoKHR vrs = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
+      .fragmentSize = {desc->vrs_fragment_size[0], desc->vrs_fragment_size[1]},
+      .combinerOps = {
+         VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+         VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+      },
+   };
+
+   if (ctx->has_vrs)
+      pipeline_info.pNext = &vrs;
+
+   vk_check(vkCreateGraphicsPipelines(ctx->device, (VkPipelineCache){ VK_NULL_HANDLE },
+                                      1, &pipeline_info, NULL, &pipeline->pipeline));
+   return pipeline;
+}
+
+static void
+vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+{
+   ctx->current_pipeline = pipeline;
+   vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
+}
+
+static void
+vk_begin_cmdbuf(api_context *ctx)
+{
+   assert(ctx->next_cmdbuf_index < MAX_COMMAND_BUFFERS);
+   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->next_cmdbuf_index];
+   ctx->current_fence = ctx->fences[ctx->next_cmdbuf_index];
+
+   vk_check(vkWaitForFences(ctx->device, 1, &ctx->current_fence, true, UINT64_MAX));
+   vk_check(vkResetFences(ctx->device, 1, &ctx->current_fence));
+
+   vk_check(vkBeginCommandBuffer(ctx->current_cmd_buffer,
+                                 &(VkCommandBufferBeginInfo) {
+                                    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                    .flags = 0
+                                 }));
+}
+
+static void
+vk_end_cmdbuf_and_submit(api_context *ctx)
+{
+   vk_check(vkEndCommandBuffer(ctx->current_cmd_buffer));
+
+   vk_check(vkQueueSubmit(ctx->queue, 1,
+      &(VkSubmitInfo) {
+         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+         .commandBufferCount = 1,
+         .pCommandBuffers = &ctx->current_cmd_buffer,
+      }, ctx->current_fence));
+
+   ctx->next_cmdbuf_index = (ctx->next_cmdbuf_index + 1) % MAX_COMMAND_BUFFERS;
+   ctx->current_cmd_buffer = NULL;
+   ctx->current_fence = NULL;
+}
+
+static void
+vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
+{
+   VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
+
+   if (desc->fb->colorbuf)
+      clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->color_clear_value};
+   if (desc->fb->zbuf)
+      clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->depth_clear_value};
+
+   vkCmdBeginRenderPass(ctx->current_cmd_buffer,
+                        &(VkRenderPassBeginInfo) {
+                           .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                           .renderPass = desc->fb->render_pass,
+                           .framebuffer = desc->fb->fb,
+                           .renderArea = { { 0, 0 }, { desc->fb->width, desc->fb->height } },
+                           .clearValueCount = desc->fb->num_attachments,
+                           .pClearValues = clear_values,
+                        },
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   const VkViewport viewport = {
+      .x = 0,
+      .y = 0,
+      .width = desc->fb->width,
+      .height = desc->fb->height,
+      .minDepth = 0,
+      .maxDepth = 1,
+   };
+   vkCmdSetViewport(ctx->current_cmd_buffer, 0, 1, &viewport);
+
+   const VkRect2D scissor = {
+      .offset = { 0, 0 },
+      .extent = { desc->fb->width, desc->fb->height },
+   };
+   vkCmdSetScissor(ctx->current_cmd_buffer, 0, 1, &scissor);
+}
+
+static void
+vk_end_render_pass(api_context *ctx)
+{
+   vkCmdEndRenderPass(ctx->current_cmd_buffer);
+}
+
+static void
+vk_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets)
+{
+   VkBuffer buffers[MAX_VERTEX_BUFFERS];
+
+   for (unsigned i = 0; i < ctx->current_pipeline->num_vb_desc; i++)
+      buffers[i] = vb->buffer;
+
+   vkCmdBindVertexBuffers(ctx->current_cmd_buffer, 0, ctx->current_pipeline->num_vb_desc,
+                          buffers, vb_offsets);
+}
+
+static void
+vk_bind_index_buffer(struct api_context *ctx, api_buffer *ib)
+{
+   vkCmdBindIndexBuffer(ctx->current_cmd_buffer, ib->buffer, 0, VK_INDEX_TYPE_UINT32);
+}
+
+static void
+vk_draw(api_context *ctx, const api_draw_desc *desc)
+{
+   if (desc->mesh_shader)
+      ctx->vkCmdDrawMeshTasksEXT(ctx->current_cmd_buffer, desc->count, 1, 1);
+   else if (desc->indexed)
+      vkCmdDrawIndexed(ctx->current_cmd_buffer, desc->count, 1, 0, 0, 0);
+   else
+      vkCmdDraw(ctx->current_cmd_buffer, desc->count, 1, desc->first_vertex, 0);
+}
+
+static api_timestamp_query_pool *
+vk_create_timestamp_pool(api_context *ctx, unsigned num_queries)
+{
+   api_timestamp_query_pool *pool = calloc(1, sizeof(api_timestamp_query_pool));
+
+   pool->num_written_queries = 0;
+   pool->num_queries = num_queries;
+   pool->results = calloc(num_queries, sizeof(uint64_t));
+
+   vk_check(vkCreateQueryPool(ctx->device,
+                              &(VkQueryPoolCreateInfo){
+                                 .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+                                 .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                                 .queryCount = num_queries,
+                              }, NULL, &pool->pool));
+
+   vk_begin_cmdbuf(ctx);
+   vkCmdResetQueryPool(ctx->current_cmd_buffer, pool->pool, 0, pool->num_queries);
+   vk_end_cmdbuf_and_submit(ctx);
+
+   return pool;
+}
+
+static void
+vk_write_next_timestamp(api_context *ctx, api_timestamp_query_pool *pool)
+{
+   assert(pool->num_written_queries < pool->num_queries);
+   vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
+                       pool->num_written_queries);
+   pool->num_written_queries++;
+}
+
+static void
+vk_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+{
+   pool->num_read_queries = 0;
+
+   if (!pool->num_written_queries)
+      return;
+
+   unsigned last_cmdbuf = (ctx->next_cmdbuf_index - 1) % MAX_COMMAND_BUFFERS;
+
+   vk_check(vkWaitForFences(ctx->device, 1, &ctx->fences[last_cmdbuf], true, UINT64_MAX));
+   vk_check(vkGetQueryPoolResults(ctx->device, pool->pool, 0, pool->num_written_queries,
+                                  sizeof(uint64_t) * pool->num_written_queries, pool->results,
+                                  sizeof(uint64_t), VK_QUERY_RESULT_64_BIT));
+}
+
+static void
+vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
+                      const void *data)
+{
+   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_sysmem_uswc);
+   uint8_t *map;
+
+   vk_check(vkMapMemory(ctx->device, staging->mem, 0, size, 0, (void**)&map));
+   memcpy(map, data, size);
+   vkUnmapMemory(ctx->device, staging->mem);
+
+   vk_begin_cmdbuf(ctx);
+   vkCmdCopyBuffer2(ctx->current_cmd_buffer,
+                    &(VkCopyBufferInfo2) {
+                       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+                       .srcBuffer = staging->buffer,
+                       .dstBuffer = buf->buffer,
+                       .regionCount = 1,
+                       .pRegions = &(VkBufferCopy2) {
+                          .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                          .srcOffset = 0,
+                          .dstOffset = offset,
+                          .size = size,
+                       },
+                    });
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .bufferMemoryBarrierCount = 1,
+                            .pBufferMemoryBarriers = &(VkBufferMemoryBarrier2) {
+                               .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                               .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                               .dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
+                               .dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+                               .buffer = buf->buffer,
+                               .offset = offset,
+                               .size = size,
+                            },
+                         });
+   vk_end_cmdbuf_and_submit(ctx);
+}
+
+static void
+vk_image_write_png(api_context *ctx, api_image *image, const char *filename)
+{
+   api_image *staging = vk_create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, image->width, image->height,
+                                        1, VK_IMAGE_TILING_LINEAR, api_heap_sysmem_cached, 0);
+
+   vk_begin_cmdbuf(ctx);
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .imageMemoryBarrierCount = 2,
+                            .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
+                               {
+                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                  .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+                                  .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                  .image = image->image,
+                                  .subresourceRange = {
+                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                     .baseMipLevel = 0,
+                                     .levelCount = 1,
+                                     .baseArrayLayer = 0,
+                                     .layerCount = 1,
+                                  },
+                               },
+                               {
+                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                  .srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                                  .srcAccessMask = 0,
+                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                  .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                  .image = staging->image,
+                                  .subresourceRange = {
+                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                     .baseMipLevel = 0,
+                                     .levelCount = 1,
+                                     .baseArrayLayer = 0,
+                                     .layerCount = 1,
+                                  },
+                               },
+                            },
+                         });
+
+   vkCmdBlitImage2(ctx->current_cmd_buffer,
+                   &(VkBlitImageInfo2) {
+                      .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+                      .srcImage = image->image,
+                      .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                      .dstImage = staging->image,
+                      .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                      .regionCount = 1,
+                      .pRegions = &(VkImageBlit2) {
+                         .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+                         .srcSubresource = (VkImageSubresourceLayers) {
+                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .layerCount = 1,
+                         },
+                         .srcOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
+                         .dstSubresource = (VkImageSubresourceLayers) {
+                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .layerCount = 1,
+                         },
+                         .dstOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
+                      },
+                  });
+   vk_end_cmdbuf_and_submit(ctx);
+
+   vk_check(vkQueueWaitIdle(ctx->queue));
+
+   void *map;
+   vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
+   write_png_rgba8(filename, staging, map);
+   vkUnmapMemory(ctx->device, staging->mem);
+}
+
+api_context *
+vk_create_context(const program_options *options)
+{
+   api_context *ctx = calloc(1, sizeof(api_context));
+   ctx->options = *options;
+
+   /* Create the Vulkan instance. */
+   VkInstance instance;
+   vk_check(vkCreateInstance(&(VkInstanceCreateInfo) {
+                                .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                                .pApplicationInfo = &(VkApplicationInfo) {
+                                   .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                                   .pApplicationName = "main",
+                                   .apiVersion = VK_MAKE_VERSION(1, 3, 0),
+                                },
+                                .enabledLayerCount = vk_has_validation_layer() ? 1 : 0,
+                                .ppEnabledLayerNames = (const char *[1]) {
+                                   "VK_LAYER_KHRONOS_validation",
+                                },
+                             },
+                             NULL, &instance));
+
+   /* Enumerate devices. */
+   unsigned count;
+   vk_check(vkEnumeratePhysicalDevices(instance, &count, NULL));
+   if (count == 0)
+      error("No Vulkan devices found.");
+   VkPhysicalDevice *pd = alloca(sizeof(pd[0]) * count);
+   vk_check(vkEnumeratePhysicalDevices(instance, &count, pd));
+   VkPhysicalDevice physical_device = pd[0];
+   printf("Physical devices: %u\n", count);
+
+   VkPhysicalDeviceProperties properties;
+   vkGetPhysicalDeviceProperties(physical_device, &properties);
+   printf("Device: %s\n", properties.deviceName);
+
+   VkPhysicalDeviceFragmentShadingRateFeaturesKHR vrs = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
+   };
+   VkPhysicalDeviceMeshShaderFeaturesEXT mesh = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
+      .pNext = &vrs,
+   };
+   VkPhysicalDeviceTransformFeedbackFeaturesEXT xfb = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT,
+      .pNext = &mesh,
+   };
+   VkPhysicalDeviceVulkan13Features vulkan13 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+      .pNext = &xfb,
+   };
+   VkPhysicalDeviceVulkan12Features vulkan12 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+      .pNext = &vulkan13,
+   };
+   VkPhysicalDeviceVulkan11Features vulkan11 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+      .pNext = &vulkan12,
+   };
+   VkPhysicalDeviceFeatures2 features2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+      .pNext = &vulkan11,
+   };
+   vkGetPhysicalDeviceFeatures2(physical_device, &features2);
+   vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
+
+   mesh.primitiveFragmentShadingRateMeshShader = false;
+
+   /* Check that the first queue support graphics. */
+   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, NULL);
+   if (!count)
+      error("vkGetPhysicalDeviceQueueFamilyProperties returned count=0");
+   VkQueueFamilyProperties *queue_props = alloca(sizeof(queue_props[0]) * count);
+   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, queue_props);
+   if (!(queue_props[0].queueFlags & VK_QUEUE_GRAPHICS_BIT))
+      error("the first queue must have VK_QUEUE_GRAPHICS_BIT");
+
+   unsigned num_enabled_extensions = 0;
+   const char *enabled_extensions[5];
+
+   if (mesh.meshShader) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_EXT_mesh_shader";
+   }
+   if (xfb.transformFeedback) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_EXT_transform_feedback";
+   }
+   if (vrs.pipelineFragmentShadingRate) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_KHR_fragment_shading_rate";
+   }
+
+   /* Open the device. */
+   vk_check(vkCreateDevice(physical_device,
+                           &(VkDeviceCreateInfo) {
+                              .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                              .pNext = &features2,
+                              .queueCreateInfoCount = 1,
+                              .pQueueCreateInfos = &(VkDeviceQueueCreateInfo) {
+                                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                 .queueFamilyIndex = 0,
+                                 .queueCount = 1,
+                                 .pQueuePriorities = (float[]) { 1.0f },
+                              },
+                              .enabledExtensionCount = num_enabled_extensions,
+                              .ppEnabledExtensionNames = enabled_extensions,
+                           },
+                           NULL, &ctx->device));
+
+   /* Get extension functions. */
+   ctx->vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)
+                                vkGetDeviceProcAddr(ctx->device, "vkCmdDrawMeshTasksEXT");
+
+   /* Get the queue. */
+   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
+                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                        .queueFamilyIndex = 0,
+                        .queueIndex = 0,
+                     }, &ctx->queue);
+
+   vk_check(vkCreateCommandPool(ctx->device,
+                                &(const VkCommandPoolCreateInfo) {
+                                   .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                   .queueFamilyIndex = 0,
+                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                                },
+                                NULL, &ctx->cmd_buffer_pool));
+
+   vk_check(vkAllocateCommandBuffers(ctx->device,
+      &(VkCommandBufferAllocateInfo) {
+         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+         .commandPool = ctx->cmd_buffer_pool,
+         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+         .commandBufferCount = MAX_COMMAND_BUFFERS,
+      },
+      ctx->cmd_buffers));
+
+   for (unsigned i = 0; i < MAX_COMMAND_BUFFERS; i++) {
+      vk_check(vkCreateFence(ctx->device, &(VkFenceCreateInfo){
+                                .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                                .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+                             },
+                             NULL, &ctx->fences[i]));
+   }
+
+   vk_check(vkCreateDescriptorPool(ctx->device,
+                                   &(VkDescriptorPoolCreateInfo){
+                                      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                      .maxSets = MAX_DESCRIPTOR_SETS,
+                                      .poolSizeCount = 3,
+                                      .pPoolSizes = (VkDescriptorPoolSize[3]){
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_STORAGE_IMAGE_BINDINGS,
+                                         },
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_TEXEL_BUFFER_BINDINGS,
+                                         },
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_BUFFER_BINDINGS,
+                                         },
+                                      },
+                                   },
+                                   NULL, &ctx->descriptor_pool));
+
+   vk_check(vkCreatePipelineLayout(ctx->device,
+                                   &(VkPipelineLayoutCreateInfo) {
+                                      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                   },
+                                   NULL, &ctx->empty_pipeline_layout));
+
+   ctx->next_cmdbuf_index = 0;
+   ctx->glsl_compiler = shaderc_compiler_initialize();
+   ctx->glsl_compiler_options = shaderc_compile_options_initialize();
+
+   /* Needed by mesh shaders. */
+   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);
+
+   ctx->timestamp_period_in_seconds = (double)properties.limits.timestampPeriod * 0.000000001;
+   ctx->has_mesh_shader = mesh.meshShader;
+   ctx->has_vrs = vrs.pipelineFragmentShadingRate;
+   ctx->has_xfb = xfb.transformFeedback;
+   ctx->vram_usage = 0;
+
+   ctx->destroy_context = NULL;
+
+   ctx->create_buffer = vk_create_buffer;
+   ctx->upload_buffer_data = vk_upload_buffer_data;
+   ctx->clear_buffer = vk_clear_buffer;
+   ctx->copy_buffer = vk_copy_buffer;
+   ctx->destroy_buffer = NULL;
+
+   ctx->create_image = vk_create_image;
+   ctx->image_write_png = vk_image_write_png;
+   ctx->destroy_image = NULL;
+
+   ctx->create_framebuffer = vk_create_framebuffer;
+   ctx->destroy_framebuffer = NULL;
+
+   ctx->create_shader = vk_create_shader;
+   ctx->destroy_shader = NULL;
+
+   ctx->create_descriptor_set_layout = vk_create_descriptor_set_layout;
+   ctx->destroy_descriptor_set_layout = NULL;
+
+   ctx->create_descriptor_set = vk_create_descriptor_set;
+   ctx->set_uniform_buffer_descriptor = vk_set_uniform_buffer_descriptors;
+   ctx->set_uniform_texel_buffer_descriptors = vk_set_uniform_texel_buffer_descriptors;
+   ctx->set_storage_image_descriptors = vk_set_storage_image_descriptors;
+   ctx->bind_descriptor_set = vk_bind_descriptor_set;
+   ctx->destroy_descriptor_set = NULL;
+
+   ctx->create_pipeline = vk_create_pipeline;
+   ctx->bind_pipeline = vk_bind_pipeline;
+   ctx->destroy_pipeline = NULL;
+
+   ctx->begin_cmdbuf = vk_begin_cmdbuf;
+   ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;
+
+   ctx->begin_render_pass = vk_begin_render_pass;
+   ctx->end_render_pass = vk_end_render_pass;
+
+   ctx->bind_vertex_buffers = vk_bind_vertex_buffers;
+   ctx->bind_index_buffer = vk_bind_index_buffer;
+   ctx->draw = vk_draw;
+
+   ctx->create_timestamp_pool = vk_create_timestamp_pool;
+   ctx->write_next_timestamp = vk_write_next_timestamp;
+   ctx->query_timestamps = vk_query_timestamps;
+
+   return ctx;
+}
