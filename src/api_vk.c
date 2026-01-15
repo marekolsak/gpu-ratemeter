@@ -446,7 +446,7 @@ vk_create_descriptor_set_layout(struct api_context *ctx,
    api_descriptor_set_layout *layout = calloc(1, sizeof(api_descriptor_set_layout));
    layout->desc = *desc;
 
-   VkShaderStageFlags stage_flags = (ctx->has_mesh_shader ? VK_SHADER_STAGE_MESH_BIT_EXT : 0) |
+   VkShaderStageFlags stage_flags = (ctx->max_mesh_workgroup_size ? VK_SHADER_STAGE_MESH_BIT_EXT : 0) |
                                     VK_SHADER_STAGE_FRAGMENT_BIT;
    unsigned num_bindings = 0;
    VkDescriptorSetLayoutBinding desc_set_layout_bindings[8];
@@ -1084,10 +1084,6 @@ vk_create_context(const program_options *options)
    VkPhysicalDevice physical_device = pd[0];
    printf("Physical devices: %u\n", count);
 
-   VkPhysicalDeviceProperties properties;
-   vkGetPhysicalDeviceProperties(physical_device, &properties);
-   printf("Device: %s\n", properties.deviceName);
-
    VkPhysicalDeviceFragmentShadingRateFeaturesKHR vrs = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
    };
@@ -1119,6 +1115,16 @@ vk_create_context(const program_options *options)
    vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
 
    mesh.primitiveFragmentShadingRateMeshShader = false;
+
+   VkPhysicalDeviceMeshShaderPropertiesEXT mesh_properties = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT,
+   };
+   VkPhysicalDeviceProperties2 device_properties = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+      .pNext = mesh.meshShader ? &mesh_properties : NULL,
+   };
+   vkGetPhysicalDeviceProperties2(physical_device, &device_properties);
+   printf("Device: %s\n", device_properties.properties.deviceName);
 
    /* Check that the first queue support graphics. */
    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, NULL);
@@ -1230,14 +1236,23 @@ vk_create_context(const program_options *options)
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
-   /* Needed by mesh shaders. */
-   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);
-
-   ctx->timestamp_period_in_seconds = (double)properties.limits.timestampPeriod * 0.000000001;
-   ctx->has_mesh_shader = mesh.meshShader;
+   ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
+   ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
    ctx->has_xfb = xfb.transformFeedback;
    ctx->vram_usage = 0;
+
+   /* Needed by mesh shaders. */
+   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);
+   shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
+                                     shaderc_limit_max_mesh_work_group_size_x_ext,
+                                     ctx->max_mesh_workgroup_size);
+   shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
+                                     shaderc_limit_max_mesh_work_group_size_y_ext,
+                                     ctx->max_mesh_workgroup_size);
+   shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
+                                     shaderc_limit_max_mesh_work_group_size_z_ext,
+                                     ctx->max_mesh_workgroup_size);
 
    ctx->destroy_context = NULL;
 

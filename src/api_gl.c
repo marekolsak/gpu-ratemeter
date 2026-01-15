@@ -738,9 +738,11 @@ gl_create_context(const program_options *options)
 
    /* Set properties and callbacks. */
    ctx->timestamp_period_in_seconds = 0.000000001;
-   ctx->has_mesh_shader = GLAD_GL_EXT_mesh_shader;
    ctx->has_xfb = true;
    ctx->vram_usage = 0;
+
+   if (GLAD_GL_EXT_mesh_shader)
+      glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
 
    ctx->destroy_context = NULL;
 

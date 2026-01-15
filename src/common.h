@@ -233,7 +233,7 @@ typedef struct api_context {
 
    /* Properties. */
    double timestamp_period_in_seconds;
-   bool has_mesh_shader;
+   unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    bool has_vrs;
    bool has_xfb;
 

@@ -142,7 +142,6 @@ d3d11_create_context(const program_options *options)
 
 
    ctx->timestamp_period_in_seconds = 0.000000001;
-   ctx->has_mesh_shader = false;
    ctx->vram_usage = 0;
 
    ctx->destroy_context = NULL;

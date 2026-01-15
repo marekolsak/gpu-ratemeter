@@ -674,9 +674,11 @@ compile_shaders(api_context *ctx, test_state *state)
          for (enum special_attribute2 s2 = 0; s2 < NUM_SPECIAL2_ATTRIBUTES; s2++) {
             state->vs[s1][s2][v] = compile_vs(ctx, v, s1, s2);
 
-            if (ctx->has_mesh_shader) {
-               for (enum geometry_style g = 0; g < NUM_GEOMETRY_STYLES; g++)
-                  state->ms[g][s1][s2][v] = compile_ms(ctx, v, g, s1, s2);
+            if (ctx->max_mesh_workgroup_size) {
+               for (enum geometry_style g = 0; g < NUM_GEOMETRY_STYLES; g++) {
+                  if (get_mesh_wg_size(g) <= ctx->max_mesh_workgroup_size)
+                     state->ms[g][s1][s2][v] = compile_ms(ctx, v, g, s1, s2);
+               }
             }
          }
       }
@@ -1343,9 +1345,9 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
    if (!state->fs[num_varyings])
       return;
 
-   bool is_mesh_shader = get_mesh_wg_size(test->geom_style) != 0;
+   unsigned mesh_wg_size = get_mesh_wg_size(test->geom_style);
 
-   if (!ctx->has_mesh_shader && is_mesh_shader)
+   if (mesh_wg_size && mesh_wg_size > ctx->max_mesh_workgroup_size)
       return;
 
    if (test->special2 == SPECIAL2_OUTPUT_VRS1x1 && !ctx->has_vrs)
@@ -1409,9 +1411,9 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
          VK_FORMAT_R32G32B32A32_SFLOAT,
       },
 
-      .desc_set_layout = is_mesh_shader ? state->ms_desc_set_layout[num_varyings] : NULL,
-      .ms = is_mesh_shader ? state->ms[test->geom_style][s1][test->special2][num_varyings] : NULL,
-      .vs = !is_mesh_shader ? state->vs[s1][test->special2][num_varyings] : NULL,
+      .desc_set_layout = mesh_wg_size ? state->ms_desc_set_layout[num_varyings] : NULL,
+      .ms = mesh_wg_size ? state->ms[test->geom_style][s1][test->special2][num_varyings] : NULL,
+      .vs = !mesh_wg_size ? state->vs[s1][test->special2][num_varyings] : NULL,
       .fs = state->fs[num_varyings],
 
       .vrs_fragment_size = {1, 1},
@@ -1453,7 +1455,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
 static void
 run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const test_info *test)
 {
-   if (test_stage != REPORT && !ctx->has_mesh_shader && get_mesh_wg_size(test->geom_style))
+   if (test_stage != REPORT && get_mesh_wg_size(test->geom_style) > ctx->max_mesh_workgroup_size)
       return;
 
    switch (test_stage) {
@@ -1587,7 +1589,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
    state->timestamps = ctx->create_timestamp_pool(ctx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2);
 
    /* Create the descriptor set for mesh shaders. */
-   if (ctx->has_mesh_shader) {
+   if (ctx->max_mesh_workgroup_size) {
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          api_descriptor_set_layout_desc desc = {
             .uniform_buffer.array_size = 1
