@@ -127,9 +127,10 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
    }
 
    /* Create buffers. */
-   api_buffer *vram0 = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
-   api_buffer *vram1 = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
-   api_buffer *sysmem = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_sysmem_uswc);
+   /* We allocate enough memory and cycle through the whole range to prevent caching. */
+   api_buffer *vram0 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_vram);
+   api_buffer *vram1 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_vram);
+   api_buffer *sysmem = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_sysmem_uswc);
 
    unsigned cycled_offset_base = 0;
    unsigned num_visited_tests = 0;
@@ -145,6 +146,7 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
       api_buffer *src = test_flavor == TEST_COPY_VRAM_VRAM ||
                         test_flavor == TEST_COPY_VRAM_SYSMEM ? vram1 :
                         test_flavor == TEST_COPY_SYSMEM_VRAM ? sysmem : NULL;
+      assert(dst);
       assert(!src || src != dst);
 
       if (!ctx->has_sysmem_uswc && (dst == sysmem || src == sysmem))

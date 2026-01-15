@@ -35,25 +35,33 @@ The following APIs are supported:
 - `vk.gpl`: Vulkan with graphics pipeline libraries **{- (not implemented yet) -}**
 
 The following test suites are available:
-- `bufbw`: buffer clears and copies in GB/s
-- `imgbw`: image clears, image copies, and MSAA resolving in GB/s **{- (not implemented yet, import from radeonsi) -}**
-- `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, import from piglit) -}**
-- `pix`: samples/clock, all tests are run with 1x MSAA and 8x MSAA
-- `pixbw`: GB/s for color buffer writes, same tests as `pix`
-- `prim`: primitives/clock
-- `sanity`: verify that the API works by drawing an object and saving the result into a PNG file (the app is windowless)
+- `bufbw`: buffer fills and copies in GB/s
+- `draw`: clocks/draw (less is better) **{- (not implemented yet) -}**
+- `mma`: matrix multiply accumulate in TBD units **{- (not implemented yet) -}**
+- `imgbw`: image clears, image copies, and MSAA resolving in GB/s **{- (not implemented yet, port from radeonsi) -}**
+- `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, port from piglit) -}**
+- `pix`: pixel throughput in samples/clock, all tests are run with 1x MSAA and 8x MSAA
+- `pixbw`: color buffer write throughput in GB/s, same tests as `pix`
+- `prim`: primitive throughput in primitives/clock
+- `rt`: ray tracing performance in rays/clock **{- (not implemented yet) -}**
+- `sanity`: verify that the API works by drawing an object and saving the result into a PNG file
 
 > [!tip]
-> Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
-
-> [!tip]
-> The output is a table in CSV. Paste it into a spreadsheet app to make easy comparisons between runs.
+> - Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
+> - The output is a table in CSV. Paste it into a spreadsheet app to make easy comparisons between runs.
 
 Optional parameters common to all test suites:
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)
 - `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting memory bandwidth)
 
-Example: `gpu-ratemeter -freq=2390 -maxrate=128 vk.pix` measures pixel thoughput with Vulkan and reports numbers as % of the maximum rate assuming a constant GPU frequency. In this case, the frequency is set to 2390 MHz, which converts samples/s to samples/clock, and the maximum rate is set to 128 samples/clock, which converts samples/clock to % of the maximum rate (e.g. 100 is full rate, 50 is 1/2 rate, 25 is 1/4 rate).
+Examples:
+
+```
+gpu-ratemeter gl.bufbw
+gpu-ratemeter vk.prim
+gpu-ratemeter -lean gl.pix
+gpu-ratemeter -lean vk.pix
+```
 
 > [!warning]
 > The app currently expects that most features supported by desktop GPUs are supported.
