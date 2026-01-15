@@ -9,13 +9,13 @@
  *
  * Port from radeonsi:
  * - blitperf
- * - dmaperf
  *
  * APIs:
  * - Vulkan modes: 1) all states are dynamic, 2) same as 1 but also using VK_EXT_graphics_pipeline_library
  * - DX12
  * - DX11
  * - CUDA? (for ML)
+ * - OpenCL?
  *
  * prim:
  * - transform feedback
@@ -23,7 +23,7 @@
  * - GS?
  *
  * New test suites:
- * - draw: direct/indirect draw/multidraw invocations per clock
+ * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock
  * - sampler: image load and filter rate
  * - rt: ray tracing
@@ -31,7 +31,7 @@
  *
  * AMD TODO:
  * - pix: timestamp queries are broken on gfx12 with Z/samplemask/A2C outputs and 128bpp formats, test older gens
- * - prim: mesh shaders are too slow with clipdist/culldist outputs
+ * - prim: mesh shaders are too slow with clipdist/culldist outputs, and they are extremely slow overall on radeonsi/gfx10.3
  */
 
 #include <stdio.h>

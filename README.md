@@ -4,7 +4,7 @@
 
 This is a command-line microbenchmark that measures the performance of various features of GPUs through APIs, and how well different GPUs, APIs, and API translation layers do well against each other.
 
-It reports GPU performance in terms of pixels per clock, primitives per clock, vertices per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit operations to gather how raw GPU performance is affected by the choice of drivers (Windows / closed-source, Mesa), APIs (DX, GL, VK), and API translation layers (DXVK, VKD3D, Zink).
+It reports GPU performance in terms of pixels per clock (samples per clock), primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit operations to gather how raw GPU performance is affected by the choice of drivers (Windows / closed-source, Mesa), APIs (DX, GL, VK), and API translation layers (DXVK, VKD3D, Zink).
 
 This helps driver and API translation layer developers compare the GPU performance when the same GPU is used with different drivers, APIs, API translation layers, and operating systems. It helps precisely identify root causes of performance differences and resolve them. The following comparisons can be made:
 - Open source vs closed source driver
@@ -17,7 +17,19 @@ libraries (shaders are compiled independently with no knowledge of states and ot
 
 For GPU vendors who know precise performance characteristics of their GPUs, this facilitates verification whether their drivers achieve the expected GPU design performance as per the HW design.
 
-Ideally, performance should be identical between all APIs and API translation layers and reaching expected GPU design performance, however, **that's quite rare in practice**, and we are seeing **vastly different performance** between all of those such that it necessitates precise microbenchmarking to exactly identify inefficiencies and missing optimizations, and resolve them.
+Ideally, performance should be identical between all APIs and API translation layers and achieving expected GPU design performance, however, that's rarely the case, which necessitates targeted microbenchmarking to help precisely identify inefficiencies and resolve then.
+
+> [!disclaimer]
+> Results from this app are not representative of real-world performance observed by end users.
+
+# How it works
+
+- Results are calculated from GPU timestamps.
+- Each test contains a warm-up phase where N initial iterations are discarded.
+- % progress is printed while building pipelines and executing tests. Results are only printed at the end (unless the test suite has multiple stages).
+- The execution time should not exceed 2 minutes on a decent desktop GPU.
+- The app is windowless and doesn't even register with the window system where that's possible.
+- If needed for debugging or developing new tests, it can save any rendered image to a PNG and open it in an image viewer.
 
 # How to Run
 
@@ -27,15 +39,15 @@ The following APIs are supported:
 - `d3d11`: Direct3D 11 **{- (not implemented yet) -}**
 - `d3d12`: Direct3D 12 **{- (not implemented yet) -}**
 - `gl`: OpenGL (linked shaders only)
-- `vk`: Vulkan with regular pipeline objects
+- `vk`: Vulkan with regular graphics pipeline objects
 - `vk.dyn`: Vulkan with all dynamic state **{- (not implemented yet) -}**
 - `vk.gpl`: Vulkan with graphics pipeline libraries **{- (not implemented yet) -}**
 
 The following test suites are available:
 - `bufbw`: buffer clears and copies in GB/s
-- `imgbw`: image clears and copies in GB/s **{- (not implemented yet, import from radeonsi) -}**
+- `imgbw`: image clears, image copies, and MSAA resolving in GB/s **{- (not implemented yet, import from radeonsi) -}**
 - `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, import from piglit) -}**
-- `pix`: pixels/clock, all tests are run with 1x MSAA and 8x MSAA
+- `pix`: samples/clock, all tests are run with 1x MSAA and 8x MSAA
 - `pixbw`: GB/s for color buffer writes, same tests as `pix`
 - `prim`: primitives/clock
 - `sanity`: verify that the API works by drawing an object and saving the result into a PNG file (the app is windowless)
@@ -50,27 +62,27 @@ Optional parameters common to all test suites:
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)
 - `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting memory bandwidth)
 
-Example: `gpu-ratemeter -freq=2390 -maxrate=128 vk.pix` measures pixel thoughput with Vulkan and reports numbers as % of the maximum rate assuming a constant GPU frequency. In this case, the frequency is set to 2390 MHz, which converts pixels/s results to pixels/clock, and the maximum rate is set to 128 pixels/clock, which converts pixels/clock results to % of the maximum rate, which is the most readable way to present the results. (e.g. 100 is full rate, 50 is 1/2 rate, 25 is 1/4 rate)
+Example: `gpu-ratemeter -freq=2390 -maxrate=128 vk.pix` measures pixel thoughput with Vulkan and reports numbers as % of the maximum rate assuming a constant GPU frequency. In this case, the frequency is set to 2390 MHz, which converts samples/s to samples/clock, and the maximum rate is set to 128 samples/clock, which converts samples/clock to % of the maximum rate, which is the most readable way to present the results. (e.g. 100 is full rate, 50 is 1/2 rate, 25 is 1/4 rate)
 
 > [!warning]
 > The app currently expects that most features supported by desktop GPUs are supported.
 
 # Test suites
 
-## `bufbw`: Fill and copy buffer bandwidth
+## `bufbw`: Fill and copy buffer bandwidth (GB/s)
 
 Each column is the size passed to the fill or copy buffer call.
 
 Decoding test names:
 - `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
 - `vram`, `sysm`: indicating that the buffer is allocated either in device local memory (VRAM) or system memory
-- `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 256K)
-- `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N
-- `both=N`: both offsets are aligned to N
+- `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
+- `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
+- `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
-## `pix`: Pixel throughput
+## `pix`: Pixel throughput (samples/clock)
 
-Each column is a different color buffer format except for the first column, which tests a fragment shader with an out-of-range image store instead of writing a color output, and no color buffer is present in this case.
+Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
 Decoding test names:
 - `noaa`: the framebuffer has 1 sample
@@ -83,7 +95,7 @@ Decoding test names:
 - `colormask=0`, `colormask=x`: the color mask is set to 0 or only the X component
 - `blend_src_color0`, `blend_src_color1`, `blend_src_alpha0`, `blend_src_alpha1`: the test uses blending with color or alpha blend factors and color values such that 0 means that blending fully discards the pixels, while 1 means that blending fully overwrites the pixels
 - `blend_src_color_other`, `blend_src_alpha_other`: the test uses blending with color or alpha blend factors and color values such that no pixels are completely discarded or completely overwritten and actual blending must take place
-- `output.color`, `output.z`, `output.samplemask`: the fragment shader contains color, Z, or samplemask outputs (all tests write a color output unless the name contains `output` without `color`)
+- `output.color`, `output.z`, `output.samplemask`: the fragment shader contains color, Z, or samplemask outputs (all other tests also write a color output unless 1) the name contains `output` without `color`, or 2) it's the `imgStore` column)
 - `z_disabled`: the Z test is disabled
 - `a2c`: alpha-to-coverage is enabled
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS coarse shading
@@ -106,11 +118,11 @@ Optional parameters:
 - `-filter=STRING`: only run tests containing this exact string
 - `-format=STRING`: only test image formats containing this exact string
 
-## `pixbw`: Render target bandwidth
+## `pixbw`: Color buffer write bandwidth (GB/s)
 
-Same as `pix`, but print the memory bandwidth in GB/s instead of pixels/clock. Tests that use a Z buffer or don't write the color buffer are skipped.
+Same as `pix`, but print the memory bandwidth in GB/s instead of samples/clock. Tests that use a Z buffer or don't write the color buffer are skipped.
 
-## `prim`: Primitive throughput
+## `prim`: Primitive throughput (primitives/clock)
 
 Each column is a different number of vec4 inputs received by the fragment shader.
 

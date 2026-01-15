@@ -17,6 +17,7 @@ extern "C" {
 #endif
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
+#define ALIGN_POT(x, pot_align) (((x) + (pot_align) - 1) & ~((pot_align) - 1))
 
 typedef enum {
    api_shader_vs,
@@ -37,6 +38,7 @@ typedef enum {
 
 typedef struct {
    uint64_t size;
+   api_heap_type heap;
 
 #ifdef GL_PRIVATE
    GLuint id;

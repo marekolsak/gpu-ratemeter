@@ -42,8 +42,6 @@ all_args = [
   '-Werror=format',
   '-Werror=return-type',
   '-Wall',
-  '-Wno-unused-variable',
-  '-Wno-unused-but-set-variable',
   '-Wformat-security',
 
   # For MSVC compatiblity.

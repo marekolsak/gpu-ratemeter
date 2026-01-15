@@ -16,7 +16,7 @@
 #define NUM_WARMUP_RUNS    8
 #define NUM_RUNS           32
 
-#define MAX_ALIGNMENT      (256 * 1024)
+#define MAX_ALIGNMENT      (64 * 1024)
 
 enum {
    TEST_FILL_VRAM,
@@ -127,14 +127,13 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
    }
 
    /* Create buffers. */
-   api_buffer *dst[2], *src[2];
+   api_buffer *vram0, *vram1, *sysmem;
    static_assert(api_heap_vram == 0);
    static_assert(api_heap_sysmem_uswc == 1);
 
-   dst[api_heap_vram] = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
-   src[api_heap_vram] = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
-   dst[api_heap_sysmem_uswc] = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_sysmem_uswc);
-   src[api_heap_sysmem_uswc] = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_sysmem_uswc);
+   vram0 = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
+   vram1 = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_vram);
+   sysmem = ctx->create_buffer(ctx, MAX_SIZE + 256, api_heap_sysmem_uswc);
 
    unsigned cycled_offset_base = 0;
    unsigned num_visited_tests = 0;
@@ -142,12 +141,21 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
    /* Run tests. */
    for (unsigned test_flavor = 0; test_flavor < NUM_TESTS; test_flavor++) {
       bool is_copy = test_flavor >= TEST_COPY_VRAM_VRAM;
+      api_buffer *dst = test_flavor == TEST_FILL_VRAM ||
+                        test_flavor == TEST_COPY_VRAM_VRAM ||
+                        test_flavor == TEST_COPY_SYSMEM_VRAM ? vram0 :
+                        test_flavor == TEST_FILL_SYSMEM ||
+                        test_flavor == TEST_COPY_VRAM_SYSMEM ? sysmem : NULL;
+      api_buffer *src = test_flavor == TEST_COPY_VRAM_VRAM ||
+                        test_flavor == TEST_COPY_VRAM_SYSMEM ? vram1 :
+                        test_flavor == TEST_COPY_SYSMEM_VRAM ? sysmem : NULL;
+      assert(!src || src != dst);
 
       for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
          unsigned test_src_offset = align_info[align].src_offset;
          unsigned test_dst_offset = align_info[align].dst_offset;
 
-         /* Don't be unaligned by some number from 0. Shift the offset by 4. */
+         /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
          if (test_src_offset && test_src_offset < 4)
             test_src_offset += 4;
          if (test_dst_offset && test_dst_offset < 4)
@@ -165,14 +173,9 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
          }
 
          for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
-            api_heap_type dst_heap = test_flavor == TEST_FILL_SYSMEM ||
-                                     test_flavor == TEST_COPY_VRAM_SYSMEM ?
-                                        api_heap_sysmem_uswc : api_heap_vram;
-            api_heap_type src_heap = test_flavor == TEST_COPY_SYSMEM_VRAM ?
-                                        api_heap_sysmem_uswc : api_heap_vram;
-
             /* Don't test large sizes with system memory because it's slow. */
-            if ((dst_heap != api_heap_vram || src_heap != api_heap_vram) && size > MAX_SYSMEM_SIZE) {
+            if (size > MAX_SYSMEM_SIZE &&
+                (dst->heap != api_heap_vram || (src && src->heap != api_heap_vram))) {
                if (stage == REPORT)
                   printf(",%8s", "n/a");
                continue;
@@ -188,26 +191,28 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
                   if (iter == NUM_WARMUP_RUNS)
                      ctx->write_next_timestamp(ctx, timestamps);
 
-                  if ((cycled_offset_base + test_dst_offset + size > dst[dst_heap]->size) ||
-                      (cycled_offset_base + test_src_offset + size > src[src_heap]->size))
+                  if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
+                      (is_copy && cycled_offset_base + test_src_offset + size > src->size))
                      cycled_offset_base = 0;
 
-                  assert(cycled_offset_base + test_dst_offset + size <= dst[dst_heap]->size);
-                  assert(!is_copy || cycled_offset_base + test_src_offset + size <= src[src_heap]->size);
+                  assert(cycled_offset_base + test_dst_offset + size <= dst->size);
+                  assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
+                  assert(cycled_offset_base % MAX_ALIGNMENT == 0);
 
                   if (is_copy) {
-                     ctx->copy_buffer(ctx, dst[dst_heap], src[src_heap],
+                     ctx->copy_buffer(ctx, dst, src,
                                       cycled_offset_base + test_dst_offset,
                                       cycled_offset_base + test_src_offset, size);
                   } else {
-                     ctx->clear_buffer(ctx, dst[dst_heap], cycled_offset_base + test_dst_offset,
+                     ctx->clear_buffer(ctx, dst, cycled_offset_base + test_dst_offset,
                                        size, 0x23456789);
                   }
 
                   /* Use a different portion of the buffers for each test, so that they don't just
                    * stay in the cache.
                    */
-                  cycled_offset_base += size < MAX_ALIGNMENT ? MAX_ALIGNMENT : size;
+                  cycled_offset_base += size;
+                  cycled_offset_base = ALIGN_POT(cycled_offset_base, MAX_ALIGNMENT);
                }
 
                ctx->write_next_timestamp(ctx, timestamps);

@@ -12,6 +12,7 @@ d3d11_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
 {
    api_buffer *buf = calloc(1, sizeof(api_buffer));
    buf->size = size;
+   buf->heap = heap;
 
 
    return buf;
