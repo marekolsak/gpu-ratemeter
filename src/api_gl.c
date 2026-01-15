@@ -737,6 +737,8 @@ gl_create_context(const program_options *options)
    glPrimitiveRestartIndex(UINT32_MAX);
 
    /* Set properties and callbacks. */
+   ctx->has_sysmem_uswc = true;
+   ctx->has_sysmem_cached = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
    ctx->has_xfb = true;
    ctx->vram_usage = 0;

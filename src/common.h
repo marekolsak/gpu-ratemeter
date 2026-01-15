@@ -232,6 +232,8 @@ typedef struct api_context {
    program_options options;
 
    /* Properties. */
+   bool has_sysmem_uswc;
+   bool has_sysmem_cached;
    double timestamp_period_in_seconds;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    bool has_vrs;

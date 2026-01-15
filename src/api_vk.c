@@ -23,7 +23,7 @@
    do { \
       VkResult res = call; \
       if (res != VK_SUCCESS) \
-         error("Vulkan call failed on line %u: %s = %u\n", __LINE__, #call, res); \
+         error("Vulkan call failed on line %u: %s = %i\n", __LINE__, #call, res); \
    } while(0)
 
 static bool
@@ -41,10 +41,17 @@ vk_has_validation_layer(void)
 
     return false;
 }
-static unsigned
+
+static int
 vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
 {
    VkMemoryPropertyFlags require_flags = 0, disallow_flags = 0;
+
+   if (heap == api_heap_sysmem_uswc && !ctx->has_sysmem_uswc)
+      heap = api_heap_sysmem_cached;
+
+   if (heap == api_heap_sysmem_cached && !ctx->has_sysmem_cached)
+      heap = api_heap_vram;
 
    switch (heap) {
    case api_heap_vram:
@@ -72,9 +79,7 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
          return i;
    }
 
-   error("can't find memory type for supported_heap_mask=0x%x, heap=%u",
-         supported_heap_mask, heap);
-   return 0;
+   return -1;
 }
 
 static api_buffer *
@@ -102,11 +107,17 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
    VkMemoryRequirements reqs;
    vkGetBufferMemoryRequirements(ctx->device, buf->buffer, &reqs);
 
+   int mem_type_index = vk_find_heap(ctx, reqs.memoryTypeBits, heap);
+   if (mem_type_index == -1) {
+      error("create_buffer: can't find memory type for reqs.memoryTypeBits=0x%x, heap=%u",
+            reqs.memoryTypeBits, heap);
+   }
+
    vk_check(vkAllocateMemory(ctx->device,
                              &(VkMemoryAllocateInfo) {
                                 .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                                 .allocationSize = reqs.size,
-                                .memoryTypeIndex = vk_find_heap(ctx, reqs.memoryTypeBits, heap),
+                                .memoryTypeIndex = mem_type_index,
                              },
                              NULL, &buf->mem));
    vk_check(vkBindBufferMemory(ctx->device, buf->buffer, buf->mem, 0));
@@ -218,15 +229,21 @@ vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
                           },
                           NULL, &image->image));
 
-   VkMemoryRequirements requirements;
-   vkGetImageMemoryRequirements(ctx->device, image->image, &requirements);
-   image->mem_size = requirements.size;
+   VkMemoryRequirements reqs;
+   vkGetImageMemoryRequirements(ctx->device, image->image, &reqs);
+   image->mem_size = reqs.size;
+
+   int mem_type_index = vk_find_heap(ctx, reqs.memoryTypeBits, heap);
+   if (mem_type_index == -1) {
+      error("create_image: can't find memory type for reqs.memoryTypeBits=0x%x, heap=%u",
+            reqs.memoryTypeBits, heap);
+   }
 
    vk_check(vkAllocateMemory(ctx->device,
                              &(VkMemoryAllocateInfo) {
                                 .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                .allocationSize = requirements.size,
-                                .memoryTypeIndex = vk_find_heap(ctx, requirements.memoryTypeBits, heap),
+                                .allocationSize = reqs.size,
+                                .memoryTypeIndex = mem_type_index,
                              },
                              NULL, &image->mem));
    vk_check(vkBindImageMemory(ctx->device, image->image, image->mem, 0));
@@ -1236,6 +1253,8 @@ vk_create_context(const program_options *options)
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
+   ctx->has_sysmem_uswc = vk_find_heap(ctx, ~0, api_heap_sysmem_uswc) != -1;
+   ctx->has_sysmem_cached = vk_find_heap(ctx, ~0, api_heap_sysmem_cached) != -1;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
