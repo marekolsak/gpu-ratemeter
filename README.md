@@ -4,9 +4,10 @@
 
 This is a command-line microbenchmark that measures the performance of various features of GPUs through APIs, and how well different GPUs, APIs, and API translation and forwarding layers do well against each other.
 
-It reports GPU performance in terms of pixels per clock (samples per clock), primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT operations to gather how raw GPU performance is affected by the choice of drivers (Windows / closed-source, Mesa), APIs (DX, GL, VK), and API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO).
+It reports GPU performance in terms of pixels per clock (samples per clock), primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to gather how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
-This app allows developers to evaluate GPU performance on the same hardware across different drivers, APIs, API translation and forwarding layers, and operating systems, and to precisely identify the root causes of inefficiencies. The following comparisons can be made:
+This app enables developers to evaluate observed GPU performance across all those pieces of SW on the same hardware, and to precisely identify the root causes of inefficiencies. Examples of possible comparisons:
+
 - Open source vs closed source driver
 - Windows vs Linux vs Android
 - Vulkan vs OpenGL vs Zink
@@ -20,7 +21,7 @@ libraries (shaders are compiled independently with no knowledge of states and ot
 In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
 
 > [!note] Disclaimer
-> The app’s results may not reflect performance across typical applications and workloads. The app aims to help others improve all GPU API implementations, not to serve as a ranking tool.
+> The app’s results may not reflect performance across typical applications and workloads. The app aims to help developers improve all GPU API implementations, not serve as a ranking tool.
 
 # How to Run
 
@@ -48,7 +49,7 @@ The following test suites are available:
 
 > [!tip]
 > - Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
-> - The output is a table in CSV. Paste it into a spreadsheet app to make easy comparisons between runs.
+> - The output is a table in CSV. Paste it into a spreadsheet to make easy comparisons of different runs.
 
 Optional parameters common to all test suites:
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)

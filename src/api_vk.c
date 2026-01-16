@@ -1253,6 +1253,8 @@ vk_create_context(const program_options *options)
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
+   ctx->has_sysmem_uswc = true; /* so that vk_find_heap doesn't fall back and fails when it should */
+   ctx->has_sysmem_cached = true; /* so that vk_find_heap doesn't fall back and fails when it should */
    ctx->has_sysmem_uswc = vk_find_heap(ctx, ~0, api_heap_sysmem_uswc) != -1;
    ctx->has_sysmem_cached = vk_find_heap(ctx, ~0, api_heap_sysmem_cached) != -1;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
