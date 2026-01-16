@@ -1261,6 +1261,8 @@ vk_create_context(const program_options *options)
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
    ctx->has_xfb = xfb.transformFeedback;
+   ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
+
    ctx->vram_usage = 0;
 
    /* Needed by mesh shaders. */

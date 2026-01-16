@@ -71,7 +71,7 @@ gpu-ratemeter -lean vk.pix
 
 - Results are calculated from GPU timestamps.
 - Each test contains a warm-up phase where N initial iterations are discarded.
-- % progress is printed while building pipelines and executing tests. Results are only printed at the end (unless the test suite has multiple stages).
+- % progress is printed while building pipelines and executing tests. Results are only printed at the end (unless a specific test suite has multiple stages).
 - The execution time should not exceed 2 minutes on a decent desktop GPU.
 - The app is windowless and doesn't even register with the window system where that's possible.
 - If needed for debugging or developing new tests, it can save any rendered image to a PNG and open it in an image viewer.

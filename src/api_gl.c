@@ -741,10 +741,27 @@ gl_create_context(const program_options *options)
    ctx->has_sysmem_cached = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
    ctx->has_xfb = true;
-   ctx->vram_usage = 0;
 
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
+
+   int num_sample_counts;
+   int sample_counts[16];
+
+   glGetInternalformativ(GL_RENDERBUFFER, GL_RGBA8, GL_NUM_SAMPLE_COUNTS, 1, &num_sample_counts);
+   if (num_sample_counts > 16)
+      num_sample_counts = 16;
+
+   glGetInternalformativ(GL_RENDERBUFFER, GL_RGBA8, GL_SAMPLES, num_sample_counts, sample_counts);
+
+   ctx->supported_color_sample_counts |= VK_SAMPLE_COUNT_1_BIT;
+
+   for (int i = 0; i < num_sample_counts; i++) {
+      if (IS_POT(sample_counts[i]))
+         ctx->supported_color_sample_counts |= sample_counts[i];
+   }
+
+   ctx->vram_usage = 0;
 
    ctx->destroy_context = NULL;
 

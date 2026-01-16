@@ -18,6 +18,7 @@ extern "C" {
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 #define ALIGN_POT(x, pot_align) (((x) + (pot_align) - 1) & ~((pot_align) - 1))
+#define IS_POT(v) (((v) & ((v) - 1)) == 0)
 
 typedef enum {
    api_shader_vs,
@@ -238,6 +239,7 @@ typedef struct api_context {
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    bool has_vrs;
    bool has_xfb;
+   VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
    uint64_t vram_usage;

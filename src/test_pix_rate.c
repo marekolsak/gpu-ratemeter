@@ -902,5 +902,7 @@ test_pix_rate(api_context *ctx, const char *test_suite_name)
    }
 
    run_test_pix_rate(ctx, test_suite_name, 1, compiled_shaders);
-   run_test_pix_rate(ctx, test_suite_name, 8, compiled_shaders);
+
+   if (ctx->supported_color_sample_counts & VK_SAMPLE_COUNT_8_BIT)
+      run_test_pix_rate(ctx, test_suite_name, 8, compiled_shaders);
 }
