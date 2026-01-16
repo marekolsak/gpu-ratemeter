@@ -1177,7 +1177,7 @@ init_buffers(api_context *ctx, test_state *state, const test_info *test)
    unsigned vb_size = buffer_set->vb_special1_offset + special1_size;
 
    /* Create buffers. */
-   buffer_set->vb = ctx->create_buffer(ctx, vb_size, api_heap_vram);
+   buffer_set->vb = ctx->create_buffer(ctx, vb_size, api_heap_device);
    ctx->upload_buffer_data(ctx, buffer_set->vb, 0, 16, zero_stride_attrib);
    ctx->upload_buffer_data(ctx, buffer_set->vb, buffer_set->vb_pos_offset, pos_size, vertices);
    if (special0_size)
@@ -1189,13 +1189,13 @@ init_buffers(api_context *ctx, test_state *state, const test_info *test)
    free(special1);
 
    if (indices) {
-      buffer_set->ib = ctx->create_buffer(ctx, ib_size, api_heap_vram);
+      buffer_set->ib = ctx->create_buffer(ctx, ib_size, api_heap_device);
       ctx->upload_buffer_data(ctx, buffer_set->ib, 0, ib_size, indices);
       free(indices);
    }
 
    if (mesh_groups) {
-      buffer_set->mesh_group_buf = ctx->create_buffer(ctx, 16 + mesh_group_data_size, api_heap_vram);
+      buffer_set->mesh_group_buf = ctx->create_buffer(ctx, 16 + mesh_group_data_size, api_heap_device);
       ctx->upload_buffer_data(ctx, buffer_set->mesh_group_buf, 16, mesh_group_data_size, mesh_groups);
       free(mesh_groups);
    }
@@ -1581,7 +1581,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, FB_SIZE, FB_SIZE, 1,
-                                           VK_IMAGE_TILING_OPTIMAL, api_heap_vram, 0);
+                                           VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
    state->fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                        colorbuf->height, colorbuf->samples);
 
@@ -1638,7 +1638,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++)
       run_test(ctx, state, INIT, &tests[i]);
 
-   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->vram_usage >> 20));
+   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->device_mem_usage >> 20));
    printf("Executing tests ...");
    fflush(stdout);
 

@@ -32,9 +32,9 @@ typedef enum {
 } api_shader_type;
 
 typedef enum {
-   api_heap_vram,
-   api_heap_sysmem_uswc, /* uncacheable speculative write combining (reads are uncached) */
-   api_heap_sysmem_cached,
+   api_heap_device,
+   api_heap_host_uncached,
+   api_heap_host_cached,
 } api_heap_type;
 
 typedef struct {
@@ -233,8 +233,8 @@ typedef struct api_context {
    program_options options;
 
    /* Properties. */
-   bool has_sysmem_uswc;
-   bool has_sysmem_cached;
+   bool has_host_uncached_heap;
+   bool has_host_cached_heap;
    double timestamp_period_in_seconds;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    bool has_vrs;
@@ -242,7 +242,7 @@ typedef struct api_context {
    VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
-   uint64_t vram_usage;
+   uint64_t device_mem_usage;
 
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);

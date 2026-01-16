@@ -117,7 +117,7 @@ init_cube_vb(api_context *ctx, uint64_t *vb_offsets)
    unsigned normals_offset = colors_offset + sizeof(vColors);
    unsigned mem_size = normals_offset + sizeof(vNormals);
 
-   api_buffer *vb = ctx->create_buffer(ctx, mem_size, api_heap_vram);
+   api_buffer *vb = ctx->create_buffer(ctx, mem_size, api_heap_device);
    ctx->upload_buffer_data(ctx, vb, vertex_offset, sizeof(vVertices), vVertices);
    ctx->upload_buffer_data(ctx, vb, colors_offset, sizeof(vColors), vColors);
    ctx->upload_buffer_data(ctx, vb, normals_offset, sizeof(vNormals), vNormals);
@@ -134,7 +134,7 @@ test_sanity(api_context *ctx, const char *test_suite_name)
    uint64_t vb_offsets[3];
 
    api_image *colorbuf = ctx->create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, 1024, 1024, 1,
-                                           VK_IMAGE_TILING_OPTIMAL, api_heap_vram, 0);
+                                           VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                                  colorbuf->height, colorbuf->samples);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);

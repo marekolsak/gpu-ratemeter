@@ -634,7 +634,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
     * throughput.
     */
    api_image *store_image = ctx->create_image(ctx, VK_FORMAT_R32_SFLOAT, 16, 16, 1,
-                                              VK_IMAGE_TILING_OPTIMAL, api_heap_vram,
+                                              VK_IMAGE_TILING_OPTIMAL, api_heap_device,
                                               VK_IMAGE_LAYOUT_GENERAL);
 
    /* Create the descriptor layout and the set. */
@@ -674,11 +674,11 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
       api_image *colorbuf = NULL;
       if (format) {
          colorbuf = ctx->create_image(ctx, format, fb_size, fb_size, samples,
-                                      VK_IMAGE_TILING_OPTIMAL, api_heap_vram, 0);
+                                      VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
       }
 
       api_image *zbuf = ctx->create_image(ctx, VK_FORMAT_D32_SFLOAT, fb_size, fb_size, samples,
-                                          VK_IMAGE_TILING_OPTIMAL, api_heap_vram, 0);
+                                          VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
 
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;
@@ -742,7 +742,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
    api_timestamp_query_pool *timestamps =
       ctx->create_timestamp_pool(ctx, num_pipelines * num_formats * 2);
 
-   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->vram_usage >> 20));
+   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->device_mem_usage >> 20));
    printf("Executing tests (MSAA samples = %u) ...", samples);
    fflush(stdout);
 

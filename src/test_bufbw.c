@@ -10,7 +10,7 @@
 
 #define MIN_SIZE           512
 #define MAX_SIZE           (256 * 1024 * 1024)
-#define MAX_SYSMEM_SIZE    (16 * 1024 * 1024)
+#define MAX_HOSTMEM_SIZE    (16 * 1024 * 1024)
 #define SIZE_STEP_SHIFT    1
 
 #define NUM_WARMUP_RUNS    8
@@ -19,20 +19,20 @@
 #define MAX_ALIGNMENT      (64 * 1024)
 
 enum {
-   TEST_FILL_VRAM,
-   TEST_FILL_SYSMEM,
-   TEST_COPY_VRAM_VRAM,
-   TEST_COPY_VRAM_SYSMEM,
-   TEST_COPY_SYSMEM_VRAM,
+   TEST_FILL_DEVMEM,
+   TEST_FILL_HOSTMEM,
+   TEST_COPY_DEVMEM_TO_DEVMEM,
+   TEST_COPY_DEVMEM_TO_HOSTMEM,
+   TEST_COPY_HOSTMEM_TO_DEVMEM,
    NUM_TESTS,
 };
 
 static const char *test_strings[] = {
-   [TEST_FILL_VRAM] = "fill.vram",
-   [TEST_FILL_SYSMEM] = "fill.sysm",
-   [TEST_COPY_VRAM_VRAM] = "copy.vram_to_vram",
-   [TEST_COPY_VRAM_SYSMEM] = "copy.vram_to_sysm",
-   [TEST_COPY_SYSMEM_VRAM] = "copy.sysm_to_vram",
+   [TEST_FILL_DEVMEM] = "fill.devmem",
+   [TEST_FILL_HOSTMEM] = "fill.hostmem",
+   [TEST_COPY_DEVMEM_TO_DEVMEM] = "copy.devmem_to_devmem",
+   [TEST_COPY_DEVMEM_TO_HOSTMEM] = "copy.devmem_to_hostmem",
+   [TEST_COPY_HOSTMEM_TO_DEVMEM] = "copy.hostmem_to_devmem",
 };
 
 enum {
@@ -114,7 +114,7 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
     api_timestamp_query_pool *timestamps, unsigned *num_tests)
 {
    if (stage == REPORT) {
-      printf("%-41s", "Size per command");
+      printf("%-46s", "Size per command");
       for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
          if (size >= 1024 * 1024)
             printf(",%6uMB", size / (1024 * 1024));
@@ -128,28 +128,28 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
 
    /* Create buffers. */
    /* We allocate enough memory and cycle through the whole range to prevent caching. */
-   api_buffer *vram0 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_vram);
-   api_buffer *vram1 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_vram);
-   api_buffer *sysmem = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_sysmem_uswc);
+   api_buffer *devmem0 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_device);
+   api_buffer *devmem1 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_device);
+   api_buffer *hostmem = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_host_uncached);
 
    unsigned cycled_offset_base = 0;
    unsigned num_visited_tests = 0;
 
    /* Run tests. */
    for (unsigned test_flavor = 0; test_flavor < NUM_TESTS; test_flavor++) {
-      bool is_copy = test_flavor >= TEST_COPY_VRAM_VRAM;
-      api_buffer *dst = test_flavor == TEST_FILL_VRAM ||
-                        test_flavor == TEST_COPY_VRAM_VRAM ||
-                        test_flavor == TEST_COPY_SYSMEM_VRAM ? vram0 :
-                        test_flavor == TEST_FILL_SYSMEM ||
-                        test_flavor == TEST_COPY_VRAM_SYSMEM ? sysmem : NULL;
-      api_buffer *src = test_flavor == TEST_COPY_VRAM_VRAM ||
-                        test_flavor == TEST_COPY_VRAM_SYSMEM ? vram1 :
-                        test_flavor == TEST_COPY_SYSMEM_VRAM ? sysmem : NULL;
+      bool is_copy = test_flavor >= TEST_COPY_DEVMEM_TO_DEVMEM;
+      api_buffer *dst = test_flavor == TEST_FILL_DEVMEM ||
+                        test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ||
+                        test_flavor == TEST_COPY_HOSTMEM_TO_DEVMEM ? devmem0 :
+                        test_flavor == TEST_FILL_HOSTMEM ||
+                        test_flavor == TEST_COPY_DEVMEM_TO_HOSTMEM ? hostmem : NULL;
+      api_buffer *src = test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ||
+                        test_flavor == TEST_COPY_DEVMEM_TO_HOSTMEM ? devmem1 :
+                        test_flavor == TEST_COPY_HOSTMEM_TO_DEVMEM ? hostmem : NULL;
       assert(dst);
       assert(!src || src != dst);
 
-      if (!ctx->has_sysmem_uswc && (dst == sysmem || src == sysmem))
+      if (!ctx->has_host_uncached_heap && (dst == hostmem || src == hostmem))
          continue;
 
       for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
@@ -170,13 +170,13 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
 
             snprintf(name, sizeof(name), "%s.%s.%s", test_suite_name,
                      test_strings[test_flavor], align_info[align].string);
-            printf("%-41s", name);
+            printf("%-46s", name);
          }
 
          for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
-            /* Don't test large sizes with system memory because it's slow. */
-            if (size > MAX_SYSMEM_SIZE &&
-                (dst->heap != api_heap_vram || (src && src->heap != api_heap_vram))) {
+            /* Don't test large sizes with host memory because it can be too slow. */
+            if (size > MAX_HOSTMEM_SIZE &&
+                (dst->heap != api_heap_device || (src && src->heap != api_heap_device))) {
                if (stage == REPORT)
                   printf(",%8s", "n/a");
                continue;
@@ -221,12 +221,12 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
             }
 
             if (stage == REPORT) {
-               /* When copying from VRAM to VRAM, we put 2x demand on VRAM bandwidth, and when
-                * copying between VRAM and SYSMEM, we put only 1x demand on each, so only double
-                * the size for VRAM->VRAM copies to use the real VRAM bandwidth usage.
+               /* When copying from DEVMEM to DEVMEM, we put 2x demand on DEVMEM bandwidth, and when
+                * copying between DEVMEM and HOSTMEM, we put only 1x demand on each, so only double
+                * the size for DEVMEM->DEVMEM copies to use the real DEVMEM bandwidth usage.
                 */
                uint64_t num_bytes = (uint64_t)size * NUM_RUNS *
-                                    (test_flavor == TEST_COPY_VRAM_VRAM ? 2 : 1);
+                                    (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
                print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f");
             }
 

@@ -84,7 +84,7 @@ Each column is the size passed to the fill or copy buffer call.
 
 Decoding test names:
 - `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
-- `vram`, `sysm`: indicating that the buffer is allocated either in device local memory (VRAM) or system memory
+- `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
 - `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)

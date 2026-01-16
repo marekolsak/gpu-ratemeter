@@ -47,21 +47,21 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
 {
    VkMemoryPropertyFlags require_flags = 0, disallow_flags = 0;
 
-   if (heap == api_heap_sysmem_uswc && !ctx->has_sysmem_uswc)
-      heap = api_heap_sysmem_cached;
+   if (heap == api_heap_host_uncached && !ctx->has_host_uncached_heap)
+      heap = api_heap_host_cached;
 
-   if (heap == api_heap_sysmem_cached && !ctx->has_sysmem_cached)
-      heap = api_heap_vram;
+   if (heap == api_heap_host_cached && !ctx->has_host_cached_heap)
+      heap = api_heap_device;
 
    switch (heap) {
-   case api_heap_vram:
+   case api_heap_device:
       require_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
       break;
-   case api_heap_sysmem_uswc:
+   case api_heap_host_uncached:
       disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
                        VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       break;
-   case api_heap_sysmem_cached:
+   case api_heap_host_cached:
       require_flags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
       break;
@@ -122,8 +122,8 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
                              NULL, &buf->mem));
    vk_check(vkBindBufferMemory(ctx->device, buf->buffer, buf->mem, 0));
 
-   if (heap == api_heap_vram)
-      ctx->vram_usage += reqs.size;
+   if (heap == api_heap_device)
+      ctx->device_mem_usage += reqs.size;
    return buf;
 }
 
@@ -304,8 +304,8 @@ vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
       ctx->end_cmdbuf_and_submit(ctx);
    }
 
-   if (heap == api_heap_vram)
-      ctx->vram_usage += image->mem_size;
+   if (heap == api_heap_device)
+      ctx->device_mem_usage += image->mem_size;
    return image;
 }
 
@@ -950,7 +950,7 @@ static void
 vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                       const void *data)
 {
-   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_sysmem_uswc);
+   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached);
    uint8_t *map;
 
    vk_check(vkMapMemory(ctx->device, staging->mem, 0, size, 0, (void**)&map));
@@ -992,7 +992,7 @@ static void
 vk_image_write_png(api_context *ctx, api_image *image, const char *filename)
 {
    api_image *staging = vk_create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, image->width, image->height,
-                                        1, VK_IMAGE_TILING_LINEAR, api_heap_sysmem_cached, 0);
+                                        1, VK_IMAGE_TILING_LINEAR, api_heap_host_cached, 0);
 
    vk_begin_cmdbuf(ctx);
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
@@ -1253,17 +1253,17 @@ vk_create_context(const program_options *options)
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
-   ctx->has_sysmem_uswc = true; /* so that vk_find_heap doesn't fall back and fails when it should */
-   ctx->has_sysmem_cached = true; /* so that vk_find_heap doesn't fall back and fails when it should */
-   ctx->has_sysmem_uswc = vk_find_heap(ctx, ~0, api_heap_sysmem_uswc) != -1;
-   ctx->has_sysmem_cached = vk_find_heap(ctx, ~0, api_heap_sysmem_cached) != -1;
+   ctx->has_host_uncached_heap = true; /* so that vk_find_heap doesn't fall back and fails when it should */
+   ctx->has_host_cached_heap = true; /* so that vk_find_heap doesn't fall back and fails when it should */
+   ctx->has_host_uncached_heap = vk_find_heap(ctx, ~0, api_heap_host_uncached) != -1;
+   ctx->has_host_cached_heap = vk_find_heap(ctx, ~0, api_heap_host_cached) != -1;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
    ctx->has_xfb = xfb.transformFeedback;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
 
-   ctx->vram_usage = 0;
+   ctx->device_mem_usage = 0;
 
    /* Needed by mesh shaders. */
    shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);

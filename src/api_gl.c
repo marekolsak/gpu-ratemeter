@@ -32,22 +32,19 @@ gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
    buf->size = size;
    buf->heap = heap;
 
-   unsigned flags = 0;
+   unsigned flags = GL_DYNAMIC_STORAGE_BIT; /* needed by glBufferSubData */
 
    switch (heap) {
-   case api_heap_vram:
-      flags = GL_DYNAMIC_STORAGE_BIT; /* needed by glBufferSubData */
+   case api_heap_device:
       break;
-   case api_heap_sysmem_uswc:
-      flags = GL_DYNAMIC_STORAGE_BIT | /* needed by glBufferSubData */
-              GL_CLIENT_STORAGE_BIT |  /* should allocate in system memory */
-              GL_MAP_WRITE_BIT;  /* should use USWC if READ_BIT is not set */
+   case api_heap_host_uncached:
+      flags |= GL_CLIENT_STORAGE_BIT |  /* should allocate in host memory */
+               GL_MAP_WRITE_BIT;  /* should be uncached if READ_BIT is not set */
       break;
-   case api_heap_sysmem_cached:
-      flags = GL_DYNAMIC_STORAGE_BIT | /* needed by glBufferSubData */
-              GL_CLIENT_STORAGE_BIT |  /* should allocate in system memory */
-              GL_MAP_WRITE_BIT |
-              GL_MAP_READ_BIT;   /* should be cached */
+   case api_heap_host_cached:
+      flags |= GL_CLIENT_STORAGE_BIT |  /* should allocate in host memory */
+               GL_MAP_WRITE_BIT |
+               GL_MAP_READ_BIT;   /* should be cached */
       break;
    default:
       error("invalid heap type");
@@ -57,8 +54,8 @@ gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
    glNamedBufferStorage(buf->id, size, NULL, flags);
    gl_check_no_error();
 
-   if (heap == api_heap_vram)
-      ctx->vram_usage += size;
+   if (heap == api_heap_device)
+      ctx->device_mem_usage += size;
    return buf;
 }
 
@@ -215,8 +212,8 @@ gl_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
    image->samples = samples;
    image->format = format;
 
-   if (heap != api_heap_vram)
-      error("GL only supports heap=vram for textures");
+   if (heap != api_heap_device)
+      error("GL only supports heap=device for textures");
 
    GLenum glformat = get_gl_format(format);
 
@@ -229,7 +226,7 @@ gl_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
    }
    gl_check_no_error();
 
-   ctx->vram_usage += (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
+   ctx->device_mem_usage += (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
    return image;
 }
 
@@ -737,8 +734,8 @@ gl_create_context(const program_options *options)
    glPrimitiveRestartIndex(UINT32_MAX);
 
    /* Set properties and callbacks. */
-   ctx->has_sysmem_uswc = true;
-   ctx->has_sysmem_cached = true;
+   ctx->has_host_uncached_heap = true;
+   ctx->has_host_cached_heap = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
    ctx->has_xfb = true;
 
@@ -761,7 +758,7 @@ gl_create_context(const program_options *options)
          ctx->supported_color_sample_counts |= sample_counts[i];
    }
 
-   ctx->vram_usage = 0;
+   ctx->device_mem_usage = 0;
 
    ctx->destroy_context = NULL;
 
