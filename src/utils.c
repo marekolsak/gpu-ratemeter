@@ -9,14 +9,18 @@
  */
 
 #include <assert.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <png.h>
 
+#ifndef _WIN32
+#include <fcntl.h>   /* for open */
 #include <unistd.h>  /* for execl */
 #include <errno.h>   /* for execl */
+#endif
 
 #include "common.h"
 
@@ -437,4 +441,170 @@ format_is_depth_or_stencil(VkFormat format)
       error("unexpected format in format_is_depth_or_stencil: %u", format);
       return 0;
    }
+}
+
+/* Super fast random number generator. Copied from Mesa.
+ *
+ * This rand_xorshift128plus function by Sebastiano Vigna belongs
+ * to the public domain.
+ */
+uint64_t
+rand_xorshift128plus(uint64_t seed[2])
+{
+   uint64_t *s = seed;
+
+   uint64_t s1 = s[0];
+   const uint64_t s0 = s[1];
+   s[0] = s0;
+   s1 ^= s1 << 23;
+   s[1] = s1 ^ s0 ^ (s1 >> 18) ^ (s0 >> 5);
+
+   return s[1] + s0;
+}
+
+void
+s_rand_xorshift128plus(uint64_t seed[2], bool randomised_seed)
+{
+   if (!randomised_seed) {
+      /* Use a fixed seed */
+      seed[0] = 0x3bffb83978e24f88;
+      seed[1] = 0x9238d5d56c71cd35;
+      return;
+   }
+
+#ifndef _WIN32
+   size_t seed_size = sizeof(uint64_t) * 2;
+
+   int fd = open("/dev/urandom", O_RDONLY);
+   if (fd >= 0) {
+      if (read(fd, seed, seed_size) == seed_size) {
+         close(fd);
+         return;
+      }
+      close(fd);
+   }
+#endif
+
+   seed[0] = 0x3bffb83978e24f88;
+   seed[1] = time(NULL);
+}
+
+unsigned
+get_next_power_of_two(unsigned x)
+{
+   unsigned val = x;
+
+   if (x <= 1)
+      return 1;
+
+   if (IS_POT(x))
+      return x;
+
+   val--;
+   val = (val >> 1) | val;
+   val = (val >> 2) | val;
+   val = (val >> 4) | val;
+   val = (val >> 8) | val;
+   val = (val >> 16) | val;
+   val++;
+   return val;
+}
+
+/**
+ * Convert a 4-byte float to a 2-byte half float. Copied from Mesa.
+ *
+ * Not all float32 values can be represented exactly as a float16 value. We
+ * round such intermediate float32 values to the nearest float16. When the
+ * float32 lies exactly between to float16 values, we round to the one with
+ * an even mantissa.
+ *
+ * This rounding behavior has several benefits:
+ *   - It has no sign bias.
+ *
+ *   - It reproduces the behavior of real hardware: opcode F32TO16 in Intel's
+ *     GPU ISA.
+ *
+ *   - By reproducing the behavior of the GPU (at least on Intel hardware),
+ *     compile-time evaluation of constant packHalf2x16 GLSL expressions will
+ *     result in the same value as if the expression were executed on the GPU.
+ */
+uint16_t
+float_to_half(float val)
+{
+   typedef union { float f; int32_t i; uint32_t u; } fi_type;
+
+   const fi_type fi = {val};
+   const int flt_m = fi.i & 0x7fffff;
+   const int flt_e = (fi.i >> 23) & 0xff;
+   const int flt_s = (fi.i >> 31) & 0x1;
+   int s, e, m = 0;
+   uint16_t result;
+
+   /* sign bit */
+   s = flt_s;
+
+   /* handle special cases */
+   if ((flt_e == 0) && (flt_m == 0)) {
+      /* zero */
+      /* m = 0; - already set */
+      e = 0;
+   }
+   else if ((flt_e == 0) && (flt_m != 0)) {
+      /* denorm -- denorm float maps to 0 half */
+      /* m = 0; - already set */
+      e = 0;
+   }
+   else if ((flt_e == 0xff) && (flt_m == 0)) {
+      /* infinity */
+      /* m = 0; - already set */
+      e = 31;
+   }
+   else if ((flt_e == 0xff) && (flt_m != 0)) {
+      /* Retain the top bits of a NaN to make sure that the quiet/signaling
+       * status stays the same.
+       */
+      m = flt_m >> 13;
+      if (!m)
+         m = 1;
+      e = 31;
+   }
+   else {
+      /* regular number */
+      const int new_exp = flt_e - 127;
+      if (new_exp < -14) {
+         /* The float32 lies in the range (0.0, min_normal16) and is rounded
+          * to a nearby float16 value. The result will be either zero, subnormal,
+          * or normal.
+          */
+         e = 0;
+         m = lrintf((1 << 24) * fabsf(fi.f));
+      }
+      else if (new_exp > 15) {
+         /* map this value to infinity */
+         /* m = 0; - already set */
+         e = 31;
+      }
+      else {
+         /* The float32 lies in the range
+          *   [min_normal16, max_normal16 + max_step16)
+          * and is rounded to a nearby float16 value. The result will be
+          * either normal or infinite.
+          */
+         e = new_exp + 15;
+         m = lrintf(flt_m / (float) (1 << 13));
+      }
+   }
+
+   assert(0 <= m && m <= 1024);
+   if (m == 1024) {
+      /* The float32 was rounded upwards into the range of the next exponent,
+       * so bump the exponent. This correctly handles the case where f32
+       * should be rounded up to float16 infinity.
+       */
+      ++e;
+      m = 0;
+   }
+
+   result = (s << 15) | (e << 10) | m;
+   return result;
 }

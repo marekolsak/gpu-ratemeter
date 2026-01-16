@@ -18,7 +18,9 @@ extern "C" {
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 #define ALIGN_POT(x, pot_align) (((x) + (pot_align) - 1) & ~((pot_align) - 1))
+#define ALIGN_NPOT(x, npot_align) (((x) + (npot_align) - 1) / (npot_align) * (npot_align))
 #define IS_POT(v) (((v) & ((v) - 1)) == 0)
+#define MIN2( A, B )   ( (A)<(B) ? (A) : (B) )
 
 typedef enum {
    api_shader_vs,
@@ -52,8 +54,10 @@ typedef struct {
 } api_buffer;
 
 typedef struct {
+   VkImageType type;
    unsigned width;
    unsigned height;
+   unsigned depth;
    unsigned samples;
    VkFormat format;
 
@@ -256,8 +260,9 @@ typedef struct api_context {
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
    void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
 
-   api_image *(*create_image)(struct api_context *ctx, VkFormat format, unsigned width, unsigned height,
-                              unsigned samples, VkImageTiling tiling, api_heap_type heap,
+   api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
+                              unsigned width, unsigned height, unsigned depth, unsigned samples,
+                              VkImageTiling tiling, api_heap_type heap,
                               VkImageLayout initial_layout);
    void (*image_write_png)(struct api_context *ctx, api_image *image, const char *filename);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
@@ -351,6 +356,7 @@ api_context *vk_create_context(const program_options *options);
 
 /* Tests. */
 void test_buf_bandwidth(api_context *ctx, const char *test_suite_name);
+void test_img_bandwidth(api_context *ctx, const char *test_suite_name);
 void test_pix_rate(api_context *ctx, const char *test_suite_name);
 void test_prim_rate(api_context *ctx, const char *test_suite_name);
 void test_sanity(api_context *ctx, const char *test_suite_name);
@@ -369,6 +375,10 @@ bool format_is_integer(VkFormat format);
 bool format_is_sint(VkFormat format);
 unsigned format_get_num_channels(VkFormat format);
 bool format_is_depth_or_stencil(VkFormat format);
+uint64_t rand_xorshift128plus(uint64_t seed[2]);
+void s_rand_xorshift128plus(uint64_t seed[2], bool randomised_seed);
+unsigned get_next_power_of_two(unsigned x);
+uint16_t float_to_half(float val);
 
 #ifdef __cplusplus
 }

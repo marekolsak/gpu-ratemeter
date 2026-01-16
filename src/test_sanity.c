@@ -133,8 +133,9 @@ test_sanity(api_context *ctx, const char *test_suite_name)
 {
    uint64_t vb_offsets[3];
 
-   api_image *colorbuf = ctx->create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, 1024, 1024, 1,
-                                           VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
+   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                                           1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                           api_heap_device, 0);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                                  colorbuf->height, colorbuf->samples);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);

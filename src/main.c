@@ -5,7 +5,6 @@
 /* TODO:
  *
  * Test suites:
- * - imgbw
  * - iobw
  * - rt
  * - mma
@@ -19,6 +18,9 @@
  * - DX11
  * - CUDA? (for ML)
  * - OpenCL?
+ *
+ * pix:
+ * - render to 3D texture?
  *
  * prim:
  * - transform feedback
@@ -75,6 +77,7 @@ static const struct {
    bool report_bandwidth;
 } suites[] = {
    {"bufbw", test_buf_bandwidth, true},
+   //{"imgbw", test_img_bandwidth, true},
    {"pix", test_pix_rate},
    {"pixbw", test_pix_rate, true},
    {"prim", test_prim_rate},

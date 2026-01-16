@@ -633,8 +633,8 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
    /* Create an image for image stores. It's a dummy image because we are not measuring memory
     * throughput.
     */
-   api_image *store_image = ctx->create_image(ctx, VK_FORMAT_R32_SFLOAT, 16, 16, 1,
-                                              VK_IMAGE_TILING_OPTIMAL, api_heap_device,
+   api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
+                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device,
                                               VK_IMAGE_LAYOUT_GENERAL);
 
    /* Create the descriptor layout and the set. */
@@ -673,12 +673,13 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
 
       api_image *colorbuf = NULL;
       if (format) {
-         colorbuf = ctx->create_image(ctx, format, fb_size, fb_size, samples,
+         colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size, fb_size, 1, samples,
                                       VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
       }
 
-      api_image *zbuf = ctx->create_image(ctx, VK_FORMAT_D32_SFLOAT, fb_size, fb_size, samples,
-                                          VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
+      api_image *zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
+                                          fb_size, fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
+                                          api_heap_device, 0);
 
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;

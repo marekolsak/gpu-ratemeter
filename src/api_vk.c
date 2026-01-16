@@ -198,26 +198,34 @@ vk_copy_buffer(struct api_context *ctx, api_buffer *dst, api_buffer *src, uint64
 }
 
 static api_image *
-vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned height,
-                unsigned samples, VkImageTiling tiling, api_heap_type heap,
+vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
                 VkImageLayout initial_layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
+   image->type = type;
    image->width = width;
    image->height = height;
+   image->depth = depth;
    image->samples = samples;
    image->format = format;
+
+   assert(type != VK_IMAGE_TYPE_1D || depth == 1);
 
    bool is_zs = format_is_depth_or_stencil(format);
 
    vk_check(vkCreateImage(ctx->device,
                           &(VkImageCreateInfo) {
                              .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                             .imageType = VK_IMAGE_TYPE_2D,
+                             .imageType = type,
                              .format = format,
-                             .extent = { .width = width, .height = height, .depth = 1 },
+                             .extent = {
+                                .width = width,
+                                .height = height,
+                                .depth = type == VK_IMAGE_TYPE_3D ? depth : 1,
+                             },
                              .mipLevels = 1,
-                             .arrayLayers = 1,
+                             .arrayLayers = type == VK_IMAGE_TYPE_2D ? depth : 1,
                              .samples = samples,
                              .tiling = tiling,
                              .usage = is_zs ?
@@ -251,7 +259,9 @@ vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
                               &(VkImageViewCreateInfo) {
                                  .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                  .image = image->image,
-                                 .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                 .viewType = type == VK_IMAGE_TYPE_3D ? VK_IMAGE_VIEW_TYPE_3D :
+                                             type == VK_IMAGE_TYPE_2D && depth > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                                             type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D : VK_IMAGE_VIEW_TYPE_2D,
                                  .format = image->format,
                                  .components = {
                                     .r = VK_COMPONENT_SWIZZLE_R,
@@ -266,7 +276,7 @@ vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
                                     .baseMipLevel = 0,
                                     .levelCount = 1,
                                     .baseArrayLayer = 0,
-                                    .layerCount = 1,
+                                    .layerCount = depth,
                                  },
                               },
                               NULL, &image->view));
@@ -295,7 +305,7 @@ vk_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
                                         .baseMipLevel = 0,
                                         .levelCount = 1,
                                         .baseArrayLayer = 0,
-                                        .layerCount = 1,
+                                        .layerCount = depth,
                                      },
                                   },
                                },
@@ -991,8 +1001,9 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 static void
 vk_image_write_png(api_context *ctx, api_image *image, const char *filename)
 {
-   api_image *staging = vk_create_image(ctx, VK_FORMAT_R8G8B8A8_UNORM, image->width, image->height,
-                                        1, VK_IMAGE_TILING_LINEAR, api_heap_host_cached, 0);
+   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                                        image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
+                                        api_heap_host_cached, 0);
 
    vk_begin_cmdbuf(ctx);
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer,

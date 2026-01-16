@@ -19,13 +19,15 @@ d3d12_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
 }
 
 static api_image *
-d3d12_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned height,
-                   unsigned samples, VkImageTiling tiling, api_heap_type heap,
+d3d12_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
+                   unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
                    VkImageLayout initial_layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
+   image->type = type;
    image->width = width;
    image->height = height;
+   image->depth = depth;
    image->samples = samples;
 
 

@@ -39,7 +39,7 @@ The following test suites are available:
 - `bufbw`: buffer fills and copies in GB/s
 - `draw`: clocks/draw (less is better) **{- (not implemented yet) -}**
 - `mma`: matrix multiply accumulate in TBD units **{- (not implemented yet) -}**
-- `imgbw`: image clears, image copies, and MSAA resolving in GB/s **{- (not implemented yet, port from radeonsi) -}**
+- `imgbw`: image clears, image copies, blits, and MSAA resolving in GB/s **{- (not finished yet, porting from radeonsi in progress) -}**
 - `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, port from piglit) -}**
 - `pix`: pixel throughput in samples/clock, all tests are run with 1x MSAA and 8x MSAA
 - `pixbw`: color buffer write throughput in GB/s, same tests as `pix`
@@ -67,18 +67,18 @@ gpu-ratemeter -lean vk.pix
 > [!warning]
 > The app currently expects that most features supported by desktop GPUs are supported.
 
-# How it works
+# How It Works
 
 - Results are calculated from GPU timestamps.
-- Each test contains a warm-up phase where N initial iterations are discarded.
+- Each test contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. If that happens, use a power profile that maintains a constant frequency at all times.
 - % progress is printed while building pipelines and executing tests. Results are only printed at the end (unless a specific test suite has multiple stages).
-- The execution time should not exceed 2 minutes on a decent desktop GPU.
+- The execution time of one test suite should not exceed 2 minutes on a decent desktop GPU.
 - The app is windowless and doesn't even register with the window system where that's possible.
 - If needed for debugging or developing new tests, it can save any rendered image to a PNG and open it in an image viewer.
 
-# Test suites
+# Test Suites
 
-## `bufbw`: Fill and copy buffer bandwidth (GB/s)
+## `bufbw`: Fill and Copy Buffer Bandwidth (GB/s)
 
 Each column is the size passed to the fill or copy buffer call.
 
@@ -89,7 +89,11 @@ Decoding test names:
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
-## `pix`: Pixel throughput (samples/clock)
+## `imgbw`: Clear, Copy, Blit, and MSAA Resolve Bandwidth (GB/s)
+
+TODO
+
+## `pix`: Pixel Throughput (samples/clock)
 
 Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
@@ -127,11 +131,11 @@ Optional parameters:
 - `-filter=STRING`: only run tests containing this exact string
 - `-format=STRING`: only test image formats containing this exact string
 
-## `pixbw`: Color buffer write bandwidth (GB/s)
+## `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
 Same as `pix`, but print the memory bandwidth in GB/s instead of samples/clock. Tests from `pix` that use a Z buffer or don't write the color buffer are skipped.
 
-## `prim`: Primitive throughput (primitives/clock)
+## `prim`: Primitive Throughput (primitives/clock)
 
 Each column is a different number of vec4 inputs received by the fragment shader.
 

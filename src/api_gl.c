@@ -202,13 +202,15 @@ get_gl_format(VkFormat format)
 }
 
 static api_image *
-gl_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned height,
-                unsigned samples, VkImageTiling tiling, api_heap_type heap,
+gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
                 VkImageLayout initial_layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
+   image->type = type;
    image->width = width;
    image->height = height;
+   image->depth = depth;
    image->samples = samples;
    image->format = format;
 
@@ -217,13 +219,43 @@ gl_create_image(api_context *ctx, VkFormat format, unsigned width, unsigned heig
 
    GLenum glformat = get_gl_format(format);
 
-   if (samples > 1) {
-      glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, &image->id);
-      glTextureStorage2DMultisample(image->id, samples, glformat, width, height, true);
-   } else {
-      glCreateTextures(GL_TEXTURE_2D, 1, &image->id);
-      glTextureStorage2D(image->id, 1, glformat, width, height);
+   switch (type) {
+   case VK_IMAGE_TYPE_1D:
+      assert(height == 1 && depth == 1 && samples == 1);
+      glCreateTextures(GL_TEXTURE_1D, 1, &image->id);
+      glTextureStorage1D(image->id, 1, glformat, width);
+      break;
+
+   case VK_IMAGE_TYPE_2D:
+      if (samples > 1) {
+         if (depth > 1) {
+            glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE_ARRAY, 1, &image->id);
+            glTextureStorage3DMultisample(image->id, samples, glformat, width, height, depth, true);
+         } else {
+            glCreateTextures(GL_TEXTURE_2D_MULTISAMPLE, 1, &image->id);
+            glTextureStorage2DMultisample(image->id, samples, glformat, width, height, true);
+         }
+      } else {
+         if (depth > 1) {
+            glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &image->id);
+            glTextureStorage3D(image->id, 1, glformat, width, height, depth);
+         } else {
+            glCreateTextures(GL_TEXTURE_2D, 1, &image->id);
+            glTextureStorage2D(image->id, 1, glformat, width, height);
+         }
+      }
+      break;
+
+   case VK_IMAGE_TYPE_3D:
+      assert(samples == 1);
+      glCreateTextures(GL_TEXTURE_3D, 1, &image->id);
+      glTextureStorage3D(image->id, 1, glformat, width, height, depth);
+      break;
+
+   default:
+      error("gl_create_image: unexpected image type");
    }
+
    gl_check_no_error();
 
    ctx->device_mem_usage += (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
