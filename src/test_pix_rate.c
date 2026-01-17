@@ -526,13 +526,10 @@ get_pipeline_name(char *out, unsigned max_out_length, unsigned samples,
 static bool
 test_filter(api_context *ctx, unsigned samples, const pipeline_info *pipeline)
 {
-   if (!ctx->options.test_filter)
-      return true;
-
    char pipeline_name[256];
    get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, pipeline);
 
-   return strstr(pipeline_name, ctx->options.test_filter) != NULL;
+   return check_filter_string(ctx->options.test_filter, pipeline_name);
 }
 
 static void
@@ -620,7 +617,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
-          (ctx->options.format_filter && !strstr(formats[f].name, ctx->options.format_filter))) {
+          (!check_filter_string(ctx->options.format_filter, formats[f].name))) {
          fbs[f].skip = true;
          continue;
       }

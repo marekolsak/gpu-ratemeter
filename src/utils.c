@@ -24,6 +24,27 @@
 
 #include "common.h"
 
+bool
+check_filter_string(const char *filter_string, const char *name)
+{
+   if (!filter_string)
+      return true;
+
+   int filter_len = strlen(filter_string);
+
+   /* If the filter ends with $, the test name must contain the filter string at the end. */
+   if (filter_len && filter_string[filter_len - 1] == '$') {
+      char filter_no_dollar[256];
+
+      snprintf(filter_no_dollar, MIN2(filter_len, ARRAY_SIZE(filter_no_dollar)),
+               "%s", filter_string);
+
+      return strstr(name, filter_no_dollar) == name + strlen(name) - (filter_len - 1);
+   }
+
+   return strstr(name, filter_string) != 0;
+}
+
 void
 print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                       uint64_t num_units, const char *rate_format,

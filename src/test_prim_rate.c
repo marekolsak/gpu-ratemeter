@@ -328,7 +328,7 @@ typedef struct {
 
    api_framebuffer *fb;
    api_descriptor_set_layout *ms_desc_set_layout[MAX_VARYING_SHADERS];
-   api_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][MAX_VARYING_SHADERS];
+   api_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_timestamp_query_pool *timestamps;
 } test_state;
 
@@ -1305,8 +1305,8 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
                              .fb = state->fb,
                              .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                           });
-   assert(state->pipelines[test->geom_style][test->cull_method][num_varyings]);
-   ctx->bind_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][num_varyings]);
+   assert(state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
+   ctx->bind_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
    unsigned count = 0;
 
@@ -1430,12 +1430,10 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
    case DEGENERATE_TRIS:
    case SMALL_TRIS:
       break;
-   case CLIPDIST1357:
-      desc.clipdist_enable_mask = (1 << 1) | (1 << 3) | (1 << 5) | (1 << 7);
-      break;
    case CLIPDIST4:
       desc.clipdist_enable_mask = 0xf;
       break;
+   case CLIPDIST1357:
    case CLIPDIST8:
       desc.clipdist_enable_mask = 0xff;
       break;
@@ -1449,7 +1447,83 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
       error("invalid cull method in create_pipeline");
    }
 
-   state->pipelines[test->geom_style][test->cull_method][num_varyings] = ctx->create_pipeline(ctx, &desc);
+   state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings] =
+      ctx->create_pipeline(ctx, &desc);
+}
+
+static void
+get_test_name(char *out, unsigned out_size, const test_state *state, const test_info *test)
+{
+   char cull_info1[32] = {0}, cull_method[32], special2[32];
+   const char *geom = NULL;
+
+   switch (test->geom_style) {
+   case GEOM_TRI_LIST_REUSE2_INDEXED:
+      geom = ".trilist.reuse2";
+      break;
+   case GEOM_TRI_LIST_REUSE1_INDEXED:
+      geom = ".trilist.reuse1";
+      break;
+   case GEOM_TRI_LIST_REUSE0:
+      geom = ".trilist.reuse0";
+      break;
+   case GEOM_TRI_STRIP:
+      geom = ".tristrip";
+      break;
+   case GEOM_TRI_STRIP_INDEXED:
+      geom = ".tristrip.indexed";
+      break;
+   case GEOM_TRI_STRIP_INDEXED_PRIM_RESTART:
+      geom = ".tristrip.indexed.primrestart";
+      break;
+   case GEOM_MESH32_REUSE2:
+      geom = ".mesh32.reuse2";
+      break;
+   case GEOM_MESH64_REUSE2:
+      geom = ".mesh64.reuse2";
+      break;
+   case GEOM_MESH128_REUSE2:
+      geom = ".mesh128.reuse2";
+      break;
+   case GEOM_MESH192_REUSE2:
+      geom = ".mesh192.reuse2";
+      break;
+   case GEOM_MESH256_REUSE2:
+      geom = ".mesh256.reuse2";
+      break;
+   default:
+      error("invalid geometry style");
+   }
+
+   if (test->cull_method == SMALL_TRIS) {
+      snprintf(cull_info1, sizeof(cull_info1), ".%u_small_tris_pp",
+               (unsigned)(2.0 / (triangle_sizes_in_pixels[test->small_triangle_size_index] *
+                                 triangle_sizes_in_pixels[test->small_triangle_size_index])));
+   } else {
+      snprintf(cull_info1, sizeof(cull_info1), ".cull_%u%%", test->cull_percentage);
+   }
+
+   snprintf(cull_method, sizeof(cull_method), "%s",
+            test->cull_method == CULL_NONE || test->cull_method == SMALL_TRIS ? "" :
+            test->cull_method == CULL_BACK ? ".cull_back" :
+            test->cull_method == CULL_VIEW_XY ? ".cull_view_xy" :
+            test->cull_method == CLIPDIST1357 ? ".clipdist1357" :
+            test->cull_method == CULLDIST1357 ? ".culldist1357" :
+            test->cull_method == CLIPDIST4 ? ".clipdist4" :
+            test->cull_method == CULLDIST4 ? ".culldist4" :
+            test->cull_method == CLIPDIST8 ? ".clipdist8" :
+            test->cull_method == CULLDIST8 ? ".culldist8" :
+            test->cull_method == RASTERIZER_DISCARD ? ".rasterizer_discard" :
+            test->cull_method == DEGENERATE_TRIS ? ".degenerate" : "INVALID");
+
+   snprintf(special2, sizeof(special2), "%s",
+            test->special2 == SPECIAL2_NONE ? "" :
+            test->special2 == SPECIAL2_OUTPUT_POINT_SIZE ? ".output_pointsize" :
+            test->special2 == SPECIAL2_OUTPUT_LAYER ? ".output_layer" :
+            test->special2 == SPECIAL2_OUTPUT_VRS1x1 ? ".output_vrs1x1" : "INVALID");
+
+   snprintf(out, out_size, "%s%s%s%s%s", state->test_suite_name, cull_info1, geom,
+            cull_method, special2);
 }
 
 static void
@@ -1458,13 +1532,18 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
    if (test_stage != REPORT && get_mesh_wg_size(test->geom_style) > ctx->max_mesh_workgroup_size)
       return;
 
+   char test_name[1024];
+   get_test_name(test_name, sizeof(test_name), state, test);
+
+   if (!check_filter_string(ctx->options.test_filter, test_name))
+      return;
+
    switch (test_stage) {
    case INIT:
-
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          create_pipeline(ctx, state, test, v);
 
-         if (!state->pipelines[test->geom_style][test->cull_method][v])
+         if (!state->pipelines[test->geom_style][test->cull_method][test->special2][v])
             continue;
 
          init_buffers(ctx, state, test);
@@ -1473,7 +1552,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
 
    case RUN:
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
-         if (!state->pipelines[test->geom_style][test->cull_method][v])
+         if (!state->pipelines[test->geom_style][test->cull_method][test->special2][v])
             continue;
 
          run_pipeline(ctx, state, NUM_ITERATIONS, test, v);
@@ -1481,83 +1560,13 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
       break;
 
    case REPORT: {
-      char name[1024], cull_info1[32] = {0}, cull_method[32], special2[32];
-      const char *geom = NULL;
-
-      switch (test->geom_style) {
-      case GEOM_TRI_LIST_REUSE2_INDEXED:
-         geom = ".trilist.reuse2";
-         break;
-      case GEOM_TRI_LIST_REUSE1_INDEXED:
-         geom = ".trilist.reuse1";
-         break;
-      case GEOM_TRI_LIST_REUSE0:
-         geom = ".trilist.reuse0";
-         break;
-      case GEOM_TRI_STRIP:
-         geom = ".tristrip";
-         break;
-      case GEOM_TRI_STRIP_INDEXED:
-         geom = ".tristrip.indexed";
-         break;
-      case GEOM_TRI_STRIP_INDEXED_PRIM_RESTART:
-         geom = ".tristrip.indexed.primrestart";
-         break;
-      case GEOM_MESH32_REUSE2:
-         geom = ".mesh32.reuse2";
-         break;
-      case GEOM_MESH64_REUSE2:
-         geom = ".mesh64.reuse2";
-         break;
-      case GEOM_MESH128_REUSE2:
-         geom = ".mesh128.reuse2";
-         break;
-      case GEOM_MESH192_REUSE2:
-         geom = ".mesh192.reuse2";
-         break;
-      case GEOM_MESH256_REUSE2:
-         geom = ".mesh256.reuse2";
-         break;
-      default:
-         error("invalid geometry style");
-      }
-
-      if (test->cull_method == SMALL_TRIS) {
-         snprintf(cull_info1, sizeof(cull_info1), ".%u_small_tris_pp",
-                  (unsigned)(2.0 / (triangle_sizes_in_pixels[test->small_triangle_size_index] *
-                                    triangle_sizes_in_pixels[test->small_triangle_size_index])));
-      } else {
-         snprintf(cull_info1, sizeof(cull_info1), ".cull_%u%%", test->cull_percentage);
-      }
-
-      snprintf(cull_method, sizeof(cull_method), "%s",
-               test->cull_method == CULL_NONE || test->cull_method == SMALL_TRIS ? "" :
-               test->cull_method == CULL_BACK ? ".cull_back" :
-               test->cull_method == CULL_VIEW_XY ? ".cull_view_xy" :
-               test->cull_method == CLIPDIST1357 ? ".clipdist1357" :
-               test->cull_method == CULLDIST1357 ? ".culldist1357" :
-               test->cull_method == CLIPDIST4 ? ".clipdist4" :
-               test->cull_method == CULLDIST4 ? ".culldist4" :
-               test->cull_method == CLIPDIST8 ? ".clipdist8" :
-               test->cull_method == CULLDIST8 ? ".culldist8" :
-               test->cull_method == RASTERIZER_DISCARD ? ".rasterizer_discard" :
-               test->cull_method == DEGENERATE_TRIS ? ".degenerate" : "INVALID");
-
-      snprintf(special2, sizeof(special2), "%s",
-               test->special2 == SPECIAL2_NONE ? "" :
-               test->special2 == SPECIAL2_OUTPUT_POINT_SIZE ? ".output_pointsize" :
-               test->special2 == SPECIAL2_OUTPUT_LAYER ? ".output_layer" :
-               test->special2 == SPECIAL2_OUTPUT_VRS1x1 ? ".output_vrs1x1" : "INVALID");
-
-      snprintf(name, sizeof(name), "%s%s%s%s%s", state->test_suite_name, cull_info1, geom,
-               cull_method, special2);
-      printf("%-62s", name);
+      printf("%-62s", test_name);
 
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          if (!state->fs[v])
             continue;
 
-         if (state->pipelines[test->geom_style][test->cull_method][v]) {
+         if (state->pipelines[test->geom_style][test->cull_method][test->special2][v]) {
             print_throughput_from_next_timestamps(ctx, state->timestamps,
                                                   NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
                                                   ctx->options.max_rate ? ",%6.1f" : ",%6.2f", NULL);
@@ -1621,7 +1630,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
       if (getenv("MESH"))
          test = (test_info){50, GEOM_MESH128_REUSE2, CULL_BACK};
       if (getenv("CLIPDIST"))
-         test = (test_info){50, GEOM_TRI_LIST_REUSE2_INDEXED, CLIPDIST8};
+         test = (test_info){50, GEOM_TRI_LIST_REUSE2_INDEXED, CLIPDIST1357};
       if (getenv("TRI")) {
          test = (test_info){0, GEOM_TRI_LIST_REUSE0, CULL_BACK};
          num_varyings = 0;

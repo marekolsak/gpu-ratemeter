@@ -362,6 +362,7 @@ void test_prim_rate(api_context *ctx, const char *test_suite_name);
 void test_sanity(api_context *ctx, const char *test_suite_name);
 
 /* utils.c */
+bool check_filter_string(const char *filter_string, const char *name);
 void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
                                            const char *bandwidth_format);

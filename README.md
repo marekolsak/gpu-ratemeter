@@ -128,8 +128,8 @@ Decoding test names:
 
 Optional parameters:
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
-- `-filter=STRING`: only run tests containing this exact string
-- `-format=STRING`: only test image formats containing this exact string
+- `-filter=STRING`: only run tests containing this exact string; if `STRING` ends with $, the test name must end with it
+- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
 
 ## `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
@@ -155,6 +155,9 @@ Decoding test names:
 - `output_pointsize`: additionally write the point size output (with no effect on behavior)
 - `output_layer`: additionally write the layer output (with no effect on behavior)
 - `output_vrs1x1`: additionally write the primitive shading rate output (with no effect on behavior)
+
+Optional parameters:
+- `-filter=STRING`: only run tests containing this exact string; if `STRING` ends with $, the test name must end with it
 
 # How to Build
 
