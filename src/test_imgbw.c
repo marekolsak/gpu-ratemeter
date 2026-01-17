@@ -10,6 +10,9 @@
 
 #include "common.h"
 
+#define NUM_WARMUP_RUNS    1
+#define NUM_RUNS           4
+
 #define RANDOM_DATA_SIZE (611953 * 8) /* prime number * 8 */
 
 /* For MSAA, sample_index == 0 means set all samples, while sample_index > 0
@@ -171,19 +174,22 @@ set_gradient_pixels(api_context *ctx, api_image *img)
    free(data);
 }
 
-static VkFormat formats[] = {
-   VK_FORMAT_R8_UNORM,
-   VK_FORMAT_R8_UINT,
-   VK_FORMAT_R16_UINT,
-   VK_FORMAT_R16_SFLOAT,
-   VK_FORMAT_R8G8B8A8_UNORM,
-   VK_FORMAT_R32_UINT,
-   VK_FORMAT_R32_SFLOAT,
-   VK_FORMAT_R32G32_UINT,
-   VK_FORMAT_R32G32_SFLOAT,
-   VK_FORMAT_R16G16B16A16_SFLOAT,
-   VK_FORMAT_R32G32B32A32_UINT,
-   VK_FORMAT_R32G32B32A32_SFLOAT,
+static struct {
+   const char *name;
+   VkFormat format;
+} formats[] = {
+   {"r8",      VK_FORMAT_R8_UNORM},
+   {"r8u",     VK_FORMAT_R8_UINT},
+   {"r16u",    VK_FORMAT_R16_UINT},
+   {"r16f",    VK_FORMAT_R16_SFLOAT},
+   {"rgba8",   VK_FORMAT_R8G8B8A8_UNORM},
+   {"r32u",    VK_FORMAT_R32_UINT},
+   {"r32f",    VK_FORMAT_R32_SFLOAT},
+   {"rg32u",   VK_FORMAT_R32G32_UINT},
+   {"rg32f",   VK_FORMAT_R32G32_SFLOAT},
+   {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
+   {"rgba32u", VK_FORMAT_R32G32B32A32_UINT},
+   {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
 };
 
 enum {
@@ -256,36 +262,42 @@ static const char *fill_strings[] = {
    [FILL_RANDOM_FRAGMENTED8] = "fragmented8",
 };
 
-enum {
-   METHOD_DEFAULT,
-   METHOD_GFX,
-   METHOD_COMPUTE,
-   METHOD_SPECIAL,
-   NUM_METHODS,
-};
+typedef enum {
+   COUNT_TESTS,
+   RUN,
+   REPORT,
+} test_stage;
 
 static const VkClearColorValue black_color_float = {.float32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_float = {.float32 = {0.2, 0.3, 0.4, 0.5}};
 static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_uint = {.uint32 = {23, 45, 89, 107}};
 
-void
-test_img_bandwidth(api_context *ctx, const char *test_suite_name)
+static void
+run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *num_tests,
+    api_timestamp_query_pool *timestamps)
 {
-   uint64_t seed_xorshift128plus[2];
-   uint64_t random_data[RANDOM_DATA_SIZE / 8];
+   uint64_t *random_data = NULL;
 
-   /* Set the seed for random pixel data */
-   s_rand_xorshift128plus(seed_xorshift128plus, false);
+   if (stage == RUN) {
+      uint64_t seed_xorshift128plus[2];
 
-   /* Pre-generate random data for initializing textures. */
-   for (unsigned i = 0; i < ARRAY_SIZE(random_data); i++)
-      random_data[i] = rand_xorshift128plus(seed_xorshift128plus);
+      random_data = (uint64_t*)malloc(RANDOM_DATA_SIZE);
 
-   printf("Op      , Special  ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
-          "   small   ,   small   ,   small   ,   small   ,   LARGE   ,   LARGE   ,   LARGE   ,   LARGE\n");
-   printf("--------,----------,---,-------------------,--,------,------------,-------------,"
-          "  Default  ,    Gfx    ,  Compute  ,  Special  ,  Default  ,    Gfx    ,  Compute  ,  Special\n");
+      /* Set the seed for random pixel data */
+      s_rand_xorshift128plus(seed_xorshift128plus, false);
+
+      /* Pre-generate random data for initializing textures. */
+      for (unsigned i = 0; i < RANDOM_DATA_SIZE / 8; i++)
+         random_data[i] = rand_xorshift128plus(seed_xorshift128plus);
+   }
+
+   if (stage == REPORT) {
+      printf("Op      , Special  ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
+             "   small   ,   small   ,   small   ,   small   ,   LARGE   ,   LARGE   ,   LARGE   ,   LARGE\n");
+      printf("--------,----------,---,-------------------,--,------,------------,-------------,"
+             "  Default  ,    Gfx    ,  Compute  ,  Special  ,  Default  ,    Gfx    ,  Compute  ,  Special\n");
+   }
 
    for (unsigned test_flavor = 0; test_flavor < NUM_TESTS; test_flavor++) {
       for (VkImageType img_type = VK_IMAGE_TYPE_1D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
@@ -308,69 +320,75 @@ test_img_bandwidth(api_context *ctx, const char *test_suite_name)
                   if (test_flavor == TEST_RESOLVE && samples == 1)
                      continue;
 
-                  if (test_flavor == TEST_RESOLVE && format_is_integer(formats[format_index]))
+                  if (test_flavor == TEST_RESOLVE && format_is_integer(formats[format_index].format))
                      continue;
 
                   /* Create textures. */
                   api_image *src[2] = {0}, *dst[2] = {0};
-                  unsigned bpe = get_pixel_size_from_format(formats[format_index]);
-                  unsigned pix_size = bpe * samples;
+                  api_framebuffer *fb[2] = {0};
+                  unsigned bpe = get_pixel_size_from_format(formats[format_index].format);
+                  unsigned msaa_pix_size = bpe * samples;
 
-                  for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
-                     unsigned mb_size = (size_factor ? 256 : 8) * 1024 * 1024;
-                     unsigned width = 1, height = 1, depth = 1;
+                  if (stage == RUN) {
+                     for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
+                        unsigned mb_size = (size_factor ? 256 : 8) * 1024 * 1024;
+                        unsigned width = 1, height = 1, depth = 1;
 
-                     /* Determine the size. The footprint must be exactly "mb_size" for 2D and 3D. */
-                     if (img_type == VK_IMAGE_TYPE_1D) {
-                        width = size_factor ? 16384 : 2048;
-                     } else if (img_type == VK_IMAGE_TYPE_2D) {
-                        width = height = get_next_power_of_two(sqrt(mb_size / pix_size));
+                        /* Determine the size. The footprint must be exactly "mb_size" for 2D and 3D. */
+                        if (img_type == VK_IMAGE_TYPE_1D) {
+                           width = size_factor ? 16384 : 2048;
+                        } else if (img_type == VK_IMAGE_TYPE_2D) {
+                           width = height = get_next_power_of_two(sqrt(mb_size / msaa_pix_size));
 
-                        for (unsigned i = 0; width * height * pix_size != mb_size; i++) {
-                           if (i % 2 == 1)
-                              width /= 2;
-                           else
-                              height /= 2;
+                           for (unsigned i = 0; width * height * msaa_pix_size != mb_size; i++) {
+                              if (i % 2 == 1)
+                                 width /= 2;
+                              else
+                                 height /= 2;
+                           }
+                        } else if (img_type == VK_IMAGE_TYPE_3D) {
+                           width = height = depth = get_next_power_of_two(pow(mb_size / msaa_pix_size, 0.333333));
+
+                           for (unsigned i = 0; width * height * depth * msaa_pix_size != mb_size; i++) {
+                              if (i % 3 == 2)
+                                 width /= 2;
+                              else if (i % 3 == 1)
+                                 height /= 2;
+                              else
+                                 depth /= 2;
+                           }
                         }
-                     } else if (img_type == VK_IMAGE_TYPE_3D) {
-                        width = height = depth = get_next_power_of_two(pow(mb_size / pix_size, 0.333333));
 
-                        for (unsigned i = 0; width * height * depth * pix_size != mb_size; i++) {
-                           if (i % 3 == 2)
-                              width /= 2;
-                           else if (i % 3 == 1)
-                              height /= 2;
-                           else
-                              depth /= 2;
+                        unsigned img_width = MIN2(width, 16384);
+                        unsigned img_height = MIN2(height, 16384);
+                        unsigned img_depth = MIN2(depth, 16384);
+                        unsigned src_samples = samples;
+                        unsigned src_tiling = layout == LAYOUT_L2L || layout == LAYOUT_L2T ?
+                                                 VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+
+                        if (test_flavor != TEST_FB_CLEAR && test_flavor != TEST_CLEAR) {
+                           src[size_factor] = ctx->create_image(ctx, img_type, formats[format_index].format,
+                                                                img_width, img_height, img_depth,
+                                                                src_samples, src_tiling,
+                                                                api_heap_device, 0);
                         }
-                     }
 
-                     unsigned img_width = MIN2(width, 16384);
-                     unsigned img_height = MIN2(height, 16384);
-                     unsigned img_depth = MIN2(depth, 16384);
-                     unsigned src_samples = samples;
-                     unsigned src_tiling = layout == LAYOUT_L2L || layout == LAYOUT_L2T ?
-                                              VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+                        unsigned dst_tiling = layout == LAYOUT_L2L || layout == LAYOUT_T2L ?
+                                                 VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+                        unsigned dst_samples = test_flavor == TEST_RESOLVE ? 1 : src_samples;
 
-                     if (test_flavor != TEST_FB_CLEAR && test_flavor != TEST_CLEAR) {
-                        src[size_factor] = ctx->create_image(ctx, img_type, formats[format_index],
+                        dst[size_factor] = ctx->create_image(ctx, img_type, formats[format_index].format,
                                                              img_width, img_height, img_depth,
-                                                             src_samples, src_tiling,
-                                                             api_heap_device, 0);
+                                                             dst_samples, dst_tiling, api_heap_device, 0);
+
+                        fb[size_factor] = ctx->create_framebuffer(ctx, dst[size_factor], NULL,
+                                                                  img_width, img_height, dst_samples);
                      }
-
-                     unsigned dst_tiling = layout == LAYOUT_L2L || layout == LAYOUT_T2L ?
-                                              VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
-                     unsigned dst_samples = test_flavor == TEST_RESOLVE ? 1 : src_samples;
-
-                     dst[size_factor] = ctx->create_image(ctx, img_type, formats[format_index],
-                                                          img_width, img_height, img_depth,
-                                                          dst_samples, dst_tiling, api_heap_device, 0);
                   }
 
                   for (unsigned fill_flavor = 0; fill_flavor < NUM_FILLS; fill_flavor++) {
                      const VkClearColorValue *clear_color =
-                        format_is_integer(formats[format_index]) ?
+                        format_is_integer(formats[format_index].format) ?
                            (fill_flavor == FILL_BLACK ? &black_color_uint : &solid_color_uint) :
                            (fill_flavor == FILL_BLACK ? &black_color_float : &solid_color_float);
 
@@ -385,56 +403,59 @@ test_img_bandwidth(api_context *ctx, const char *test_suite_name)
                         continue;
 
                      /* Fill the source texture. */
-                     if (test_flavor != TEST_FB_CLEAR && test_flavor != TEST_CLEAR) {
-                        for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
-                           switch (fill_flavor) {
-                           case FILL_BLACK:
-                           case FILL_SOLID: {
-                              union util_color packed_color;
-                              util_pack_color(clear_color->float32, formats[format_index], &packed_color);
+                     if (stage == RUN) {
+                        if (test_flavor != TEST_FB_CLEAR && test_flavor != TEST_CLEAR) {
+                           for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
+                              switch (fill_flavor) {
+                              case FILL_BLACK:
+                              case FILL_SOLID: {
+                                 ctx->clear_image(ctx, src[size_factor],
+                                                  &(api_image_box){
+                                                     .width = src[size_factor]->width,
+                                                     .height = src[size_factor]->height,
+                                                     .depth = src[size_factor]->depth,
+                                                  },
+                                                  clear_color);
+                                 break;
+                              }
 
-                              struct pipe_box box = {0};
-                              box.width = src[size_factor]->width;
-                              box.height = src[size_factor]->height;
-                              box.depth = src[size_factor]->depth;
+                              case FILL_GRADIENT:
+                                 set_gradient_pixels(ctx, src[size_factor]);
+                                 break;
 
-                              ctx->clear_texture(ctx, src[size_factor], 0, &box, &packed_color);
-                              break;
-                           }
+                              case FILL_RANDOM:
+                                 set_random_pixels(ctx, src[size_factor], 0, random_data);
+                                 break;
 
-                           case FILL_GRADIENT:
-                              set_gradient_pixels(ctx, src[size_factor]);
-                              break;
+                              case FILL_RANDOM_FRAGMENTED2:
+                                 assert(samples >= 2);
+                                 /* Make all samples equal. */
+                                 set_random_pixels(ctx, src[size_factor], 0, random_data);
+                                 /* Make sample 0 different. */
+                                 set_random_pixels(ctx, src[size_factor], 1, random_data);
+                                 break;
 
-                           case FILL_RANDOM:
-                              set_random_pixels(ctx, src[size_factor], 0, random_data);
-                              break;
+                              case FILL_RANDOM_FRAGMENTED4:
+                                 assert(samples >= 4);
+                                 /* Make all samples equal. */
+                                 set_random_pixels(ctx, src[size_factor], 0, random_data);
+                                 /* Make samples 0..2 different. */
+                                 for (unsigned i = 0; i <= 2; i++)
+                                    set_random_pixels(ctx, src[size_factor], i + 1, random_data);
+                                 break;
 
-                           case FILL_RANDOM_FRAGMENTED2:
-                              assert(samples >= 2);
-                              /* Make all samples equal. */
-                              set_random_pixels(ctx, src[size_factor], 0, random_data);
-                              /* Make sample 0 different. */
-                              set_random_pixels(ctx, src[size_factor], 1, random_data);
-                              break;
+                              case FILL_RANDOM_FRAGMENTED8:
+                                 assert(samples == 8);
+                                 /* Make all samples equal. */
+                                 set_random_pixels(ctx, src[size_factor], 0, random_data);
+                                 /* Make samples 0..6 different. */
+                                 for (unsigned i = 0; i <= 6; i++)
+                                    set_random_pixels(ctx, src[size_factor], i + 1, random_data);
+                                 break;
 
-                           case FILL_RANDOM_FRAGMENTED4:
-                              assert(samples >= 4);
-                              /* Make all samples equal. */
-                              set_random_pixels(ctx, src[size_factor], 0, random_data);
-                              /* Make samples 0..2 different. */
-                              for (unsigned i = 0; i <= 2; i++)
-                                 set_random_pixels(ctx, src[size_factor], i + 1, random_data);
-                              break;
-
-                           case FILL_RANDOM_FRAGMENTED8:
-                              assert(samples == 8);
-                              /* Make all samples equal. */
-                              set_random_pixels(ctx, src[size_factor], 0, random_data);
-                              /* Make samples 0..6 different. */
-                              for (unsigned i = 0; i <= 6; i++)
-                                 set_random_pixels(ctx, src[size_factor], i + 1, random_data);
-                              break;
+                              default:
+                                 error("invalid fill flavor");
+                              }
                            }
                         }
                      }
@@ -450,305 +471,204 @@ test_img_bandwidth(api_context *ctx, const char *test_suite_name)
                         if ((test_flavor == TEST_CLEAR || test_flavor == TEST_COPY) && yflip)
                            continue;
 
-                        const char *special_op =
-                           test_flavor == TEST_FB_CLEAR ? "cleartex" :
-                           test_flavor == TEST_CLEAR && box_flavor == BOX_FULL ? "fastclear" :
-                           test_flavor == TEST_BLIT && !yflip ? "copy" :
-                           test_flavor == TEST_RESOLVE ? "cbresolve" : "n/a";
+                        if (stage == REPORT) {
+                           const char *special_op =
+                              test_flavor == TEST_FB_CLEAR ? "cleartex" :
+                              test_flavor == TEST_CLEAR && box_flavor == BOX_FULL ? "fastclear" :
+                              test_flavor == TEST_BLIT && !yflip ? "copy" :
+                              test_flavor == TEST_RESOLVE ? "cbresolve" : "n/a";
 
-                        printf("%-8s, %-9s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
-                               test_strings[test_flavor], special_op, img_type,
-                               util_format_short_name(formats[format_index]), samples,
-                               layout_strings[layout], fill_strings[fill_flavor],
-                               box_strings[box_flavor]);
+                           printf("%-8s, %-9s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
+                                  test_strings[test_flavor], special_op, img_type,
+                                  formats[format_index].name, samples,
+                                  layout_strings[layout], fill_strings[fill_flavor],
+                                  box_strings[box_flavor]);
+                        }
 
                         for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
-                           /* Determine the box. */
-                           struct pipe_box src_box = {0}, dst_box = {0};
-                           dst_box.width = dst[size_factor]->width;
-                           dst_box.height = dst[size_factor]->height;
-                           dst_box.depth = dst[size_factor]->depth;
-                           src_box = dst_box;
+                           if (stage == COUNT_TESTS)
+                              (*num_tests)++;
 
-                           switch (box_flavor) {
-                           case BOX_FULL:
-                              break;
+                           api_image_box src_box = {0}, dst_box = {0};
 
-                           case BOX_FULL_YFLIP:
-                              src_box.y = src_box.height;
-                              src_box.height = -src_box.height;
-                              break;
-
-                           case BOX_PARTIAL:
-                              if (img_type == 1) {
-                                 dst_box.x = 256;
-                                 dst_box.width -= 256;
-                              } else if (img_type == 2) {
-                                 dst_box.x = 16;
-                                 dst_box.y = 16;
-                                 dst_box.width -= 16;
-                                 dst_box.height -= 16;
-                              } else {
-                                 dst_box.x = 8;
-                                 dst_box.y = 8;
-                                 dst_box.z = 8;
-                                 dst_box.width -= 8;
-                                 dst_box.height -= 8;
-                                 dst_box.depth -= 8;
-                              }
-                              src_box = dst_box;
-                              break;
-
-                           case BOX_PARTIAL_UNALIGNED:
-                           case BOX_PARTIAL_UNALIGNED_YFLIP: {
-                              const unsigned off = 13;
-                              dst_box.x = off;
-                              dst_box.width -= off;
-                              if (img_type >= 2) {
-                                 dst_box.y = off;
-                                 dst_box.height -= off;
-                                 if (img_type == 3) {
-                                    dst_box.z = off;
-                                    dst_box.depth -= off;
-                                 }
-                              }
+                           if (stage == RUN) {
+                              /* Determine the box. */
+                              dst_box.width = dst[size_factor]->width;
+                              dst_box.height = dst[size_factor]->height;
+                              dst_box.depth = dst[size_factor]->depth;
                               src_box = dst_box;
 
-                              if (box_flavor == BOX_PARTIAL_UNALIGNED_YFLIP) {
-                                 src_box.y += src_box.height;
+                              switch (box_flavor) {
+                              case BOX_FULL:
+                                 break;
+
+                              case BOX_FULL_YFLIP:
+                                 src_box.y = src_box.height;
                                  src_box.height = -src_box.height;
-                              }
-                              break;
-                           }
-                           }
+                                 break;
 
-                           assert(dst_box.x >= 0);
-                           assert(dst_box.y >= 0);
-                           assert(dst_box.z >= 0);
-                           assert(dst_box.width > 0);
-                           assert(dst_box.height > 0);
-                           assert(dst_box.depth > 0);
-                           assert(dst_box.x + dst_box.width <= dst[size_factor]->width);
-                           assert(dst_box.y + dst_box.height <= dst[size_factor]->height);
-                           assert(dst_box.z + dst_box.depth <= dst[size_factor]->depth);
+                              case BOX_PARTIAL:
+                                 if (img_type == 1) {
+                                    dst_box.x = 256;
+                                    dst_box.width -= 256;
+                                 } else if (img_type == 2) {
+                                    dst_box.x = 16;
+                                    dst_box.y = 16;
+                                    dst_box.width -= 16;
+                                    dst_box.height -= 16;
+                                 } else {
+                                    dst_box.x = 8;
+                                    dst_box.y = 8;
+                                    dst_box.z = 8;
+                                    dst_box.width -= 8;
+                                    dst_box.height -= 8;
+                                    dst_box.depth -= 8;
+                                 }
+                                 src_box = dst_box;
+                                 break;
 
-                           if (src[size_factor]) {
-                              assert(src_box.width);
-                              assert(src_box.height);
-                              assert(src_box.depth > 0);
-                              if (src_box.width > 0) {
-                                 assert(src_box.x >= 0);
-                                 assert(src_box.x + src_box.width <= src[size_factor]->width);
-                              } else {
-                                 assert(src_box.x + src_box.width >= 0);
-                                 assert(src_box.x - 1 < src[size_factor]->width);
-                              }
-                              if (src_box.height > 0) {
-                                 assert(src_box.y >= 0);
-                                 assert(src_box.y + src_box.height <= src[size_factor]->height);
-                              } else {
-                                 assert(src_box.y + src_box.height >= 0);
-                                 assert(src_box.y - 1 < src[size_factor]->height);
-                              }
-                              assert(src_box.z >= 0);
-                              assert(src_box.z + src_box.depth <= src[size_factor]->depth);
-                           }
+                              case BOX_PARTIAL_UNALIGNED:
+                              case BOX_PARTIAL_UNALIGNED_YFLIP: {
+                                 const unsigned off = 13;
+                                 dst_box.x = off;
+                                 dst_box.width -= off;
+                                 if (img_type >= 2) {
+                                    dst_box.y = off;
+                                    dst_box.height -= off;
+                                    if (img_type == 3) {
+                                       dst_box.z = off;
+                                       dst_box.depth -= off;
+                                    }
+                                 }
+                                 src_box = dst_box;
 
-                           for (unsigned method = 0; method < NUM_METHODS; method++) {
-                              struct pipe_surface surf_templ;
+                                 if (box_flavor == BOX_PARTIAL_UNALIGNED_YFLIP) {
+                                    src_box.y += src_box.height;
+                                    src_box.height = -src_box.height;
+                                 }
+                                 break;
+                              }
+
+                              default:
+                                 error("invalid box flavor");
+                              }
+
+                              assert(dst_box.x >= 0);
+                              assert(dst_box.y >= 0);
+                              assert(dst_box.z >= 0);
+                              assert(dst_box.width > 0);
+                              assert(dst_box.height > 0);
+                              assert(dst_box.depth > 0);
+                              assert(dst_box.x + dst_box.width <= dst[size_factor]->width);
+                              assert(dst_box.y + dst_box.height <= dst[size_factor]->height);
+                              assert(dst_box.z + dst_box.depth <= dst[size_factor]->depth);
+
+                              if (src[size_factor]) {
+                                 assert(src_box.width);
+                                 assert(src_box.height);
+                                 assert(src_box.depth > 0);
+                                 if (src_box.width > 0) {
+                                    assert(src_box.x >= 0);
+                                    assert(src_box.x + src_box.width <= src[size_factor]->width);
+                                 } else {
+                                    assert(src_box.x + src_box.width >= 0);
+                                    assert(src_box.x - 1 < src[size_factor]->width);
+                                 }
+                                 if (src_box.height > 0) {
+                                    assert(src_box.y >= 0);
+                                    assert(src_box.y + src_box.height <= src[size_factor]->height);
+                                 } else {
+                                    assert(src_box.y + src_box.height >= 0);
+                                    assert(src_box.y - 1 < src[size_factor]->height);
+                                 }
+                                 assert(src_box.z >= 0);
+                                 assert(src_box.z + src_box.depth <= src[size_factor]->depth);
+                              }
+
+                              ctx->begin_cmdbuf(ctx);
 
                               /* Create pipe_surface for clears. */
                               if (test_flavor == TEST_FB_CLEAR || test_flavor == TEST_CLEAR) {
 
-                                 u_surface_default_template(&surf_templ, dst[size_factor]);
-                                 surf_templ.last_layer = dst[size_factor]->depth - 1;
-
                                  /* Bind the colorbuffer for FB clears. */
-                                 if (box_flavor == BOX_FULL) {
-                                    struct pipe_framebuffer_state fb = {0};
-                                    fb.width = dst[size_factor]->width;
-                                    fb.height = dst[size_factor]->height;
-                                    fb.layers = dst[size_factor]->depth;
-                                    fb.samples = dst[size_factor]->samples;
-                                    fb.nr_cbufs = 1;
-                                    fb.cbufs[0] = surf_templ;
-                                    ctx->set_framebuffer_state(ctx, &fb);
-                                    si_emit_barrier_direct(sctx);
+                                 if (test_flavor == TEST_FB_CLEAR) {
+                                    ctx->begin_render_pass(ctx,
+                                                           &(api_render_pass_desc) {
+                                                              .fb = fb[size_factor],
+                                                              .color_clear_value = *clear_color,
+                                                           });
                                  }
                               }
 
-                              struct pipe_query *q = ctx->create_query(ctx, PIPE_QUERY_TIME_ELAPSED, 0);
-                              unsigned num_warmup_repeats = 1, num_repeats = 4;
-                              bool success = true;
-
                               /* Run tests. */
-                              for (unsigned i = 0; i < num_warmup_repeats + num_repeats; i++) {
+                              for (unsigned i = 0; i < NUM_WARMUP_RUNS + NUM_RUNS; i++) {
                                  /* The first few just warm up caches and the hw. */
-                                 if (i == num_warmup_repeats)
-                                    ctx->begin_query(ctx, q);
+                                 if (i == NUM_WARMUP_RUNS)
+                                    ctx->write_next_timestamp(ctx, timestamps);
 
                                  switch (test_flavor) {
                                  case TEST_FB_CLEAR:
+                                    break;
+
                                  case TEST_CLEAR:
-                                    switch (method) {
-                                    case METHOD_DEFAULT:
-                                       if (test_flavor == TEST_FB_CLEAR) {
-                                          ctx->clear(ctx, PIPE_CLEAR_COLOR, NULL, clear_color, 0, 0);
-                                          sctx->barrier_flags |= SI_BARRIER_SYNC_AND_INV_CB | SI_BARRIER_INV_L2;
-                                       } else {
-                                          ctx->clear_render_target(ctx, &surf_templ, clear_color,
-                                                                   dst_box.x, dst_box.y,
-                                                                   dst_box.width, dst_box.height,
-                                                                   false);
-                                       }
-                                       break;
-                                    case METHOD_GFX:
-                                       si_gfx_clear_render_target(ctx, &surf_templ, clear_color,
-                                                                  dst_box.x, dst_box.y,
-                                                                  dst_box.width, dst_box.height,
-                                                                  false);
-                                       break;
-                                    case METHOD_COMPUTE:
-                                       success &=
-                                          si_compute_clear_image(sctx, surf_templ.texture,
-                                                                 surf_templ.format, 0, &dst_box,
-                                                                 clear_color, false, false);
-                                       break;
-                                    case METHOD_SPECIAL:
-                                       if (test_flavor == TEST_CLEAR) {
-                                          success &=
-                                             si_compute_fast_clear_image(sctx, surf_templ.texture,
-                                                                         surf_templ.format, 0,
-                                                                         &dst_box, clear_color,
-                                                                         false, false);
-                                       } else {
-                                          ctx->clear_render_target(ctx, &surf_templ, clear_color,
-                                                                   dst_box.x, dst_box.y,
-                                                                   dst_box.width, dst_box.height,
-                                                                   false);
-                                       }
-                                       break;
-                                    }
+                                    ctx->clear_image(ctx, dst[size_factor], &dst_box, clear_color);
                                     break;
 
                                  case TEST_COPY:
-                                    switch (method) {
-                                    case METHOD_DEFAULT:
-                                       si_resource_copy_region(ctx, dst[size_factor], 0, dst_box.x,
-                                                               dst_box.y, dst_box.z, src[size_factor],
-                                                               0, &src_box);
-                                       break;
-                                    case METHOD_GFX:
-                                       si_gfx_copy_image(sctx, dst[size_factor], 0, dst_box.x,
-                                                         dst_box.y, dst_box.z, src[size_factor],
-                                                         0, &src_box);
-                                       break;
-                                    case METHOD_COMPUTE:
-                                       success &= si_compute_copy_image(sctx, dst[size_factor], 0,
-                                                                        src[size_factor], 0,
-                                                                        dst_box.x, dst_box.y,
-                                                                        dst_box.z, &src_box, false);
-                                       break;
-                                    case METHOD_SPECIAL:
-                                       success = false;
-                                       break;
-                                    }
-                                    break;
-
                                  case TEST_BLIT:
                                  case TEST_RESOLVE: {
-                                    struct pipe_blit_info info;
-                                    memset(&info, 0, sizeof(info));
-                                    info.dst.resource = dst[size_factor];
-                                    info.dst.level = 0;
-                                    info.dst.box = dst_box;
-                                    info.dst.format = formats[format_index];
-                                    info.src.resource = src[size_factor];
-                                    info.src.level = 0;
-                                    info.src.box = src_box;
-                                    info.src.format = formats[format_index];
-                                    info.mask = PIPE_MASK_RGBA;
-
-                                    switch (method) {
-                                    case METHOD_DEFAULT:
-                                       ctx->blit(ctx, &info);
-                                       break;
-                                    case METHOD_GFX:
-                                       si_gfx_blit(ctx, &info);
-                                       break;
-                                    case METHOD_COMPUTE:
-                                       success &= si_compute_blit(sctx, &info, NULL, 0, 0, false);
-                                       break;
-                                    case METHOD_SPECIAL:
-                                       if (test_flavor == TEST_BLIT && !yflip) {
-                                          si_resource_copy_region(ctx, dst[size_factor], 0, dst_box.x,
-                                                                  dst_box.y, dst_box.z, src[size_factor],
-                                                                  0, &src_box);
-                                       } else if (test_flavor == TEST_RESOLVE) {
-                                          success &= si_msaa_resolve_blit_via_CB(ctx, &info, false);
-                                       } else {
-                                          success = false;
-                                       }
-                                       break;
-                                    }
+                                    ctx->blit_image(ctx,
+                                                    &(api_blit_desc){
+                                                       .dst = dst[size_factor],
+                                                       .dst_box = dst_box,
+                                                       .src = src[size_factor],
+                                                       .src_box = src_box,
+                                                       .is_copy = test_flavor == TEST_COPY,
+                                                    });
                                     break;
                                  }
+
+                                 default:
+                                    error("invalid test flavor");
                                  }
                               }
 
-                              ctx->end_query(ctx, q);
-
-                              /* Wait for idle after all tests. */
-                              sctx->barrier_flags |= SI_BARRIER_SYNC_AND_INV_CB |
-                                                     SI_BARRIER_SYNC_CS |
-                                                     SI_BARRIER_INV_L2 | SI_BARRIER_INV_SMEM |
-                                                     SI_BARRIER_INV_VMEM;
-                              si_emit_barrier_direct(sctx);
+                              ctx->write_next_timestamp(ctx, timestamps);
 
                               /* Unbind the colorbuffer. */
-                              if ((test_flavor == TEST_FB_CLEAR || test_flavor == TEST_CLEAR) &&
-                                  box_flavor == BOX_FULL) {
-                                 struct pipe_framebuffer_state fb = {0};
-                                 fb.width = 64;
-                                 fb.height = 64;
-                                 fb.layers = 1;
-                                 fb.samples = 1;
-                                 ctx->set_framebuffer_state(ctx, &fb);
-                              }
+                              if (test_flavor == TEST_FB_CLEAR)
+                                 ctx->end_render_pass(ctx);
 
-                              /* Get results. */
-                              if (success) {
-                                 union pipe_query_result result;
-                                 ctx->get_query_result(ctx, q, true, &result);
-                                 ctx->destroy_query(ctx, q);
+                              ctx->end_cmdbuf_and_submit(ctx);
+                           }
 
-                                 double sec = (double)result.u64 / (1000 * 1000 * 1000);
-                                 uint64_t pixels_per_surf = num_repeats * (uint64_t) dst_box.width *
-                                                            dst_box.height * dst_box.depth;
-                                 uint64_t bytes;
+                           /* Get results. */
+                           if (stage == REPORT) {
+                              uint64_t num_pixels = (uint64_t)NUM_RUNS * dst_box.width *
+                                                    dst_box.height * dst_box.depth;
+                              uint64_t bytes;
 
-                                 if (test_flavor == TEST_FB_CLEAR || test_flavor == TEST_CLEAR)
-                                    bytes = pixels_per_surf * pix_size;
-                                 else if (test_flavor == TEST_RESOLVE)
-                                    bytes = pixels_per_surf * (pix_size + bpe);
-                                 else
-                                    bytes = pixels_per_surf * pix_size * 2;
+                              if (test_flavor == TEST_FB_CLEAR || test_flavor == TEST_CLEAR)
+                                 bytes = num_pixels * msaa_pix_size;
+                              else if (test_flavor == TEST_RESOLVE)
+                                 bytes = num_pixels * (msaa_pix_size + bpe);
+                              else
+                                 bytes = num_pixels * msaa_pix_size * 2;
 
-                                 double bytes_per_sec = bytes / sec;
-
-                                 printf(" , %9.2f", bytes_per_sec / (1024 * 1024 * 1024));
-                              } else {
-                                 printf(" ,     n/a  ");
-                              }
+                              print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
+                                                                    " , %9.2f");
                            }
                         }
 
-                        printf("\n");
+                        if (stage == REPORT)
+                           printf("\n");
                      }
                   }
 
-                  // TODO: wait for idle or do it later?
+                  ctx->wait_idle(ctx);
+
                   for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
+                     ctx->destroy_framebuffer(ctx, fb[size_factor]);
                      ctx->destroy_image(ctx, dst[size_factor]);
                      ctx->destroy_image(ctx, src[size_factor]);
                   }
@@ -757,4 +677,21 @@ test_img_bandwidth(api_context *ctx, const char *test_suite_name)
          }
       }
    }
+
+   free(random_data);
+}
+
+void
+test_img_bandwidth(api_context *ctx, const char *test_suite_name)
+{
+   unsigned num_tests = 0;
+
+   run(ctx, test_suite_name, COUNT_TESTS, &num_tests, NULL);
+
+   api_timestamp_query_pool *timestamps = ctx->create_timestamp_pool(ctx, num_tests * 2);
+
+   run(ctx, test_suite_name, RUN, &num_tests, timestamps);
+
+   ctx->query_timestamps(ctx, timestamps);
+   run(ctx, test_suite_name, REPORT, NULL, timestamps);
 }

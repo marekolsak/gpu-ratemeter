@@ -29,7 +29,7 @@ gpu_ratemeter_files = files(
   'src/common.h',
   'src/main.c',
   'src/test_bufbw.c',
-  #'src/test_imgbw.c',
+  'src/test_imgbw.c',
   'src/test_pix_rate.c',
   'src/test_prim_rate.c',
   'src/test_sanity.c',

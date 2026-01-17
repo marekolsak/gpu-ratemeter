@@ -39,7 +39,7 @@ The following test suites are available:
 - `bufbw`: buffer fills and copies in GB/s
 - `draw`: clocks/draw (less is better) **{- (not implemented yet) -}**
 - `mma`: matrix multiply accumulate in TBD units **{- (not implemented yet) -}**
-- `imgbw`: image clears, image copies, blits, and MSAA resolving in GB/s **{- (not finished yet, porting from radeonsi in progress) -}**
+- `imgbw`: image clears, image copies, blits, and MSAA resolve in GB/s **{- (not finished yet, porting from radeonsi in progress) -}**
 - `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, port from piglit) -}**
 - `pix`: pixel throughput in samples/clock, all tests are run with 1x MSAA and 8x MSAA
 - `pixbw`: color buffer write throughput in GB/s, same tests as `pix`
@@ -78,7 +78,7 @@ gpu-ratemeter -lean vk.pix
 
 # Test Suites
 
-## `bufbw`: Fill and Copy Buffer Bandwidth (GB/s)
+## `bufbw`: Buffer Fill and Copy Bandwidth (GB/s)
 
 Each column is the size passed to the fill or copy buffer call.
 
@@ -89,7 +89,7 @@ Decoding test names:
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
-## `imgbw`: Clear, Copy, Blit, and MSAA Resolve Bandwidth (GB/s)
+## `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
 TODO
 

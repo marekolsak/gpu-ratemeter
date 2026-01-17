@@ -19,13 +19,17 @@
  * - CUDA? (for ML)
  * - OpenCL?
  *
+ * imgbw:
+ * - Z/S?
+ * - ideally test clears via vkCmdBeginRenderPass, vkCmdClearAttachments, vkCmdClearColorImage
+ *
  * pix:
  * - render to 3D texture?
  *
  * prim:
  * - transform feedback
+ * - GS that that only emits max_vertices / 2, max_vertices / 4, etc.
  * - TES?
- * - GS?
  *
  * AMD TODO:
  * - pix: timestamp queries are broken on gfx12 with Z/samplemask/A2C outputs and 128bpp formats, test older gens
@@ -77,7 +81,7 @@ static const struct {
    bool report_bandwidth;
 } suites[] = {
    {"bufbw", test_buf_bandwidth, true},
-   //{"imgbw", test_img_bandwidth, true},
+   {"imgbw", test_img_bandwidth, true},
    {"pix", test_pix_rate},
    {"pixbw", test_pix_rate, true},
    {"prim", test_prim_rate},
