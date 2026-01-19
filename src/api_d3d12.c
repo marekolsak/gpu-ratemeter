@@ -148,12 +148,12 @@ d3d12_create_context(const program_options *options)
    ctx->destroy_context = NULL;
 
    ctx->create_buffer = d3d12_create_buffer;
-   ctx->upload_buffer_data = d3d12_upload_buffer_data;
    ctx->destroy_buffer = NULL;
+   ctx->upload_buffer_data = d3d12_upload_buffer_data;
 
    ctx->create_image = d3d12_create_image;
-   ctx->image_write_png = d3d12_image_write_png;
    ctx->destroy_image = NULL;
+   ctx->image_write_png = d3d12_image_write_png;
 
    ctx->create_framebuffer = d3d12_create_framebuffer;
    ctx->destroy_framebuffer = NULL;
@@ -162,8 +162,8 @@ d3d12_create_context(const program_options *options)
    ctx->destroy_shader = NULL;
 
    ctx->create_pipeline = d3d12_create_pipeline;
-   ctx->bind_pipeline = d3d12_bind_pipeline;
    ctx->destroy_pipeline = NULL;
+   ctx->bind_pipeline = d3d12_bind_pipeline;
 
    ctx->begin_cmdbuf = d3d12_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = d3d12_end_cmdbuf_and_submit;

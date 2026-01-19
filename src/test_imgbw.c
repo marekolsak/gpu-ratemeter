@@ -15,6 +15,110 @@
 
 #define RANDOM_DATA_SIZE (611953 * 8) /* prime number * 8 */
 
+static void
+set_image_data(api_context *ctx, api_image *image, unsigned stride_in_bytes,
+               int sample_index, void *data)
+{
+   if (image->samples > 1) {
+      /* We have to blit the data from a single-sample image to the MSAA image. */
+      /* Uploading the data into a staging image. */
+      api_image *staging = ctx->create_image(ctx, image->type, image->format, image->width,
+                                             image->height, image->depth, 1, VK_IMAGE_TILING_LINEAR,
+                                             api_heap_device, 0);
+      ctx->upload_image_data(ctx, staging, stride_in_bytes, data);
+
+      /* Create shaders. */
+      const char *vs_source =
+            "#version 460 \n"
+            "#ifdef VULKAN \n"
+            "   #define gl_VertexID gl_VertexIndex \n"
+            "#endif \n"
+
+            "layout(location = 0) out vec2 coord; \n"
+
+            "void main() { \n"
+            /* Generate a quad from VertexID. */
+            "   gl_Position = vec4((gl_VertexID & 1) == 0 ? -1 : 1, \n"
+            "                      (gl_VertexID & 2) == 0 ? -1 : 1, 0, 1); \n"
+            "   coord = gl_Position.xy * 0.5 + 0.5; \n"
+            "}";
+
+      const char *image_type = image->depth > 1 ? (image->type == VK_IMAGE_TYPE_3D ? "3D" : "2DArray") :
+                                                  (image->type == VK_IMAGE_TYPE_2D ? "2D" : "1D");
+      const char *fs_out_type = format_is_sint(image->format) ? "ivec4" :
+                                format_is_integer(image->format) ? "uvec4" : "vec4";
+
+      char fs_source[1024];
+      snprintf(fs_source, sizeof(fs_source),
+               "#version 460 \n"
+               "#ifdef VULKAN \n"
+               "   layout(set = 0, binding = 0) readonly uniform sampler%s staging; \n"
+               "#else \n"
+               "   layout(location = 0) readonly uniform sampler%s staging; \n"
+               "#endif \n"
+
+               "layout(location = 0) in vec2 coord; \n"
+               "layout(location = 0) out %s fs_out; \n"
+
+               "void main() { \n"
+               "   fs_out = texelFetch(staging, ivec2(coord)); \n"
+               "}", image_type, image_type, fs_out_type);
+
+      api_shader *vs = ctx->create_shader(ctx, vs_source, api_shader_vs);
+      api_shader *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+
+      /* Prepare the descriptor set for binding the staging image to a fragment shader. */
+      api_descriptor_set_layout *fs_desc_set_layout =
+         ctx->create_descriptor_set_layout(ctx,
+                                           &(api_descriptor_set_layout_desc){
+                                              .sampled_image.array_size = 1,
+                                           });
+      api_descriptor_set *fs_desc_set = ctx->create_descriptor_set(ctx, fs_desc_set_layout);
+      ctx->set_sampled_image_descriptors(ctx, fs_desc_set, 1, &staging);
+
+      /* Do a blit via a draw. */
+      api_framebuffer *fb = ctx->create_framebuffer(ctx, image, NULL, image->width, image->height,
+                                                    image->samples);
+      api_pipeline *draw_rect_pipeline =
+         ctx->create_pipeline(ctx,
+                              &(api_pipeline_desc){
+                                 .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                 .desc_set_layout = fs_desc_set_layout,
+                                 .vs = vs,
+                                 .fs = fs,
+                                 .vrs_fragment_size = {1, 1},
+                                 .samplemask = sample_index == 0 ? (1 << image->samples) - 1 :
+                                                                   1 << (sample_index - 1),
+                                 .colormask = 0xf,
+                                 .fb = fb,
+                              });
+
+      ctx->begin_cmdbuf(ctx);
+      ctx->begin_render_pass(ctx,
+                             &(api_render_pass_desc){
+                                .fb = fb,
+                             });
+
+      ctx->bind_pipeline(ctx, draw_rect_pipeline);
+      ctx->bind_descriptor_set(ctx, fs_desc_set);
+      ctx->draw(ctx, &(api_draw_desc){.count = 4});
+
+      ctx->end_render_pass(ctx);
+      ctx->end_cmdbuf_and_submit(ctx);
+      ctx->wait_idle_before_deallocation(ctx);
+
+      ctx->destroy_pipeline(ctx, draw_rect_pipeline);
+      ctx->destroy_framebuffer(ctx, fb);
+      ctx->destroy_descriptor_set(ctx, fs_desc_set);
+      ctx->destroy_descriptor_set_layout(ctx, fs_desc_set_layout);
+      ctx->destroy_shader(ctx, vs);
+      ctx->destroy_shader(ctx, fs);
+      ctx->destroy_image(ctx, staging);
+   } else {
+      ctx->upload_image_data(ctx, image, stride_in_bytes, data);
+   }
+}
+
 /* For MSAA, sample_index == 0 means set all samples, while sample_index > 0
  * means set the sample equal to sample_index - 1.
  *
@@ -57,7 +161,7 @@ set_random_pixels(api_context *ctx, api_image *img, int sample_index,
       }
    }
 
-   ctx->upload_image_data(ctx, img, img_stride_in_bytes, sample_index - 1, data);
+   set_image_data(ctx, img, img_stride_in_bytes, sample_index, data);
    free(data);
 }
 
@@ -168,7 +272,7 @@ set_gradient_pixels(api_context *ctx, api_image *img)
          memcpy(data + img_layer_stride_in_bytes * z + img_stride_in_bytes * y, line, line_size);
    }
 
-   ctx->upload_image_data(ctx, img, img_stride_in_bytes, -1, data);
+   set_image_data(ctx, img, img_stride_in_bytes, -1, data);
 
    free(line);
    free(data);
@@ -479,7 +583,7 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                               test_flavor == TEST_RESOLVE ? "cbresolve" : "n/a";
 
                            printf("%-8s, %-9s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
-                                  test_strings[test_flavor], special_op, img_type,
+                                  test_strings[test_flavor], special_op, img_type + 1,
                                   formats[format_index].name, samples,
                                   layout_strings[layout], fill_strings[fill_flavor],
                                   box_strings[box_flavor]);
@@ -508,10 +612,10 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                                  break;
 
                               case BOX_PARTIAL:
-                                 if (img_type == 1) {
+                                 if (img_type == VK_IMAGE_TYPE_1D) {
                                     dst_box.x = 256;
                                     dst_box.width -= 256;
-                                 } else if (img_type == 2) {
+                                 } else if (img_type == VK_IMAGE_TYPE_2D) {
                                     dst_box.x = 16;
                                     dst_box.y = 16;
                                     dst_box.width -= 16;
@@ -532,10 +636,10 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                                  const unsigned off = 13;
                                  dst_box.x = off;
                                  dst_box.width -= off;
-                                 if (img_type >= 2) {
+                                 if (img_type >= VK_IMAGE_TYPE_2D) {
                                     dst_box.y = off;
                                     dst_box.height -= off;
-                                    if (img_type == 3) {
+                                    if (img_type == VK_IMAGE_TYPE_3D) {
                                        dst_box.z = off;
                                        dst_box.depth -= off;
                                     }
@@ -665,12 +769,15 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                      }
                   }
 
-                  ctx->wait_idle(ctx);
+                  if (stage == RUN) {
+                     ctx->wait_idle_before_deallocation(ctx);
 
-                  for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
-                     ctx->destroy_framebuffer(ctx, fb[size_factor]);
-                     ctx->destroy_image(ctx, dst[size_factor]);
-                     ctx->destroy_image(ctx, src[size_factor]);
+                     for (unsigned size_factor = 0; size_factor <= 1; size_factor++) {
+                        ctx->destroy_framebuffer(ctx, fb[size_factor]);
+                        ctx->destroy_image(ctx, dst[size_factor]);
+                        if (test_flavor != TEST_FB_CLEAR && test_flavor != TEST_CLEAR)
+                           ctx->destroy_image(ctx, src[size_factor]);
+                     }
                   }
                }
             }

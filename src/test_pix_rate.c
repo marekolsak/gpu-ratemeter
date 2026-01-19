@@ -557,7 +557,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
          continue;
       }
 
-      if (pipeline_descs[p].sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample")) {
+      if (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample")) {
          skip_pipeline[p] = true;
          continue;
       }
@@ -581,6 +581,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
 
          .vrs_fragment_size = {1, 1},
          .sample_shading = sample_shading,
+         .samplemask = (1 << samples) - 1,
          .depth_enabled = strstr(pipeline_name, "zbuf") && !strstr(pipeline_name, "z_disabled"),
          .depth_write_enabled = !strstr(pipeline_name, ".ztest"),
          .depth_compare_op = strstr(pipeline_name, ".ztest_never") ? VK_COMPARE_OP_NEVER :

@@ -205,6 +205,7 @@ test_sanity(api_context *ctx, const char *test_suite_name)
       .fs = fs,
 
       .vrs_fragment_size = {1, 1},
+      .samplemask = 0x1,
       .colormask = 0xf,
       .fb = fb,
    };

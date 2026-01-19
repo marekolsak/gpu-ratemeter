@@ -735,6 +735,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
          .rasterizationSamples = desc->fb->samples,
          .sampleShadingEnable = desc->sample_shading,
          .minSampleShading = 1,
+         .pSampleMask = (VkSampleMask[]){desc->samplemask},
          .alphaToCoverageEnable = desc->alpha_to_coverage,
       },
       .pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo) {
@@ -833,6 +834,20 @@ vk_end_cmdbuf_and_submit(api_context *ctx)
    ctx->next_cmdbuf_index = (ctx->next_cmdbuf_index + 1) % MAX_COMMAND_BUFFERS;
    ctx->current_cmd_buffer = NULL;
    ctx->current_fence = NULL;
+}
+
+static void
+wait_for_last_fence(api_context *ctx)
+{
+   unsigned last_cmdbuf = (ctx->next_cmdbuf_index - 1) % MAX_COMMAND_BUFFERS;
+
+   vk_check(vkWaitForFences(ctx->device, 1, &ctx->fences[last_cmdbuf], true, UINT64_MAX));
+}
+
+static void
+vk_wait_idle_before_deallocation(api_context *ctx)
+{
+   wait_for_last_fence(ctx);
 }
 
 static void
@@ -948,9 +963,7 @@ vk_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
    if (!pool->num_written_queries)
       return;
 
-   unsigned last_cmdbuf = (ctx->next_cmdbuf_index - 1) % MAX_COMMAND_BUFFERS;
-
-   vk_check(vkWaitForFences(ctx->device, 1, &ctx->fences[last_cmdbuf], true, UINT64_MAX));
+   wait_for_last_fence(ctx);
    vk_check(vkGetQueryPoolResults(ctx->device, pool->pool, 0, pool->num_written_queries,
                                   sizeof(uint64_t) * pool->num_written_queries, pool->results,
                                   sizeof(uint64_t), VK_QUERY_RESULT_64_BIT));
@@ -1291,14 +1304,14 @@ vk_create_context(const program_options *options)
    ctx->destroy_context = NULL;
 
    ctx->create_buffer = vk_create_buffer;
+   ctx->destroy_buffer = NULL;
    ctx->upload_buffer_data = vk_upload_buffer_data;
    ctx->clear_buffer = vk_clear_buffer;
    ctx->copy_buffer = vk_copy_buffer;
-   ctx->destroy_buffer = NULL;
 
    ctx->create_image = vk_create_image;
-   ctx->image_write_png = vk_image_write_png;
    ctx->destroy_image = NULL;
+   ctx->image_write_png = vk_image_write_png;
 
    ctx->create_framebuffer = vk_create_framebuffer;
    ctx->destroy_framebuffer = NULL;
@@ -1310,18 +1323,19 @@ vk_create_context(const program_options *options)
    ctx->destroy_descriptor_set_layout = NULL;
 
    ctx->create_descriptor_set = vk_create_descriptor_set;
+   ctx->destroy_descriptor_set = NULL;
    ctx->set_uniform_buffer_descriptor = vk_set_uniform_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = vk_set_uniform_texel_buffer_descriptors;
    ctx->set_storage_image_descriptors = vk_set_storage_image_descriptors;
    ctx->bind_descriptor_set = vk_bind_descriptor_set;
-   ctx->destroy_descriptor_set = NULL;
 
    ctx->create_pipeline = vk_create_pipeline;
-   ctx->bind_pipeline = vk_bind_pipeline;
    ctx->destroy_pipeline = NULL;
+   ctx->bind_pipeline = vk_bind_pipeline;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;
+   ctx->wait_idle_before_deallocation = vk_wait_idle_before_deallocation;
 
    ctx->begin_render_pass = vk_begin_render_pass;
    ctx->end_render_pass = vk_end_render_pass;

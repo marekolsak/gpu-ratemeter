@@ -6,6 +6,7 @@
  *
  * Test suites:
  * - iobw
+ * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
  * - rt
  * - mma
  * - draw: direct/indirect draw/multidraw clocks per draw

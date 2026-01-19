@@ -68,6 +68,9 @@ typedef struct {
 
 #ifdef GL_PRIVATE
    GLuint id;
+   GLenum target;
+   GLenum glformat;
+   GLenum gltype;
 #endif
 
 #ifdef VK_PRIVATE
@@ -84,6 +87,7 @@ typedef struct {
    api_image_box dst_box;
    api_image_box src_box;
    bool is_copy; /* whether to use a copy, i.e. no flipping/scaling/format conversions */
+   bool linear_filter;
 } api_blit_desc;
 
 typedef struct {
@@ -120,6 +124,7 @@ typedef struct {
 #define MAX_STORAGE_IMAGE_BINDINGS              1
 #define MAX_STORAGE_IMAGE_ARRAY_SIZE            1
 
+/* This is really just a binding layout, not a descriptor layout. */
 typedef struct {
    api_descriptor_binding uniform_buffer;
    api_descriptor_binding uniform_texel_buffer[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS];
@@ -182,6 +187,7 @@ typedef struct {
 
    uint8_t vrs_fragment_size[2];
    bool sample_shading;
+   unsigned samplemask;
    bool depth_enabled;
    bool depth_write_enabled;
    VkCompareOp depth_compare_op;
@@ -265,25 +271,25 @@ typedef struct api_context {
    void (*destroy_context)(struct api_context *ctx);
 
    api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap);
+   void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
    void (*upload_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, const void *data);
    void (*clear_buffer)(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
-   void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
 
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
                               VkImageTiling tiling, api_heap_type heap,
                               VkImageLayout initial_layout);
+   void (*destroy_image)(struct api_context *ctx, api_image *image);
    void (*clear_image)(struct api_context *ctx, api_image *image, api_image_box *box,
                        const VkClearColorValue *value);
    void (*blit_image)(struct api_context *ctx, api_blit_desc *desc);
    void (*upload_image_data)(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
-                             int sample_index, void *data);
+                             void *data);
    void (*image_write_png)(struct api_context *ctx, api_image *image, const char *filename);
-   void (*destroy_image)(struct api_context *ctx, api_image *image);
 
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                           unsigned width, unsigned height, unsigned samples);
@@ -305,16 +311,16 @@ typedef struct api_context {
                                                 uint64_t *offsets, uint64_t *sizes);
    void (*set_storage_image_descriptors)(struct api_context *ctx, api_descriptor_set *set,
                                          unsigned num_images, api_image **images);
-   void (*bind_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
    void (*destroy_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
+   void (*bind_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
 
    api_pipeline *(*create_pipeline)(struct api_context *ctx, const api_pipeline_desc *desc);
-   void (*bind_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
    void (*destroy_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
+   void (*bind_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
 
    void (*begin_cmdbuf)(struct api_context *ctx);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx);
-   void (*wait_idle)(struct api_context *ctx);
+   void (*wait_idle_before_deallocation)(struct api_context *ctx);
 
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
    void (*end_render_pass)(struct api_context *ctx);

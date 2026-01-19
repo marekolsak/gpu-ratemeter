@@ -1417,6 +1417,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
       .fs = state->fs[num_varyings],
 
       .vrs_fragment_size = {1, 1},
+      .samplemask = 0x1,
       .colormask = 0xf,
       .fb = state->fb,
    };
