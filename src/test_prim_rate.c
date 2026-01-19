@@ -1395,7 +1395,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
       VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
       .primitive_restart = test->geom_style == GEOM_TRI_STRIP_INDEXED_PRIM_RESTART,
 
-      .num_vb_desc = 3 + num_varyings,
+      .num_vb_desc = !mesh_wg_size ? 3 + num_varyings : 0,
       .vb_strides = {12, special0_stride, special1_stride}, /* other strides are 0 */
       .vb_formats = {
          VK_FORMAT_R32G32B32_SFLOAT, /* pos */
