@@ -20,9 +20,6 @@
  * - CUDA? (for ML)
  * - OpenCL?
  *
- * bufbw:
- * - add cached tests without cycling the buffer range
- *
  * imgbw:
  * - Z/S?
  * - ideally test clears using vkCmdBeginRenderPass, vkCmdClearAttachments, vkCmdClearColorImage

@@ -114,7 +114,7 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
     api_timestamp_query_pool *timestamps, unsigned *num_tests)
 {
    if (stage == REPORT) {
-      printf("%-46s", "Size per command");
+      printf("%-53s", "Size per command");
       for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
          if (size >= 1024 * 1024)
             printf(",%6uMB", size / (1024 * 1024));
@@ -132,7 +132,6 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
    api_buffer *devmem1 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_device);
    api_buffer *hostmem = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_host_uncached);
 
-   unsigned cycled_offset_base = 0;
    unsigned num_visited_tests = 0;
 
    /* Run tests. */
@@ -152,90 +151,97 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
       if (!ctx->has_host_uncached_heap && (dst == hostmem || src == hostmem))
          continue;
 
-      for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
-         unsigned test_src_offset = align_info[align].src_offset;
-         unsigned test_dst_offset = align_info[align].dst_offset;
+      for (unsigned cached = 0; cached < 2; cached ++) {
+         unsigned cycled_offset_base = 0;
 
-         /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
-         if (test_src_offset && test_src_offset < 4)
-            test_src_offset += 4;
-         if (test_dst_offset && test_dst_offset < 4)
-            test_dst_offset += 4;
+         for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
+            unsigned test_src_offset = align_info[align].src_offset;
+            unsigned test_dst_offset = align_info[align].dst_offset;
 
-         if (!is_copy && (test_src_offset != 0 || test_dst_offset % 4))
-            continue;
+            /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
+            if (test_src_offset && test_src_offset < 4)
+               test_src_offset += 4;
+            if (test_dst_offset && test_dst_offset < 4)
+               test_dst_offset += 4;
 
-         if (stage == REPORT) {
-            char name[1024];
-
-            snprintf(name, sizeof(name), "%s.%s.%s", test_suite_name,
-                     test_strings[test_flavor], align_info[align].string);
-            printf("%-46s", name);
-         }
-
-         for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
-            /* Don't test large sizes with host memory because it can be too slow. */
-            if (size > MAX_HOSTMEM_SIZE &&
-                (dst->heap != api_heap_device || (src && src->heap != api_heap_device))) {
-               if (stage == REPORT)
-                  printf(",%8s", "n/a");
+            if (!is_copy && (test_src_offset != 0 || test_dst_offset % 4))
                continue;
-            }
-
-            if (stage == COUNT_TESTS)
-               (*num_tests)++;
-
-            if (stage == RUN) {
-               ctx->begin_cmdbuf(ctx);
-
-               for (unsigned iter = 0; iter < NUM_WARMUP_RUNS + NUM_RUNS; iter++) {
-                  if (iter == NUM_WARMUP_RUNS)
-                     ctx->write_next_timestamp(ctx, timestamps);
-
-                  if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
-                      (is_copy && cycled_offset_base + test_src_offset + size > src->size))
-                     cycled_offset_base = 0;
-
-                  assert(cycled_offset_base + test_dst_offset + size <= dst->size);
-                  assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
-                  assert(cycled_offset_base % MAX_ALIGNMENT == 0);
-
-                  if (is_copy) {
-                     ctx->copy_buffer(ctx, dst, src,
-                                      cycled_offset_base + test_dst_offset,
-                                      cycled_offset_base + test_src_offset, size);
-                  } else {
-                     ctx->clear_buffer(ctx, dst, cycled_offset_base + test_dst_offset,
-                                       size, 0x23456789);
-                  }
-
-                  /* Use a different portion of the buffers for each test, so that they don't just
-                   * stay in the cache.
-                   */
-                  cycled_offset_base += size;
-                  cycled_offset_base = ALIGN_POT(cycled_offset_base, MAX_ALIGNMENT);
-               }
-
-               ctx->write_next_timestamp(ctx, timestamps);
-               ctx->end_cmdbuf_and_submit(ctx);
-            }
 
             if (stage == REPORT) {
-               /* When copying from DEVMEM to DEVMEM, we put 2x demand on DEVMEM bandwidth, and when
-                * copying between DEVMEM and HOSTMEM, we put only 1x demand on each, so only double
-                * the size for DEVMEM->DEVMEM copies to use the real DEVMEM bandwidth usage.
-                */
-               uint64_t num_bytes = (uint64_t)size * NUM_RUNS *
-                                    (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
-               print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f");
+               char name[1024];
+
+               snprintf(name, sizeof(name), "%s.%s.%s.%s", test_suite_name,
+                        test_strings[test_flavor], cached ? "hit" : "miss",
+                        align_info[align].string);
+               printf("%-53s", name);
             }
 
-            if (stage == RUN)
-               print_progress(*num_tests, &num_visited_tests, 20);
-         }
+            for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_STEP_SHIFT) {
+               /* Don't test large sizes with host memory because it can be too slow. */
+               if (size > MAX_HOSTMEM_SIZE &&
+                   (dst->heap != api_heap_device || (src && src->heap != api_heap_device))) {
+                  if (stage == REPORT)
+                     printf(",%8s", "n/a");
+                  continue;
+               }
 
-         if (stage == REPORT)
-            puts("");
+               if (stage == COUNT_TESTS)
+                  (*num_tests)++;
+
+               if (stage == RUN) {
+                  ctx->begin_cmdbuf(ctx);
+
+                  for (unsigned iter = 0; iter < NUM_WARMUP_RUNS + NUM_RUNS; iter++) {
+                     if (iter == NUM_WARMUP_RUNS)
+                        ctx->write_next_timestamp(ctx, timestamps);
+
+                     if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
+                         (is_copy && cycled_offset_base + test_src_offset + size > src->size))
+                        cycled_offset_base = 0;
+
+                     assert(cycled_offset_base + test_dst_offset + size <= dst->size);
+                     assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
+                     assert(cycled_offset_base % MAX_ALIGNMENT == 0);
+
+                     if (is_copy) {
+                        ctx->copy_buffer(ctx, dst, src,
+                                         cycled_offset_base + test_dst_offset,
+                                         cycled_offset_base + test_src_offset, size);
+                     } else {
+                        ctx->clear_buffer(ctx, dst, cycled_offset_base + test_dst_offset,
+                                          size, 0x23456789);
+                     }
+
+                     if (!cached) {
+                        /* Use a different portion of the buffers for each test, so that they don't just
+                         * stay in the cache.
+                         */
+                        cycled_offset_base += size;
+                        cycled_offset_base = ALIGN_POT(cycled_offset_base, MAX_ALIGNMENT);
+                     }
+                  }
+
+                  ctx->write_next_timestamp(ctx, timestamps);
+                  ctx->end_cmdbuf_and_submit(ctx);
+               }
+
+               if (stage == REPORT) {
+                  /* When copying from DEVMEM to DEVMEM, we put 2x demand on DEVMEM bandwidth, and when
+                   * copying between DEVMEM and HOSTMEM, we put only 1x demand on each, so only double
+                   * the size for DEVMEM->DEVMEM copies to use the real DEVMEM bandwidth usage.
+                   */
+                  uint64_t num_bytes = (uint64_t)size * NUM_RUNS *
+                                       (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
+                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f");
+               }
+
+               if (stage == RUN)
+                  print_progress(*num_tests, &num_visited_tests, 20);
+            }
+
+            if (stage == REPORT)
+               puts("");
+         }
       }
    }
 }

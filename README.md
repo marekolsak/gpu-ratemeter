@@ -21,7 +21,7 @@ libraries (shaders are compiled independently with no knowledge of states and ot
 In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
 
 > [!note] Disclaimer
-> The app’s results may not reflect performance across typical applications and workloads. The app aims to help developers improve all GPU API implementations, not serve as a ranking tool.
+> The app’s results may not reflect performance across typical applications and workloads. The app aims to help developers improve all GPU API implementations, not be a ranking tool.
 
 # How to Run
 
@@ -85,6 +85,7 @@ Each column is the size passed to the fill or copy buffer call.
 Decoding test names:
 - `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
 - `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
+- `miss`, `hit`: whether cache miss or cache hit bandwidth is being tested (cache misses are guaranteed only if the last level cache is <= 256 MB)
 - `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
