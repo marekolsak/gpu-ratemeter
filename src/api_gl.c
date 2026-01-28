@@ -76,7 +76,7 @@ gl_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t siz
 }
 
 static void
-gl_copy_buffer(struct api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_offset,
+gl_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_offset,
                uint64_t src_offset, uint64_t size)
 {
    glCopyNamedBufferSubData(src->id, dst->id, src_offset, dst_offset, size);
@@ -379,45 +379,45 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    if (heap != api_heap_device)
       error("GL only supports heap=device for textures");
 
-   GLenum glformat = get_gl_internalformat(format);
+   image->glinternalformat = get_gl_internalformat(format);
 
    switch (type) {
    case VK_IMAGE_TYPE_1D:
       assert(height == 1 && depth == 1 && samples == 1);
-      image->target = GL_TEXTURE_1D;
-      glCreateTextures(image->target, 1, &image->id);
-      glTextureStorage1D(image->id, 1, glformat, width);
+      image->gltarget = GL_TEXTURE_1D;
+      glCreateTextures(image->gltarget, 1, &image->id);
+      glTextureStorage1D(image->id, 1, image->glinternalformat, width);
       break;
 
    case VK_IMAGE_TYPE_2D:
       if (samples > 1) {
          if (depth > 1) {
-            image->target = GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
-            glCreateTextures(image->target, 1, &image->id);
-            glTextureStorage3DMultisample(image->id, samples, glformat, width, height, depth, true);
+            image->gltarget = GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
+            glCreateTextures(image->gltarget, 1, &image->id);
+            glTextureStorage3DMultisample(image->id, samples, image->glinternalformat, width, height, depth, true);
          } else {
-            image->target = GL_TEXTURE_2D_MULTISAMPLE;
-            glCreateTextures(image->target, 1, &image->id);
-            glTextureStorage2DMultisample(image->id, samples, glformat, width, height, true);
+            image->gltarget = GL_TEXTURE_2D_MULTISAMPLE;
+            glCreateTextures(image->gltarget, 1, &image->id);
+            glTextureStorage2DMultisample(image->id, samples, image->glinternalformat, width, height, true);
          }
       } else {
          if (depth > 1) {
-            image->target = GL_TEXTURE_2D_ARRAY;
-            glCreateTextures(image->target, 1, &image->id);
-            glTextureStorage3D(image->id, 1, glformat, width, height, depth);
+            image->gltarget = GL_TEXTURE_2D_ARRAY;
+            glCreateTextures(image->gltarget, 1, &image->id);
+            glTextureStorage3D(image->id, 1, image->glinternalformat, width, height, depth);
          } else {
-            image->target = GL_TEXTURE_2D;
-            glCreateTextures(image->target, 1, &image->id);
-            glTextureStorage2D(image->id, 1, glformat, width, height);
+            image->gltarget = GL_TEXTURE_2D;
+            glCreateTextures(image->gltarget, 1, &image->id);
+            glTextureStorage2D(image->id, 1, image->glinternalformat, width, height);
          }
       }
       break;
 
    case VK_IMAGE_TYPE_3D:
       assert(samples == 1);
-      image->target = GL_TEXTURE_3D;
-      glCreateTextures(image->target, 1, &image->id);
-      glTextureStorage3D(image->id, 1, glformat, width, height, depth);
+      image->gltarget = GL_TEXTURE_3D;
+      glCreateTextures(image->gltarget, 1, &image->id);
+      glTextureStorage3D(image->id, 1, image->glinternalformat, width, height, depth);
       break;
 
    default:
@@ -438,7 +438,7 @@ gl_destroy_image(api_context *ctx, api_image *image)
 }
 
 static void
-gl_clear_image(struct api_context *ctx, api_image *image, api_image_box *box,
+gl_clear_image(api_context *ctx, api_image *image, api_image_box *box,
                const VkClearColorValue *value)
 {
    if (format_is_sint(image->format))
@@ -452,7 +452,7 @@ gl_clear_image(struct api_context *ctx, api_image *image, api_image_box *box,
 }
 
 static void
-gl_blit_image(struct api_context *ctx, api_blit_desc *desc)
+gl_blit_image(api_context *ctx, api_blit_desc *desc)
 {
    if (desc->is_copy) {
       assert(desc->dst_box.width == desc->src_box.width);
@@ -464,9 +464,9 @@ gl_blit_image(struct api_context *ctx, api_blit_desc *desc)
       assert(desc->dst->samples == desc->src->samples);
       assert(!desc->linear_filter);
 
-      glCopyImageSubData(desc->src->id, desc->src->target, 0,
+      glCopyImageSubData(desc->src->id, desc->src->gltarget, 0,
                          desc->src_box.x, desc->src_box.y, desc->src_box.z,
-                         desc->dst->id, desc->dst->target, 0,
+                         desc->dst->id, desc->dst->gltarget, 0,
                          desc->dst_box.x, desc->dst_box.y, desc->dst_box.z,
                          desc->src_box.width, desc->src_box.height, desc->src_box.depth);
    } else {
@@ -501,7 +501,7 @@ gl_blit_image(struct api_context *ctx, api_blit_desc *desc)
 }
 
 static void
-gl_upload_image_data(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
+gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_bytes,
                      void *data)
 {
    assert(image->samples == 1);
@@ -643,7 +643,7 @@ gl_create_shader(api_context *ctx, const char *source, api_shader_type type)
 }
 
 static api_descriptor_set_layout *
-gl_create_descriptor_set_layout(struct api_context *ctx,
+gl_create_descriptor_set_layout(api_context *ctx,
                                 const api_descriptor_set_layout_desc *desc)
 {
    api_descriptor_set_layout *layout = calloc(1, sizeof(api_descriptor_set_layout));
@@ -652,6 +652,7 @@ gl_create_descriptor_set_layout(struct api_context *ctx,
    assert(desc->uniform_buffer.array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
    for (unsigned i = 0; i < MAX_UNIFORM_TEXEL_BUFFER_BINDINGS; i++)
       assert(desc->uniform_texel_buffer[i].array_size <= MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE);
+   assert(desc->combined_image_sampler.array_size <= MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE);
    assert(desc->storage_image.array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
 
    return layout;
@@ -667,7 +668,7 @@ gl_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
 }
 
 static void
-gl_set_uniform_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+gl_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
    assert(set->layout->desc.uniform_buffer.array_size);
@@ -677,7 +678,7 @@ gl_set_uniform_buffer_descriptors(struct api_context *ctx, api_descriptor_set *s
 }
 
 static void
-gl_set_uniform_texel_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+gl_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
                                         unsigned binding_index, unsigned num_buffers,
                                         api_buffer **buffers, VkFormat *formats,
                                         uint64_t *offsets, uint64_t *sizes)
@@ -691,6 +692,23 @@ gl_set_uniform_texel_buffer_descriptors(struct api_context *ctx, api_descriptor_
    for (unsigned i = 0; i < num_buffers; i++) {
       glTextureBufferRange(set->tbo_ids[binding_index][i], get_gl_internalformat(formats[i]), buffers[i]->id,
                            offsets[i], sizes[i]);
+   }
+}
+
+static void
+gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *set, unsigned num_samplers,
+                                          api_image **images)
+{
+   assert(num_samplers <= set->layout->desc.combined_image_sampler.array_size);
+
+   glDeleteTextures(num_samplers, set->tex_ids);
+
+   for (unsigned i = 0; i < num_samplers; i++) {
+      glCreateTextures(images[i]->gltarget, 1, &set->tex_ids[i]);
+      glTextureView(set->tex_ids[i], images[i]->gltarget, images[i]->id, images[i]->glinternalformat,
+                    0, 1, 0, images[i]->depth);
+      glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
    }
 }
 
@@ -717,6 +735,11 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
          glBindTextures(set->layout->desc.uniform_texel_buffer[i].gl_binding,
                         set->layout->desc.uniform_texel_buffer[i].array_size, set->tbo_ids[i]);
       }
+   }
+
+   if (set->layout->desc.combined_image_sampler.array_size) {
+      glBindTextures(set->layout->desc.combined_image_sampler.gl_binding,
+                     set->layout->desc.combined_image_sampler.array_size, set->tex_ids);
    }
 
    if (set->layout->desc.storage_image.array_size) {
@@ -961,7 +984,7 @@ gl_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offs
 }
 
 static void
-gl_bind_index_buffer(struct api_context *ctx, api_buffer *ib)
+gl_bind_index_buffer(api_context *ctx, api_buffer *ib)
 {
    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib->id);
 }
@@ -1110,6 +1133,7 @@ gl_create_context(const program_options *options)
    ctx->destroy_descriptor_set = NULL;
    ctx->set_uniform_buffer_descriptor = gl_set_uniform_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = gl_set_uniform_texel_buffer_descriptors;
+   ctx->set_combined_image_sampler_descriptors = gl_set_combined_image_sampler_descriptors;
    ctx->set_storage_image_descriptors = gl_set_storage_image_descriptors;
    ctx->bind_descriptor_set = gl_bind_descriptor_set;
 

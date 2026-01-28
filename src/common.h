@@ -68,7 +68,8 @@ typedef struct {
 
 #ifdef GL_PRIVATE
    GLuint id;
-   GLenum target;
+   GLenum gltarget;
+   GLenum glinternalformat;
    GLenum glformat;
    GLenum gltype;
 #endif
@@ -121,6 +122,7 @@ typedef struct {
 #define MAX_UNIFORM_BUFFER_ARRAY_SIZE           1
 #define MAX_UNIFORM_TEXEL_BUFFER_BINDINGS       5
 #define MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE     8
+#define MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE   1
 #define MAX_STORAGE_IMAGE_BINDINGS              1
 #define MAX_STORAGE_IMAGE_ARRAY_SIZE            1
 
@@ -128,6 +130,7 @@ typedef struct {
 typedef struct {
    api_descriptor_binding uniform_buffer;
    api_descriptor_binding uniform_texel_buffer[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS];
+   api_descriptor_binding combined_image_sampler;
    api_descriptor_binding storage_image;
 } api_descriptor_set_layout_desc;
 
@@ -148,6 +151,7 @@ typedef struct {
    GLintptr ubo_offset;
    GLsizeiptr ubo_size;
    GLuint tbo_ids[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS][MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE];
+   GLuint tex_ids[MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE];
    GLuint image_ids[MAX_STORAGE_IMAGE_ARRAY_SIZE];
 #endif
 
@@ -309,6 +313,8 @@ typedef struct api_context {
                                                 unsigned binding_index, unsigned num_buffers,
                                                 api_buffer **buffers, VkFormat *formats,
                                                 uint64_t *offsets, uint64_t *sizes);
+   void (*set_combined_image_sampler_descriptors)(struct api_context *ctx, api_descriptor_set *set,
+                                                  unsigned num_samplers, api_image **images);
    void (*set_storage_image_descriptors)(struct api_context *ctx, api_descriptor_set *set,
                                          unsigned num_images, api_image **images);
    void (*destroy_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);

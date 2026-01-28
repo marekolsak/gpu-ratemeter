@@ -20,16 +20,20 @@
  * - CUDA? (for ML)
  * - OpenCL?
  *
+ * bufbw:
+ * - add cached tests without cycling the buffer range
+ *
  * imgbw:
  * - Z/S?
- * - ideally test clears via vkCmdBeginRenderPass, vkCmdClearAttachments, vkCmdClearColorImage
+ * - ideally test clears using vkCmdBeginRenderPass, vkCmdClearAttachments, vkCmdClearColorImage
+ * - test 2D array layered clears as well
  *
  * pix:
  * - render to 3D texture?
  *
  * prim:
  * - transform feedback
- * - GS that that only emits max_vertices / 2, max_vertices / 4, etc.
+ * - GS that only emits max_vertices / 2, max_vertices / 4, etc.
  * - TES?
  *
  * AMD TODO:

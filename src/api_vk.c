@@ -150,7 +150,7 @@ vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t siz
 }
 
 static void
-vk_copy_buffer(struct api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_offset,
+vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_offset,
                uint64_t src_offset, uint64_t size)
 {
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
@@ -467,7 +467,7 @@ vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
 }
 
 static api_descriptor_set_layout *
-vk_create_descriptor_set_layout(struct api_context *ctx,
+vk_create_descriptor_set_layout(api_context *ctx,
                                 const api_descriptor_set_layout_desc *desc)
 {
    api_descriptor_set_layout *layout = calloc(1, sizeof(api_descriptor_set_layout));
@@ -554,7 +554,7 @@ vk_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
 }
 
 static void
-vk_set_uniform_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+vk_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
    assert(set->layout->desc.uniform_buffer.array_size);
@@ -577,7 +577,7 @@ vk_set_uniform_buffer_descriptors(struct api_context *ctx, api_descriptor_set *s
 }
 
 static void
-vk_set_uniform_texel_buffer_descriptors(struct api_context *ctx, api_descriptor_set *set,
+vk_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
                                         unsigned binding_index, unsigned num_buffers,
                                         api_buffer **buffers, VkFormat *formats,
                                         uint64_t *offsets, uint64_t *sizes)
@@ -907,7 +907,7 @@ vk_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offs
 }
 
 static void
-vk_bind_index_buffer(struct api_context *ctx, api_buffer *ib)
+vk_bind_index_buffer(api_context *ctx, api_buffer *ib)
 {
    vkCmdBindIndexBuffer(ctx->current_cmd_buffer, ib->buffer, 0, VK_INDEX_TYPE_UINT32);
 }

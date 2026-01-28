@@ -71,10 +71,10 @@ set_image_data(api_context *ctx, api_image *image, unsigned stride_in_bytes,
       api_descriptor_set_layout *fs_desc_set_layout =
          ctx->create_descriptor_set_layout(ctx,
                                            &(api_descriptor_set_layout_desc){
-                                              .sampled_image.array_size = 1,
+                                              .combined_image_sampler.array_size = 1,
                                            });
       api_descriptor_set *fs_desc_set = ctx->create_descriptor_set(ctx, fs_desc_set_layout);
-      ctx->set_sampled_image_descriptors(ctx, fs_desc_set, 1, &staging);
+      ctx->set_combined_image_sampler_descriptors(ctx, fs_desc_set, 1, &staging);
 
       /* Do a blit via a draw. */
       api_framebuffer *fb = ctx->create_framebuffer(ctx, image, NULL, image->width, image->height,
