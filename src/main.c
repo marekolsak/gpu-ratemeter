@@ -21,9 +21,19 @@
  * - OpenCL?
  *
  * imgbw:
+ * - test clears with:
+ *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearColorImage / vkCmdClearDepthStencilImage
+ *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer, glClearTexSubImage
+ *    - 2D array layered clears (since 3D layered clears aren't possible in Vulkan)
+ * - test blits with:
+ *    - vkCmdCopyImage2, vkCmdBlitImage2
+ *    - glCopyImageSubData, glBlitFramebuffer
+ *    - 2D array images
+ * - test resolve:
+ *    - vkCmdResolveImage, pResolveAttachments,
+ *    - glBlitFramebuffer
+ *    - 2D array images?
  * - Z/S?
- * - ideally test clears using vkCmdBeginRenderPass, vkCmdClearAttachments, vkCmdClearColorImage
- * - test 2D array layered clears as well
  *
  * pix:
  * - render to 3D texture?
@@ -32,6 +42,10 @@
  * - transform feedback
  * - GS that only emits max_vertices / 2, max_vertices / 4, etc.
  * - TES?
+ * - GL clip planes
+ *
+ * raster:
+ * - test rasterizer efficiency with different screen-space triangle sizes (similar to pix)
  *
  * AMD TODO:
  * - pix: timestamp queries are broken on gfx12 with Z/samplemask/A2C outputs and 128bpp formats, test older gens

@@ -135,7 +135,7 @@ test_sanity(api_context *ctx, const char *test_suite_name)
 
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
-                                           api_heap_device, 0);
+                                           api_heap_device);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                                  colorbuf->height, colorbuf->samples);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);
@@ -219,16 +219,16 @@ test_sanity(api_context *ctx, const char *test_suite_name)
    ctx->bind_pipeline(ctx, pipeline);
    ctx->bind_vertex_buffers(ctx, vb, vb_offsets);
 
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 0});
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 4});
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 8});
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 12});
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 16});
-   ctx->draw(ctx, &(api_draw_desc){.count = 4, .first_vertex = 20});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 0});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 4});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 8});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 12});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 16});
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 20});
 
    ctx->end_render_pass(ctx);
    ctx->end_cmdbuf_and_submit(ctx);
 
-   ctx->image_write_png(ctx, fb->colorbuf, "output.png");
+   ctx->image_write_png(ctx, fb->colorbuf, 0, "output.png");
    run_image_viewer("output.png");
 }

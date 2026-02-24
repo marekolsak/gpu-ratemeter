@@ -632,8 +632,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
     * throughput.
     */
    api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
-                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device,
-                                              VK_IMAGE_LAYOUT_GENERAL);
+                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device);
 
    /* Create the descriptor layout and the set. */
    api_descriptor_set_layout *desc_set_layout =
@@ -672,12 +671,12 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
       api_image *colorbuf = NULL;
       if (format) {
          colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size, fb_size, 1, samples,
-                                      VK_IMAGE_TILING_OPTIMAL, api_heap_device, 0);
+                                      VK_IMAGE_TILING_OPTIMAL, api_heap_device);
       }
 
       api_image *zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
                                           fb_size, fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
-                                          api_heap_device, 0);
+                                          api_heap_device);
 
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;
@@ -767,11 +766,13 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
          ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
 
          /* Warm up the GPU. */
-         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3 / 4});
+         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3 / 4,
+                                         .instance_count = 1});
 
          /* Measure. */
          ctx->write_next_timestamp(ctx, timestamps);
-         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3});
+         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3,
+                                         .instance_count = 1});
          ctx->write_next_timestamp(ctx, timestamps);
 
          ctx->end_render_pass(ctx);

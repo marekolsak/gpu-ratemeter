@@ -1195,6 +1195,7 @@ PFNGLWINDOWPOS3IVPROC glad_glWindowPos3iv = NULL;
 PFNGLWINDOWPOS3SPROC glad_glWindowPos3s = NULL;
 PFNGLWINDOWPOS3SVPROC glad_glWindowPos3sv = NULL;
 int GLAD_GL_EXT_mesh_shader = 0;
+int GLAD_GL_MESA_texture_tiling_linear = 0;
 PFNGLDRAWMESHTASKSEXTPROC glad_glDrawMeshTasksEXT = NULL;
 PFNGLDRAWMESHTASKSINDIRECTEXTPROC glad_glDrawMeshTasksIndirectEXT = NULL;
 PFNGLMULTIDRAWMESHTASKSINDIRECTEXTPROC glad_glMultiDrawMeshTasksIndirectEXT = NULL;
@@ -2319,6 +2320,7 @@ static void load_GL_EXT_mesh_shader(GLADloadproc load) {
 static int find_extensionsGL(void) {
 	if (!get_exts()) return 0;
 	GLAD_GL_EXT_mesh_shader = has_ext("GL_EXT_mesh_shader");
+	GLAD_GL_MESA_texture_tiling_linear = has_ext("GL_MESA_texture_tiling_linear");
 	free_exts();
 	return 1;
 }

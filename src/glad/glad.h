@@ -5231,6 +5231,7 @@ GLAPI PFNGLPOLYGONOFFSETCLAMPPROC glad_glPolygonOffsetClamp;
 #ifndef GL_EXT_mesh_shader
 #define GL_EXT_mesh_shader 1
 GLAPI int GLAD_GL_EXT_mesh_shader;
+GLAPI int GLAD_GL_MESA_texture_tiling_linear;
 typedef void (APIENTRYP PFNGLDRAWMESHTASKSEXTPROC)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
 GLAPI PFNGLDRAWMESHTASKSEXTPROC glad_glDrawMeshTasksEXT;
 #define glDrawMeshTasksEXT glad_glDrawMeshTasksEXT

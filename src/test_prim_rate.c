@@ -1276,14 +1276,14 @@ run_draws(api_context *ctx, unsigned num_iterations, enum geometry_style geom_st
        geom_style == GEOM_TRI_STRIP_INDEXED ||
        geom_style == GEOM_TRI_STRIP_INDEXED_PRIM_RESTART) {
       for (unsigned i = 0; i < num_iterations; i++)
-         ctx->draw(ctx, &(api_draw_desc){.indexed = true, .count = count});
+         ctx->draw(ctx, &(api_draw_desc){.indexed = true, .count = count, .instance_count = 1});
    } else if (geom_style == GEOM_TRI_LIST_REUSE0 ||
               geom_style == GEOM_TRI_STRIP) {
       for (unsigned i = 0; i < num_iterations; i++)
-         ctx->draw(ctx, &(api_draw_desc){.count = count});
+         ctx->draw(ctx, &(api_draw_desc){.count = count, .instance_count = 1});
    } else if (get_mesh_wg_size(geom_style)) {
       for (unsigned i = 0; i < num_iterations; i++)
-         ctx->draw(ctx, &(api_draw_desc){.mesh_shader = true, .count = count});
+         ctx->draw(ctx, &(api_draw_desc){.mesh_shader = true, .count = count, .instance_count = 1});
    } else {
       error("unhandled geom_style");
    }
@@ -1592,7 +1592,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
-                                           api_heap_device, 0);
+                                           api_heap_device);
    state->fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                        colorbuf->height, colorbuf->samples);
 
@@ -1640,7 +1640,7 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
       create_pipeline(ctx, state, &test, num_varyings);
       init_buffers(ctx, state, &test);
       run_pipeline(ctx, state, 1, &test, num_varyings);
-      ctx->image_write_png(ctx, colorbuf, "output.png");
+      ctx->image_write_png(ctx, colorbuf, 0, "output.png");
       run_image_viewer("output.png");
       return;
    }

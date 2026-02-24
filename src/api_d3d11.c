@@ -20,8 +20,7 @@ d3d11_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
 
 static api_image *
 d3d11_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
-                   unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                   VkImageLayout initial_layout)
+                   unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -132,7 +131,7 @@ d3d11_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uin
 }
 
 static void
-d3d11_image_write_png(api_context *ctx, api_image *image, const char *filename)
+d3d11_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
 {
 }
 

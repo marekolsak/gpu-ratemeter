@@ -78,7 +78,9 @@ typedef struct {
    VkImage image;
    VkDeviceMemory mem;
    uint64_t mem_size;
-   VkImageView view;
+   unsigned layer_count;
+   VkImageView render_compatible_view; /* 3D images use 2D array views */
+   VkImageLayout layout;
 #endif
 } api_image;
 
@@ -221,6 +223,7 @@ typedef struct {
    bool indexed;
    bool mesh_shader;
    unsigned count;
+   unsigned instance_count;
    unsigned first_vertex;
 } api_draw_desc;
 
@@ -262,10 +265,15 @@ typedef struct api_context {
    /* Properties. */
    bool has_host_uncached_heap;
    bool has_host_cached_heap;
+   bool has_image_tiling_linear;
    double timestamp_period_in_seconds;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    bool has_vrs;
    bool has_xfb;
+   bool has_clear_image_region;
+   bool has_blit_image_3d;
+   bool has_blit_image_msaa;
+   bool has_resolve_image_yflip;
    VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
@@ -285,15 +293,15 @@ typedef struct api_context {
 
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
-                              VkImageTiling tiling, api_heap_type heap,
-                              VkImageLayout initial_layout);
+                              VkImageTiling tiling, api_heap_type heap);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
-   void (*clear_image)(struct api_context *ctx, api_image *image, api_image_box *box,
+   void (*clear_image)(struct api_context *ctx, api_image *image, const api_image_box *box,
                        const VkClearColorValue *value);
    void (*blit_image)(struct api_context *ctx, api_blit_desc *desc);
    void (*upload_image_data)(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
                              void *data);
-   void (*image_write_png)(struct api_context *ctx, api_image *image, const char *filename);
+   void (*image_write_png)(struct api_context *ctx, api_image *image, unsigned layer,
+                           const char *filename);
 
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                           unsigned width, unsigned height, unsigned samples);
@@ -334,6 +342,7 @@ typedef struct api_context {
    void (*bind_vertex_buffers)(struct api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets);
    void (*bind_index_buffer)(struct api_context *ctx, api_buffer *ib);
    void (*draw)(struct api_context *ctx, const api_draw_desc *desc);
+   void (*pipeline_barrier)(struct api_context *ctx, VkPipelineStageFlagBits2 stage_bits);
 
    api_timestamp_query_pool *(*create_timestamp_pool)(struct api_context *ctx, unsigned num_queries);
    void (*write_next_timestamp)(struct api_context *ctx, api_timestamp_query_pool *pool);
@@ -407,8 +416,6 @@ bool format_is_integer(VkFormat format);
 bool format_is_sint(VkFormat format);
 unsigned format_get_num_channels(VkFormat format);
 bool format_is_depth_or_stencil(VkFormat format);
-uint64_t rand_xorshift128plus(uint64_t seed[2]);
-void s_rand_xorshift128plus(uint64_t seed[2], bool randomised_seed);
 unsigned get_next_power_of_two(unsigned x);
 uint16_t float_to_half(float val);
 

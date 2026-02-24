@@ -361,10 +361,28 @@ get_gl_type(VkFormat format)
    }
 }
 
+/* TODO: Regenerate GLAD. */
+#define GL_TEXTURE_TILING_EXT             0x9580
+#define GL_LINEAR_TILING_EXT              0x9585
+
+static void
+create_texture(api_context *ctx, api_image *image, GLenum target, VkImageTiling tiling)
+{
+   image->gltarget = target;
+   glCreateTextures(target, 1, &image->id);
+
+   if (tiling == VK_IMAGE_TILING_LINEAR) {
+      if (ctx->has_image_tiling_linear) {
+         glTextureParameteri(image->id, GL_TEXTURE_TILING_EXT, GL_LINEAR_TILING_EXT);
+      } else {
+         error("GL doesn't support linear tiling");
+      }
+   }
+}
+
 static api_image *
 gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
-                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                VkImageLayout initial_layout)
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -384,30 +402,25 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    switch (type) {
    case VK_IMAGE_TYPE_1D:
       assert(height == 1 && depth == 1 && samples == 1);
-      image->gltarget = GL_TEXTURE_1D;
-      glCreateTextures(image->gltarget, 1, &image->id);
+      create_texture(ctx, image, GL_TEXTURE_1D, tiling);
       glTextureStorage1D(image->id, 1, image->glinternalformat, width);
       break;
 
    case VK_IMAGE_TYPE_2D:
       if (samples > 1) {
          if (depth > 1) {
-            image->gltarget = GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
-            glCreateTextures(image->gltarget, 1, &image->id);
+            create_texture(ctx, image, GL_TEXTURE_2D_MULTISAMPLE_ARRAY, tiling);
             glTextureStorage3DMultisample(image->id, samples, image->glinternalformat, width, height, depth, true);
          } else {
-            image->gltarget = GL_TEXTURE_2D_MULTISAMPLE;
-            glCreateTextures(image->gltarget, 1, &image->id);
+            create_texture(ctx, image, GL_TEXTURE_2D_MULTISAMPLE, tiling);
             glTextureStorage2DMultisample(image->id, samples, image->glinternalformat, width, height, true);
          }
       } else {
          if (depth > 1) {
-            image->gltarget = GL_TEXTURE_2D_ARRAY;
-            glCreateTextures(image->gltarget, 1, &image->id);
+            create_texture(ctx, image, GL_TEXTURE_2D_ARRAY, tiling);
             glTextureStorage3D(image->id, 1, image->glinternalformat, width, height, depth);
          } else {
-            image->gltarget = GL_TEXTURE_2D;
-            glCreateTextures(image->gltarget, 1, &image->id);
+            create_texture(ctx, image, GL_TEXTURE_2D, tiling);
             glTextureStorage2D(image->id, 1, image->glinternalformat, width, height);
          }
       }
@@ -415,8 +428,7 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
 
    case VK_IMAGE_TYPE_3D:
       assert(samples == 1);
-      image->gltarget = GL_TEXTURE_3D;
-      glCreateTextures(image->gltarget, 1, &image->id);
+      create_texture(ctx, image, GL_TEXTURE_3D, tiling);
       glTextureStorage3D(image->id, 1, image->glinternalformat, width, height, depth);
       break;
 
@@ -438,22 +450,35 @@ gl_destroy_image(api_context *ctx, api_image *image)
 }
 
 static void
-gl_clear_image(api_context *ctx, api_image *image, api_image_box *box,
+gl_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
                const VkClearColorValue *value)
 {
-   if (format_is_sint(image->format))
-      glClearTexImage(image->id, 0, GL_RGBA_INTEGER, GL_INT, value->int32);
-   else if (format_is_integer(image->format))
-      glClearTexImage(image->id, 0, GL_RGBA_INTEGER, GL_UNSIGNED_INT, value->uint32);
-   else
-      glClearTexImage(image->id, 0, GL_RGBA, GL_FLOAT, value->float32);
+   assert(!format_is_depth_or_stencil(image->format));
+   GLenum format, type;
 
+   if (format_is_integer(image->format)) {
+      format = GL_RGBA_INTEGER;
+      type = format_is_sint(image->format) ? GL_INT : GL_UNSIGNED_INT;
+   } else {
+      format = GL_RGBA;
+      type = GL_FLOAT;
+   }
+
+   if (box) {
+      glClearTexSubImage(image->id, 0, box->x, box->y, box->z, box->width, box->height, box->depth,
+                         format, type, value->uint32);
+   } else {
+      glClearTexImage(image->id, 0, format, type, value->uint32);
+   }
    gl_check_no_error();
 }
 
 static void
 gl_blit_image(api_context *ctx, api_blit_desc *desc)
 {
+   assert(!format_is_depth_or_stencil(desc->src->format));
+   assert(!format_is_depth_or_stencil(desc->dst->format));
+
    if (desc->is_copy) {
       assert(desc->dst_box.width == desc->src_box.width);
       assert(desc->dst_box.height == desc->src_box.height);
@@ -470,31 +495,35 @@ gl_blit_image(api_context *ctx, api_blit_desc *desc)
                          desc->dst_box.x, desc->dst_box.y, desc->dst_box.z,
                          desc->src_box.width, desc->src_box.height, desc->src_box.depth);
    } else {
-      /* GL doesn't have 3D blits. Bummer. */
-      assert(desc->src_box.depth == desc->dst_box.depth);
-      assert(desc->dst_box.depth > 0 &&desc->src_box.depth > 0);
+      /* GL doesn't have 3D blits. */
+      assert(desc->src_box.depth == 1 && desc->dst_box.depth == 1);
+      GLuint dst_fbo, src_fbo;
 
-      for (unsigned z = 0; z < desc->dst_box.depth; z++) {
-         GLuint dst_fbo, src_fbo;
-
-         glCreateFramebuffers(1, &dst_fbo);
+      glCreateFramebuffers(1, &dst_fbo);
+      if (desc->dst->depth > 1) {
          glNamedFramebufferTextureLayer(dst_fbo, GL_COLOR_ATTACHMENT0, desc->dst->id, 0,
-                                        desc->dst_box.z + z);
-
-         glCreateFramebuffers(1, &src_fbo);
-         glNamedFramebufferTextureLayer(src_fbo, GL_COLOR_ATTACHMENT0, desc->src->id, 0,
-                                        desc->src_box.z + z);
-
-         glBlitNamedFramebuffer(src_fbo, dst_fbo,
-                                desc->src_box.x, desc->src_box.y,
-                                desc->src_box.x + desc->src_box.width, desc->src_box.y + desc->src_box.height,
-                                desc->dst_box.x, desc->dst_box.y,
-                                desc->dst_box.x + desc->dst_box.width, desc->dst_box.y + desc->dst_box.height,
-                                GL_COLOR_BUFFER_BIT, desc->linear_filter ? GL_LINEAR : GL_NEAREST);
-
-         glDeleteFramebuffers(1, &dst_fbo);
-         glDeleteFramebuffers(2, &src_fbo);
+                                        desc->dst_box.z);
+      } else {
+         glNamedFramebufferTexture(dst_fbo, GL_COLOR_ATTACHMENT0, desc->dst->id, 0);
       }
+
+      glCreateFramebuffers(1, &src_fbo);
+      if (desc->src->depth > 1) {
+         glNamedFramebufferTextureLayer(src_fbo, GL_COLOR_ATTACHMENT0, desc->src->id, 0,
+                                        desc->src_box.z);
+      } else {
+         glNamedFramebufferTexture(src_fbo, GL_COLOR_ATTACHMENT0, desc->src->id, 0);
+      }
+
+      glBlitNamedFramebuffer(src_fbo, dst_fbo,
+                             desc->src_box.x, desc->src_box.y,
+                             desc->src_box.x + desc->src_box.width, desc->src_box.y + desc->src_box.height,
+                             desc->dst_box.x, desc->dst_box.y,
+                             desc->dst_box.x + desc->dst_box.width, desc->dst_box.y + desc->dst_box.height,
+                             GL_COLOR_BUFFER_BIT, desc->linear_filter ? GL_LINEAR : GL_NEAREST);
+
+      glDeleteFramebuffers(1, &dst_fbo);
+      glDeleteFramebuffers(2, &src_fbo);
    }
 
    gl_check_no_error();
@@ -538,14 +567,21 @@ gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_byte
 }
 
 static void
-gl_image_write_png(api_context *ctx, api_image *image, const char *filename)
+gl_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
 {
    uint64_t size = (uint64_t)image->width * image->height * 4;
+   GLenum format = format_is_integer(image->format) ? GL_RGBA_INTEGER : GL_RGBA;
    void *data = malloc(size);
 
-   glGetTextureImage(image->id, 0, GL_RGBA, GL_UNSIGNED_BYTE, size, data);
-   gl_check_no_error();
+   if (image->depth > 1) {
+      glGetTextureSubImage(image->id, 0, 0, 0, layer, image->width, image->height, 1, format,
+                           GL_UNSIGNED_BYTE, size, data);
+   } else {
+      assert(layer == 0);
+      glGetTextureImage(image->id, 0, format, GL_UNSIGNED_BYTE, size, data);
+   }
 
+   gl_check_no_error();
    write_png_rgba8(filename, image, data);
    free(data);
 }
@@ -564,8 +600,11 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    glCreateFramebuffers(1, &fb->id);
    if (colorbuf)
       glNamedFramebufferTexture(fb->id, GL_COLOR_ATTACHMENT0, colorbuf->id, 0);
-   if (zbuf)
+
+   if (zbuf) {
+      assert(zbuf->type != VK_IMAGE_TYPE_3D);
       glNamedFramebufferTexture(fb->id, GL_DEPTH_ATTACHMENT, zbuf->id, 0);
+   }
 
    if (!colorbuf && !zbuf) {
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_WIDTH, width);
@@ -642,6 +681,13 @@ gl_create_shader(api_context *ctx, const char *source, api_shader_type type)
    return shader;
 }
 
+static void
+gl_destroy_shader(api_context *ctx, api_shader *shader)
+{
+   glDeleteShader(shader->id);
+   free(shader);
+}
+
 static api_descriptor_set_layout *
 gl_create_descriptor_set_layout(api_context *ctx,
                                 const api_descriptor_set_layout_desc *desc)
@@ -658,6 +704,12 @@ gl_create_descriptor_set_layout(api_context *ctx,
    return layout;
 }
 
+static void
+gl_destroy_descriptor_set_layout(api_context *ctx, api_descriptor_set_layout *layout)
+{
+   free(layout);
+}
+
 static api_descriptor_set *
 gl_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
 {
@@ -665,6 +717,12 @@ gl_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
    set->layout = layout;
 
    return set;
+}
+
+static void
+gl_destroy_descriptor_set(api_context *ctx, api_descriptor_set *set)
+{
+   free(set);
 }
 
 static void
@@ -704,12 +762,14 @@ gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *
    glDeleteTextures(num_samplers, set->tex_ids);
 
    for (unsigned i = 0; i < num_samplers; i++) {
-      glCreateTextures(images[i]->gltarget, 1, &set->tex_ids[i]);
+      glGenTextures(1, &set->tex_ids[i]);
       glTextureView(set->tex_ids[i], images[i]->gltarget, images[i]->id, images[i]->glinternalformat,
                     0, 1, 0, images[i]->depth);
       glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
       glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
    }
+
+   gl_check_no_error();
 }
 
 static void
@@ -791,6 +851,14 @@ gl_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    return pipeline;
 }
 
+static void
+gl_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
+{
+   assert(ctx->current_pipeline != pipeline);
+   glDeleteProgram(pipeline->prog);
+   free(pipeline);
+}
+
 static GLenum
 get_compare_func(VkCompareOp op)
 {
@@ -832,7 +900,7 @@ gl_set_current_pipeline_color_depth_masks(api_context *ctx)
 }
 
 static void
-gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+gl_bind_unbind_pipeline(api_context *ctx, api_pipeline *pipeline)
 {
    if (ctx->current_pipeline == pipeline)
       return;
@@ -845,6 +913,11 @@ gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 
    /* Bind the pipeline. */
    ctx->current_pipeline = pipeline;
+
+   if (!pipeline) {
+      gl_set_current_pipeline_color_depth_masks(ctx);
+      return;
+   }
 
    if (pipeline->desc.primitive_restart)
       glEnable(GL_PRIMITIVE_RESTART);
@@ -918,12 +991,23 @@ gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
       glDisable(GL_BLEND);
    }
 
-   if (pipeline->desc.fb->samples > 1)
+   if (pipeline->desc.fb->samples > 1) {
       glEnable(GL_MULTISAMPLE);
-   else
+      glEnable(GL_SAMPLE_MASK);
+   } else {
       glDisable(GL_MULTISAMPLE);
+      glDisable(GL_SAMPLE_MASK);
+   }
 
    gl_set_current_pipeline_color_depth_masks(ctx);
+}
+
+
+static void
+gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+{
+   assert(pipeline);
+   gl_bind_unbind_pipeline(ctx, pipeline);
 }
 
 static void
@@ -934,6 +1018,7 @@ gl_begin_cmdbuf(api_context *ctx)
 static void
 gl_end_cmdbuf_and_submit(api_context *ctx)
 {
+   gl_bind_unbind_pipeline(ctx, NULL);
    glFlush();
    gl_check_no_error();
 }
@@ -992,12 +1077,29 @@ gl_bind_index_buffer(api_context *ctx, api_buffer *ib)
 static void
 gl_draw(api_context *ctx, const api_draw_desc *desc)
 {
-   if (desc->mesh_shader)
+   assert(desc->count && (desc->mesh_shader || desc->instance_count));
+
+   if (desc->mesh_shader) {
       glDrawMeshTasksEXT(desc->count, 1, 1);
-   else if (desc->indexed)
-      glDrawElements(ctx->current_pipeline->prim_mode, desc->count, GL_UNSIGNED_INT, NULL);
-   else
-      glDrawArrays(ctx->current_pipeline->prim_mode, desc->first_vertex, desc->count);
+   } else if (desc->indexed) {
+      glDrawElementsInstanced(ctx->current_pipeline->prim_mode, desc->count, GL_UNSIGNED_INT, NULL,
+                              desc->instance_count);
+   } else {
+      glDrawArraysInstanced(ctx->current_pipeline->prim_mode, desc->first_vertex, desc->count,
+                            desc->instance_count);
+   }
+}
+
+static void
+gl_pipeline_barrier(api_context *ctx, VkPipelineStageFlagBits2 stage_bits)
+{
+   GLbitfield barrier = 0;
+
+   if (stage_bits & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
+      barrier |= GL_ALL_BARRIER_BITS;
+
+   assert(barrier);
+   glMemoryBarrier(barrier);
 }
 
 static api_timestamp_query_pool *
@@ -1081,8 +1183,13 @@ gl_create_context(const program_options *options)
    /* Set properties and callbacks. */
    ctx->has_host_uncached_heap = true;
    ctx->has_host_cached_heap = true;
+   ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
    ctx->timestamp_period_in_seconds = 0.000000001;
    ctx->has_xfb = true;
+   ctx->has_clear_image_region = true;
+   ctx->has_blit_image_3d = false;
+   ctx->has_blit_image_msaa = true;
+   ctx->has_resolve_image_yflip = true;
 
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
@@ -1124,13 +1231,13 @@ gl_create_context(const program_options *options)
    ctx->destroy_framebuffer = gl_destroy_framebuffer;
 
    ctx->create_shader = gl_create_shader;
-   ctx->destroy_shader = NULL;
+   ctx->destroy_shader = gl_destroy_shader;
 
    ctx->create_descriptor_set_layout = gl_create_descriptor_set_layout;
-   ctx->destroy_descriptor_set_layout = NULL;
+   ctx->destroy_descriptor_set_layout = gl_destroy_descriptor_set_layout;
 
    ctx->create_descriptor_set = gl_create_descriptor_set;
-   ctx->destroy_descriptor_set = NULL;
+   ctx->destroy_descriptor_set = gl_destroy_descriptor_set;
    ctx->set_uniform_buffer_descriptor = gl_set_uniform_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = gl_set_uniform_texel_buffer_descriptors;
    ctx->set_combined_image_sampler_descriptors = gl_set_combined_image_sampler_descriptors;
@@ -1138,7 +1245,7 @@ gl_create_context(const program_options *options)
    ctx->bind_descriptor_set = gl_bind_descriptor_set;
 
    ctx->create_pipeline = gl_create_pipeline;
-   ctx->destroy_pipeline = NULL;
+   ctx->destroy_pipeline = gl_destroy_pipeline;
    ctx->bind_pipeline = gl_bind_pipeline;
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
@@ -1151,6 +1258,7 @@ gl_create_context(const program_options *options)
    ctx->bind_vertex_buffers = gl_bind_vertex_buffers;
    ctx->bind_index_buffer = gl_bind_index_buffer;
    ctx->draw = gl_draw;
+   ctx->pipeline_barrier = gl_pipeline_barrier;
 
    ctx->create_timestamp_pool = gl_create_timestamp_pool;
    ctx->write_next_timestamp = gl_write_next_timestamp;

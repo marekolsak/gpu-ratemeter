@@ -197,10 +197,42 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                          });
 }
 
+static void
+vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new_layout)
+{
+   if (image->layout == new_layout)
+      return;
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .imageMemoryBarrierCount = 1,
+                            .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
+                               {
+                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                  .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
+                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+                                  .oldLayout = image->layout,
+                                  .newLayout = new_layout,
+                                  .image = image->image,
+                                  .subresourceRange = {
+                                     .aspectMask = format_is_depth_or_stencil(image->format) ?
+                                                      VK_IMAGE_ASPECT_DEPTH_BIT :
+                                                      VK_IMAGE_ASPECT_COLOR_BIT,
+                                     .levelCount = 1,
+                                     .layerCount = image->layer_count,
+                                  },
+                               },
+                            },
+                         });
+   image->layout = new_layout;
+}
+
 static api_image *
 vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
-                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                VkImageLayout initial_layout)
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -212,11 +244,14 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
 
    assert(type != VK_IMAGE_TYPE_1D || depth == 1);
 
+   image->layer_count = type == VK_IMAGE_TYPE_2D ? depth : 1;
    bool is_zs = format_is_depth_or_stencil(format);
 
    vk_check(vkCreateImage(ctx->device,
                           &(VkImageCreateInfo) {
                              .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                             .flags = type == VK_IMAGE_TYPE_3D ?
+                                          VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT : 0,
                              .imageType = type,
                              .format = format,
                              .extent = {
@@ -225,7 +260,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                                 .depth = type == VK_IMAGE_TYPE_3D ? depth : 1,
                              },
                              .mipLevels = 1,
-                             .arrayLayers = type == VK_IMAGE_TYPE_2D ? depth : 1,
+                             .arrayLayers = image->layer_count,
                              .samples = samples,
                              .tiling = tiling,
                              .usage = is_zs ?
@@ -259,8 +294,9 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                               &(VkImageViewCreateInfo) {
                                  .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                                  .image = image->image,
-                                 .viewType = type == VK_IMAGE_TYPE_3D ? VK_IMAGE_VIEW_TYPE_3D :
-                                             type == VK_IMAGE_TYPE_2D && depth > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                                 /* Vulkan only supports layered rendering into 2D array views. */
+                                 .viewType = (type == VK_IMAGE_TYPE_2D || type == VK_IMAGE_TYPE_3D) &&
+                                             depth > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
                                              type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D : VK_IMAGE_VIEW_TYPE_2D,
                                  .format = image->format,
                                  .components = {
@@ -273,50 +309,141 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                                     .aspectMask = format_is_depth_or_stencil(format) ?
                                                       VK_IMAGE_ASPECT_DEPTH_BIT :
                                                       VK_IMAGE_ASPECT_COLOR_BIT,
-                                    .baseMipLevel = 0,
                                     .levelCount = 1,
-                                    .baseArrayLayer = 0,
-                                    .layerCount = depth,
+                                    .layerCount = image->depth,
                                  },
                               },
-                              NULL, &image->view));
-
-   if (initial_layout) {
-      ctx->begin_cmdbuf(ctx);
-
-      vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
-                            &(VkDependencyInfo) {
-                               .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                               .imageMemoryBarrierCount = 1,
-                               .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
-                                  {
-                                     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                     .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                                     .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                                     .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                                     .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-                                     .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                     .newLayout = initial_layout,
-                                     .image = image->image,
-                                     .subresourceRange = {
-                                        .aspectMask = format_is_depth_or_stencil(format) ?
-                                                         VK_IMAGE_ASPECT_DEPTH_BIT :
-                                                         VK_IMAGE_ASPECT_COLOR_BIT,
-                                        .baseMipLevel = 0,
-                                        .levelCount = 1,
-                                        .baseArrayLayer = 0,
-                                        .layerCount = depth,
-                                     },
-                                  },
-                               },
-                            });
-
-      ctx->end_cmdbuf_and_submit(ctx);
-   }
+                              NULL, &image->render_compatible_view));
 
    if (heap == api_heap_device)
       ctx->device_mem_usage += image->mem_size;
    return image;
+}
+
+static void
+vk_destroy_image(struct api_context *ctx, api_image *image)
+{
+   vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
+   vkDestroyImage(ctx->device, image->image, NULL);
+   vkFreeMemory(ctx->device, image->mem, NULL);
+   free(image);
+}
+
+static void
+vk_clear_image(struct api_context *ctx, api_image *image, const api_image_box *box,
+               const VkClearColorValue *value)
+{
+   assert(!format_is_depth_or_stencil(image->format));
+   assert(!box);
+
+   vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+   vkCmdClearColorImage(ctx->current_cmd_buffer, image->image,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, value, 1,
+                        &(VkImageSubresourceRange){
+                           .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                           .levelCount = 1,
+                           .layerCount = image->layer_count,
+                        });
+}
+
+static void
+vk_blit_image(struct api_context *ctx, api_blit_desc *desc)
+{
+   bool is_resolve = desc->src->samples > 1 && desc->dst->samples == 1;
+   assert(!format_is_depth_or_stencil(desc->src->format));
+   assert(!format_is_depth_or_stencil(desc->dst->format));
+
+   vk_image_layout_transition(ctx, desc->src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+   vk_image_layout_transition(ctx, desc->dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+   if (desc->is_copy || is_resolve) {
+      assert(desc->dst_box.width == desc->src_box.width);
+      assert(desc->dst_box.height == desc->src_box.height);
+      assert(desc->dst_box.depth == desc->src_box.depth);
+      assert(desc->dst_box.width > 0 &&desc->src_box.width > 0);
+      assert(desc->dst_box.height > 0 &&desc->src_box.height > 0);
+      assert(desc->dst_box.depth > 0 &&desc->src_box.depth > 0);
+      assert(!desc->linear_filter);
+
+      if (is_resolve) {
+         vkCmdResolveImage2(ctx->current_cmd_buffer, &(VkResolveImageInfo2){
+                            .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2,
+                            .srcImage = desc->src->image,
+                            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            .dstImage = desc->dst->image,
+                            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            .regionCount = 1,
+                            .pRegions = &(VkImageResolve2){
+                               .sType = VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2,
+                               .srcSubresource = (VkImageSubresourceLayers) {
+                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                  .layerCount = desc->src->layer_count,
+                               },
+                               .srcOffset = {desc->src_box.x, desc->src_box.y, desc->src_box.z},
+                               .dstSubresource = (VkImageSubresourceLayers) {
+                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                  .layerCount = desc->dst->layer_count,
+                               },
+                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
+                               .extent = {desc->dst_box.width, desc->dst_box.height, desc->dst_box.depth},
+                            },
+                         });
+      } else {
+         assert(desc->dst->samples == desc->src->samples);
+         vkCmdCopyImage2(ctx->current_cmd_buffer, &(VkCopyImageInfo2){
+                            .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
+                            .srcImage = desc->src->image,
+                            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            .dstImage = desc->dst->image,
+                            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            .regionCount = 1,
+                            .pRegions = &(VkImageCopy2){
+                               .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+                               .srcSubresource = (VkImageSubresourceLayers) {
+                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                  .layerCount = desc->src->layer_count,
+                               },
+                               .srcOffset = {desc->src_box.x, desc->src_box.y, desc->src_box.z},
+                               .dstSubresource = (VkImageSubresourceLayers) {
+                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                  .layerCount = desc->dst->layer_count,
+                               },
+                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
+                               .extent = {desc->dst_box.width, desc->dst_box.height, desc->dst_box.depth},
+                            },
+                         });
+      }
+   } else {
+      vkCmdBlitImage2(ctx->current_cmd_buffer, &(VkBlitImageInfo2){
+                         .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
+                         .srcImage = desc->src->image,
+                         .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         .dstImage = desc->dst->image,
+                         .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         .regionCount = 1,
+                         .pRegions = &(VkImageBlit2){
+                            .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
+                            .srcSubresource = (VkImageSubresourceLayers) {
+                               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .layerCount = desc->src->layer_count,
+                            },
+                            .srcOffsets = {{desc->src_box.x, desc->src_box.y, desc->src_box.z},
+                                           {desc->src_box.x + desc->src_box.width,
+                                            desc->src_box.y + desc->src_box.height,
+                                            desc->src_box.z + desc->src_box.depth}},
+                            .dstSubresource = (VkImageSubresourceLayers) {
+                               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .layerCount = desc->dst->layer_count,
+                            },
+                            .dstOffsets = {{desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
+                                           {desc->dst_box.x + desc->dst_box.width,
+                                            desc->dst_box.y + desc->dst_box.height,
+                                            desc->dst_box.z + desc->dst_box.depth}},
+                         },
+                         .filter = desc->linear_filter ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+                     });
+   }
 }
 
 static api_framebuffer *
@@ -338,7 +465,9 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    VkImageView att_views[2];
 
    if (colorbuf) {
+      assert(!format_is_depth_or_stencil(colorbuf->format));
       assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+
       att_descs[fb->num_attachments] = (VkAttachmentDescription){
          .format = colorbuf->format,
          .samples = colorbuf->samples,
@@ -347,13 +476,17 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
          .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
       };
-      att_views[fb->num_attachments] = colorbuf->view;
+
+      att_views[fb->num_attachments] = colorbuf->render_compatible_view;
       fb->colorbuf_att_index = fb->num_attachments;
       fb->num_attachments++;
    }
 
    if (zbuf) {
+      assert(zbuf->type != VK_IMAGE_TYPE_3D);
+      assert(!colorbuf || zbuf->depth == colorbuf->depth);
       assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+
       att_descs[fb->num_attachments] = (VkAttachmentDescription){
          .format = zbuf->format,
          .samples = zbuf->samples,
@@ -362,7 +495,8 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
          .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
       };
-      att_views[fb->num_attachments] = zbuf->view;
+
+      att_views[fb->num_attachments] = zbuf->render_compatible_view;
       fb->zbuf_att_index = fb->num_attachments;
       fb->num_attachments++;
    }
@@ -400,11 +534,19 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                    .pAttachments = att_views,
                                    .width = fb->width,
                                    .height = fb->height,
-                                   .layers = 1,
+                                   .layers = colorbuf ? colorbuf->depth : 1,
                                 },
                                 NULL, &fb->fb));
 
    return fb;
+}
+
+static void
+vk_destroy_framebuffer(struct api_context *ctx, api_framebuffer *fb)
+{
+   vkDestroyFramebuffer(ctx->device, fb->fb, NULL);
+   vkDestroyRenderPass(ctx->device, fb->render_pass, NULL);
+   free(fb);
 }
 
 static api_shader *
@@ -619,8 +761,14 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
    VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_images);
 
    for (unsigned i = 0; i < num_images; i++) {
+      if (images[i]->layout != VK_IMAGE_LAYOUT_GENERAL) {
+         ctx->begin_cmdbuf(ctx);
+         vk_image_layout_transition(ctx, images[i], VK_IMAGE_LAYOUT_GENERAL);
+         ctx->end_cmdbuf_and_submit(ctx);
+      }
+
       image_infos[i].sampler = NULL;
-      image_infos[i].imageView = images[i]->view;
+      image_infos[i].imageView = images[i]->render_compatible_view;
       image_infos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
    }
 
@@ -796,8 +944,16 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 }
 
 static void
+vk_destroy_pipeline(struct api_context *ctx, api_pipeline *pipeline)
+{
+   vkDestroyPipeline(ctx->device, pipeline->pipeline, NULL);
+   free(pipeline);
+}
+
+static void
 vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 {
+   assert(pipeline);
    ctx->current_pipeline = pipeline;
    vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 }
@@ -805,6 +961,7 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 static void
 vk_begin_cmdbuf(api_context *ctx)
 {
+   assert(ctx->current_cmd_buffer == NULL);
    assert(ctx->next_cmdbuf_index < MAX_COMMAND_BUFFERS);
    ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->next_cmdbuf_index];
    ctx->current_fence = ctx->fences[ctx->next_cmdbuf_index];
@@ -834,6 +991,7 @@ vk_end_cmdbuf_and_submit(api_context *ctx)
    ctx->next_cmdbuf_index = (ctx->next_cmdbuf_index + 1) % MAX_COMMAND_BUFFERS;
    ctx->current_cmd_buffer = NULL;
    ctx->current_fence = NULL;
+   ctx->current_pipeline = NULL;
 }
 
 static void
@@ -870,6 +1028,11 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                            .pClearValues = clear_values,
                         },
                         VK_SUBPASS_CONTENTS_INLINE);
+
+   if (desc->fb->colorbuf)
+      desc->fb->colorbuf->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   if (desc->fb->zbuf)
+      desc->fb->zbuf->layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
    const VkViewport viewport = {
       .x = 0,
@@ -915,12 +1078,28 @@ vk_bind_index_buffer(api_context *ctx, api_buffer *ib)
 static void
 vk_draw(api_context *ctx, const api_draw_desc *desc)
 {
+   assert(desc->count && (desc->mesh_shader || desc->instance_count));
+
    if (desc->mesh_shader)
       ctx->vkCmdDrawMeshTasksEXT(ctx->current_cmd_buffer, desc->count, 1, 1);
    else if (desc->indexed)
-      vkCmdDrawIndexed(ctx->current_cmd_buffer, desc->count, 1, 0, 0, 0);
+      vkCmdDrawIndexed(ctx->current_cmd_buffer, desc->count, desc->instance_count, 0, 0, 0);
    else
-      vkCmdDraw(ctx->current_cmd_buffer, desc->count, 1, desc->first_vertex, 0);
+      vkCmdDraw(ctx->current_cmd_buffer, desc->count, desc->instance_count, desc->first_vertex, 0);
+}
+
+static void
+vk_pipeline_barrier(struct api_context *ctx, VkPipelineStageFlagBits2 stage_bits)
+{
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .memoryBarrierCount = 1,
+                            .pMemoryBarriers = &(VkMemoryBarrier2){
+                               .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                               .srcStageMask = stage_bits,
+                               .dstStageMask = stage_bits,
+                            },
+                         });
 }
 
 static api_timestamp_query_pool *
@@ -1012,54 +1191,17 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 }
 
 static void
-vk_image_write_png(api_context *ctx, api_image *image, const char *filename)
+vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
 {
-   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D,
+                                        format_is_integer(image->format) ?
+                                           VK_FORMAT_R8G8B8A8_UINT : VK_FORMAT_R8G8B8A8_UNORM,
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
-                                        api_heap_host_cached, 0);
+                                        api_heap_host_cached);
 
    vk_begin_cmdbuf(ctx);
-   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
-                         &(VkDependencyInfo) {
-                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .imageMemoryBarrierCount = 2,
-                            .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
-                               {
-                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                                  .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-                                  .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                  .image = image->image,
-                                  .subresourceRange = {
-                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                     .baseMipLevel = 0,
-                                     .levelCount = 1,
-                                     .baseArrayLayer = 0,
-                                     .layerCount = 1,
-                                  },
-                               },
-                               {
-                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                  .srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-                                  .srcAccessMask = 0,
-                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                                  .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                  .image = staging->image,
-                                  .subresourceRange = {
-                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                     .baseMipLevel = 0,
-                                     .levelCount = 1,
-                                     .baseArrayLayer = 0,
-                                     .layerCount = 1,
-                                  },
-                               },
-                            },
-                         });
+   vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+   vk_image_layout_transition(ctx, staging, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
    vkCmdBlitImage2(ctx->current_cmd_buffer,
                    &(VkBlitImageInfo2) {
@@ -1073,9 +1215,11 @@ vk_image_write_png(api_context *ctx, api_image *image, const char *filename)
                          .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
                          .srcSubresource = (VkImageSubresourceLayers) {
                             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .baseArrayLayer = image->type == VK_IMAGE_TYPE_2D ? layer : 0,
                             .layerCount = 1,
                          },
-                         .srcOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
+                         .srcOffsets = {{0, 0, image->type == VK_IMAGE_TYPE_3D ? layer : 0},
+                                        {image->width, image->height, 1}},
                          .dstSubresource = (VkImageSubresourceLayers) {
                             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                             .layerCount = 1,
@@ -1281,10 +1425,15 @@ vk_create_context(const program_options *options)
    ctx->has_host_cached_heap = true; /* so that vk_find_heap doesn't fall back and fails when it should */
    ctx->has_host_uncached_heap = vk_find_heap(ctx, ~0, api_heap_host_uncached) != -1;
    ctx->has_host_cached_heap = vk_find_heap(ctx, ~0, api_heap_host_cached) != -1;
+   ctx->has_image_tiling_linear = true;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
    ctx->has_xfb = xfb.transformFeedback;
+   ctx->has_clear_image_region = false;
+   ctx->has_blit_image_3d = true;
+   ctx->has_blit_image_msaa = false;
+   ctx->has_resolve_image_yflip = false;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
 
    ctx->device_mem_usage = 0;
@@ -1310,11 +1459,13 @@ vk_create_context(const program_options *options)
    ctx->copy_buffer = vk_copy_buffer;
 
    ctx->create_image = vk_create_image;
-   ctx->destroy_image = NULL;
+   ctx->destroy_image = vk_destroy_image;
+   ctx->clear_image = vk_clear_image;
+   ctx->blit_image = vk_blit_image;
    ctx->image_write_png = vk_image_write_png;
 
    ctx->create_framebuffer = vk_create_framebuffer;
-   ctx->destroy_framebuffer = NULL;
+   ctx->destroy_framebuffer = vk_destroy_framebuffer;
 
    ctx->create_shader = vk_create_shader;
    ctx->destroy_shader = NULL;
@@ -1330,7 +1481,7 @@ vk_create_context(const program_options *options)
    ctx->bind_descriptor_set = vk_bind_descriptor_set;
 
    ctx->create_pipeline = vk_create_pipeline;
-   ctx->destroy_pipeline = NULL;
+   ctx->destroy_pipeline = vk_destroy_pipeline;
    ctx->bind_pipeline = vk_bind_pipeline;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
@@ -1343,6 +1494,7 @@ vk_create_context(const program_options *options)
    ctx->bind_vertex_buffers = vk_bind_vertex_buffers;
    ctx->bind_index_buffer = vk_bind_index_buffer;
    ctx->draw = vk_draw;
+   ctx->pipeline_barrier = vk_pipeline_barrier;
 
    ctx->create_timestamp_pool = vk_create_timestamp_pool;
    ctx->write_next_timestamp = vk_write_next_timestamp;
