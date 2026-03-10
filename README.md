@@ -20,9 +20,6 @@ libraries (shaders are compiled independently with no knowledge of states and ot
 
 In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
 
-> [!note] Disclaimer
-> The app’s results may not reflect performance across typical applications and workloads. The app aims to help developers improve all GPU API implementations, not be a ranking tool.
-
 # How to Run
 
 `gpu-ratemeter [optional parameters] [api].[test suite]`

@@ -5,12 +5,12 @@
 /* TODO:
  *
  * Test suites:
- * - iobw
+ * - iobw (port shader-io-rate)
  * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
  * - rt
  * - mma
  * - draw: direct/indirect draw/multidraw clocks per draw
- * - compute: launched compute shader invocations per clock
+ * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
  *
  * APIs:
@@ -21,18 +21,12 @@
  * - OpenCL?
  *
  * imgbw:
- * - test clears with:
- *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearColorImage / vkCmdClearDepthStencilImage
- *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer, glClearTexSubImage
- *    - 2D array layered clears (since 3D layered clears aren't possible in Vulkan)
- * - test blits with:
- *    - vkCmdCopyImage2, vkCmdBlitImage2
- *    - glCopyImageSubData, glBlitFramebuffer
- *    - 2D array images
- * - test resolve:
- *    - vkCmdResolveImage, pResolveAttachments,
- *    - glBlitFramebuffer
- *    - 2D array images?
+ * - clears:
+ *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearDepthStencilImage
+ *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer
+ * - resolve:
+ *    - pResolveAttachments via a render pass
+ * - 2D array images
  * - Z/S?
  *
  * pix:
