@@ -20,6 +20,9 @@
  * - CUDA? (for ML)
  * - OpenCL?
  *
+ * bufbw:
+ * - VK_KHR_copy_memory_indirect
+ *
  * imgbw:
  * - clears:
  *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearDepthStencilImage
@@ -28,13 +31,17 @@
  *    - pResolveAttachments via a render pass
  * - 2D array images
  * - Z/S?
+ * - VK_KHR_copy_memory_indirect
  *
  * pix:
  * - render to 3D texture?
  *
  * prim:
- * - transform feedback
+ * - VS + transform feedback
+ * - GS passthrough + transform feedback
+ * - GS passthrough
  * - GS that only emits max_vertices / 2, max_vertices / 4, etc.
+ * - GS that only broadcasts one triangle to multiple layers
  * - TES?
  * - GL clip planes
  *

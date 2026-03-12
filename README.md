@@ -176,3 +176,15 @@ ninja
 ## Windows
 
 TBD
+
+# How to Get Stable Results
+
+## AMD GPUs on Linux
+
+We recommend that the GPU power profile is set to maintain a constant GPU graphics core frequency. This is recommended for stability of memory bandwidth results, and required to get accurate measurements of performance per clock. When we measure performance per clock, the frequency that we choose (low or high) is irrelevant. Reduced constant frequencies are also useful when we want to isolate the effect of performance per clock optimizations from memory bandwidth optimizations.
+
+Run `sudo umr --gui &`, select your GPU in the tab at the top, and then select the Power tab. In there, select one of the DPM (dynamic power management) profiles that begin with `profile`. All `profile_*` profiles maintain constant pre-determined frequencies. The frequency changes are shown in real time on the Power tab.
+
+Since constant frequencies defeat power optimizations and can cause more heat to be generated, the firmware will change the profile back to `auto` if temperatures exceed safe limits. This will be immediately visible in the real time frequency chart on the Power tab.
+
+Get `umr` here: https://gitlab.freedesktop.org/tomstdenis/umr
