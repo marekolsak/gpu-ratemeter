@@ -34,6 +34,7 @@
  * - VK_KHR_copy_memory_indirect
  *
  * pix:
+ * - multiview
  * - render to 3D texture?
  *
  * prim:
@@ -44,6 +45,7 @@
  * - GS that only broadcasts one triangle to multiple layers
  * - TES?
  * - GL clip planes
+ * - multiview
  *
  * raster:
  * - test rasterizer efficiency with different screen-space triangle sizes (similar to pix)

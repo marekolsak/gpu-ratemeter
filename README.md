@@ -23,6 +23,12 @@ libraries (shaders are compiled independently with no knowledge of states and ot
 
 In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
 
+Examples:
+- If one driver achieves 64 pixels/clock at 32 bpp, while another driver on the same hardware achieves only 32 pixels/clock, that is a strong signal that the latter driver may not be configuring the hardware optimally for 32 bpp rendering.
+- If one driver shows an early depth-test rejection rate that is 4x higher than another, that may indicate that HiZ is disabled, misconfigured, or otherwise used less effectively.
+- If a driver sustains only 300 GB/s for image blits while published peak hardware figures are around 500 GB/s under ideal conditions, that may indicate that the blit path is not fully optimized.
+- If pipeline objects using dynamic state are 2x slower than otherwise equivalent objects using static state, that may indicate inefficiencies in the driver’s dynamic-state implementation.
+
 # How to Run
 
 `gpu-ratemeter [optional parameters] [api].[test]`
