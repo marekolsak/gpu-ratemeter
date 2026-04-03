@@ -43,9 +43,27 @@ vk_has_validation_layer(void)
 }
 
 static int
+vk_find_heap_with_flags(api_context *ctx, unsigned supported_heap_mask,
+                        VkMemoryPropertyFlags require_flags, VkMemoryPropertyFlags disallow_flags)
+{
+   for (unsigned i = 0; (1u << i) <= supported_heap_mask && i <= ctx->memory_properties.memoryTypeCount; i++) {
+      if (!(supported_heap_mask & (1u << i)))
+          continue;
+
+      VkMemoryPropertyFlags flags = ctx->memory_properties.memoryTypes[i].propertyFlags;
+
+      if (((flags & require_flags) == require_flags) && !(flags & disallow_flags))
+         return i;
+   }
+
+   return -1;
+}
+
+static int
 vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
 {
    VkMemoryPropertyFlags require_flags = 0, disallow_flags = 0;
+   assert(supported_heap_mask);
 
    if (heap == api_heap_host_uncached && !ctx->has_host_uncached_heap)
       heap = api_heap_host_cached;
@@ -69,17 +87,29 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
       error("invalid heap type");
    }
 
-   for (unsigned i = 0; (1u << i) <= supported_heap_mask && i <= ctx->memory_properties.memoryTypeCount; i++) {
-      if (!(supported_heap_mask & (1u << i)))
-          continue;
+   int index = vk_find_heap_with_flags(ctx, supported_heap_mask, require_flags, disallow_flags);
 
-      VkMemoryPropertyFlags flags = ctx->memory_properties.memoryTypes[i].propertyFlags;
+   if (supported_heap_mask != ~0) {
+      if (index == -1 && disallow_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+         /* Allow DEVICE_LOCAL and try again. */
+         disallow_flags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+         index = vk_find_heap_with_flags(ctx, supported_heap_mask, require_flags, disallow_flags);
+      }
 
-      if (((flags & require_flags) == require_flags) && !(flags & disallow_flags))
-         return i;
+      if (index == -1 && disallow_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+         /* Allow HOST_CACHED and try again. */
+         disallow_flags &= ~VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+         index = vk_find_heap_with_flags(ctx, supported_heap_mask, require_flags, disallow_flags);
+      }
+
+      if (index == -1 && require_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+         /* Don't require HOST_CACHED and try again. */
+         require_flags &= ~VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+         index = vk_find_heap_with_flags(ctx, supported_heap_mask, require_flags, disallow_flags);
+      }
    }
 
-   return -1;
+   return index;
 }
 
 static api_buffer *
