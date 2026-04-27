@@ -248,7 +248,7 @@ typedef struct {
    float depth_clear_value;
 } api_render_pass_desc;
 
-#define MAX_COMMAND_BUFFERS   1024
+#define MAX_COMMAND_BUFFERS   512
 
 typedef struct {
    unsigned freq_mhz;
