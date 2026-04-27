@@ -19,11 +19,13 @@
 #define VK_PRIVATE
 #include "common.h"
 
+#include <vulkan/vk_enum_string_helper.h>
+
 #define vk_check(call) \
    do { \
       VkResult res = call; \
       if (res != VK_SUCCESS) \
-         error("Vulkan call failed on line %u: %s = %i\n", __LINE__, #call, res); \
+         error("Vulkan call failed on line %u: %s = %i (%s)\n", __LINE__, #call, res, string_VkResult(res)); \
    } while(0)
 
 static bool
