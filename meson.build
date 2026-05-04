@@ -17,6 +17,13 @@ dep_libpng = dependency('libpng')
 dep_shaderc = dependency('shaderc')
 dep_vulkan = dependency('vulkan')
 
+dep_vk_util_headers = dependency(
+  'VulkanUtilityLibraries',
+  method : 'cmake',
+  modules : ['Vulkan::UtilityHeaders'],
+  required : false,
+)
+
 gpu_ratemeter_files = files(
   'src/glad/glad.c',
   'src/glad/glad.h',
@@ -57,6 +64,10 @@ c_args = [
   '-Werror=missing-prototypes',
   '-Werror=incompatible-pointer-types',
 ]
+
+if dep_vk_util_headers.found()
+  all_args += ['-DHAVE_VK_UTILITY_HEADERS']
+endif
 
 gpu_ratemeter = executable(
   'gpu-ratemeter',

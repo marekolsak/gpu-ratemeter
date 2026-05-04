@@ -19,7 +19,11 @@
 #define VK_PRIVATE
 #include "common.h"
 
+#ifdef HAVE_VK_UTILITY_HEADERS
 #include <vulkan/vk_enum_string_helper.h>
+#else
+#define string_VkResult(r) "{can't get a string - missing Vulkan::UtilityHeaders}"
+#endif
 
 #define vk_check(call) \
    do { \
@@ -41,6 +45,7 @@ vk_has_validation_layer(void)
             return true;
     }
 
+    fprintf(stderr, "Warning: VK_LAYER_KHRONOS_validation not found.\n");
     return false;
 }
 
