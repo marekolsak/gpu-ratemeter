@@ -905,20 +905,25 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    unsigned num_dynamic_states = 2;
 
    if (uses_dynamic_state) {
+#define check_incr_num(array) \
+   ((void)assert(num_##array < ARRAY_SIZE(array)), num_##array++)
+
       if (!desc->ms) {
-         assert(num_dynamic_states + 3 <= ARRAY_SIZE(dynamic_states));
-         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
-         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
-         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
+         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
+         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
       }
 
-      assert(num_dynamic_states + 6 <= ARRAY_SIZE(dynamic_states));
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_CULL_MODE;
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_FRONT_FACE;
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
-      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_CULL_MODE;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_FRONT_FACE;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
+#undef check_incr_num
    }
 
    /* Create the graphics pipeline. */
@@ -949,9 +954,9 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-         .depthTestEnable = desc->depth_enabled,
-         .depthWriteEnable = desc->depth_write_enabled,
-         .depthCompareOp = desc->depth_compare_op,
+         .depthTestEnable = uses_dynamic_state ? false : desc->depth_enabled,
+         .depthWriteEnable = uses_dynamic_state ? false : desc->depth_write_enabled,
+         .depthCompareOp = uses_dynamic_state ? 0 : desc->depth_compare_op,
       },
       .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -1031,6 +1036,9 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
       ctx->vkCmdSetRasterizationSamplesEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples);
       ctx->vkCmdSetSampleMaskEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples, &pipeline->desc.samplemask);
       ctx->vkCmdSetAlphaToCoverageEnableEXT(ctx->current_cmd_buffer, pipeline->desc.alpha_to_coverage);
+      vkCmdSetDepthTestEnable(ctx->current_cmd_buffer, pipeline->desc.depth_enabled);
+      vkCmdSetDepthWriteEnable(ctx->current_cmd_buffer, pipeline->desc.depth_write_enabled);
+      vkCmdSetDepthCompareOp(ctx->current_cmd_buffer, pipeline->desc.depth_compare_op);
    }
 }
 
