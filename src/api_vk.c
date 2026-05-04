@@ -943,6 +943,8 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+      if (ctx->has_vrs)
+         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
 #undef check_incr_num
    }
 
@@ -1018,7 +1020,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    assert(desc->vrs_fragment_size[0] && desc->vrs_fragment_size[1]);
    assert(ctx->has_vrs || (desc->vrs_fragment_size[0] == 1 && desc->vrs_fragment_size[1] == 1));
 
-   VkPipelineFragmentShadingRateStateCreateInfoKHR vrs = {
+   pipeline->vrs = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
       .sType = VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
       .fragmentSize = {desc->vrs_fragment_size[0], desc->vrs_fragment_size[1]},
       .combinerOps = {
@@ -1033,10 +1035,11 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    if (uses_dynamic_state) {
       *pNext = &dyn_rendering_pipeline_info;
       pNext = &dyn_rendering_pipeline_info.pNext;
-   }
-   if (ctx->has_vrs) {
-      *pNext = &vrs;
-      pNext = &vrs.pNext;
+   } else {
+      if (ctx->has_vrs) {
+         *pNext = &pipeline->vrs;
+         pNext = &pipeline->vrs.pNext;
+      }
    }
 
    vk_check(vkCreateGraphicsPipelines(ctx->device, (VkPipelineCache){ VK_NULL_HANDLE },
@@ -1093,6 +1096,11 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
                                                .alphaBlendOp = pipeline->blend_state.alphaBlendOp,
                                             });
          ctx->vkCmdSetColorWriteMaskEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.colorWriteMask);
+      }
+
+      if (ctx->has_vrs) {
+         ctx->vkCmdSetFragmentShadingRateKHR(ctx->current_cmd_buffer, &pipeline->vrs.fragmentSize,
+                                             pipeline->vrs.combinerOps);
       }
    }
 }
@@ -1609,6 +1617,8 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdSetColorBlendEquationEXT);
    if (ext_dyn3.extendedDynamicState3ColorWriteMask)
       GET_PROC_ADDR(vkCmdSetColorWriteMaskEXT);
+   if (vrs.pipelineFragmentShadingRate)
+      GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
 #undef GET_PROC_ADDR
 
    /* Get the queue. */

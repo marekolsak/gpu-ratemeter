@@ -38,8 +38,8 @@ The following APIs are supported:
 - `d3d12`: Direct3D 12 **{- (not implemented yet) -}**
 - `gl`: OpenGL (linked shaders only)
 - `vk`: Vulkan with regular graphics pipeline objects
-- `vk_dyn`: Vulkan with all dynamic state **{- (not implemented yet) -}**
-- `vk_gpl`: Vulkan with graphics pipeline libraries **{- (not implemented yet) -}**
+- `vkdyn`: Vulkan with all dynamic state
+- `vkgpl`: Vulkan with graphics pipeline libraries **{- (not implemented yet) -}**
 
 The following tests are available:
 - `bufbw`: buffer fills and copies in GB/s

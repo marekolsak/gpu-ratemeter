@@ -94,7 +94,7 @@ static const struct {
    {"d3d12", d3d12_create_context},
    {"gl", gl_create_context},
    {"vk", vk_create_context, API_VK_CORE},
-   {"vk_dyn", vk_create_context, API_VK_DYNAMIC_STATE},
+   {"vkdyn", vk_create_context, API_VK_DYNAMIC_STATE},
 };
 
 static const struct {

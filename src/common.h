@@ -219,6 +219,7 @@ typedef struct {
    VkVertexInputBindingDescription2EXT dyn_vi_bindings[MAX_VERTEX_BUFFERS];
    VkVertexInputAttributeDescription2EXT dyn_vi_attribs[MAX_VERTEX_BUFFERS];
    VkPipelineColorBlendAttachmentState blend_state;
+   VkPipelineFragmentShadingRateStateCreateInfoKHR vrs;
 #endif
 } api_pipeline;
 
@@ -379,6 +380,7 @@ typedef struct api_context {
    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
    PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
+   PFN_vkCmdSetFragmentShadingRateKHR vkCmdSetFragmentShadingRateKHR;
 
    /* Command buffers. */
    VkCommandPool cmd_buffer_pool;
