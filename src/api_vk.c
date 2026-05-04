@@ -940,8 +940,24 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
+      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
 #undef check_incr_num
    }
+
+   pipeline->blend_state = (VkPipelineColorBlendAttachmentState) {
+      .blendEnable = desc->blend_src_color || desc->blend_src_alpha,
+      .srcColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_SRC_ALPHA :
+                                                     VK_BLEND_FACTOR_SRC_COLOR,
+      .dstColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA :
+                                                     VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+      .colorBlendOp = VK_BLEND_OP_ADD,
+      .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+      .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+      .alphaBlendOp = VK_BLEND_OP_ADD,
+      .colorWriteMask = desc->colormask,
+   };
 
    /* Create the graphics pipeline. */
    VkGraphicsPipelineCreateInfo pipeline_info = {
@@ -978,20 +994,8 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
          .attachmentCount = desc->fb->colorbuf ? 1 : 0,
-         .pAttachments = (VkPipelineColorBlendAttachmentState[]) {
-            {
-               .blendEnable = desc->blend_src_color || desc->blend_src_alpha,
-               .srcColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_SRC_ALPHA :
-                                                              VK_BLEND_FACTOR_SRC_COLOR,
-               .dstColorBlendFactor = desc->blend_src_alpha ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA :
-                                                              VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
-               .colorBlendOp = VK_BLEND_OP_ADD,
-               .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-               .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-               .alphaBlendOp = VK_BLEND_OP_ADD,
-               .colorWriteMask = desc->colormask,
-            },
-         },
+         .pAttachments = uses_dynamic_state ?
+            (VkPipelineColorBlendAttachmentState[1]){} : &pipeline->blend_state,
       },
       .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -1070,9 +1074,26 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
       ctx->vkCmdSetRasterizationSamplesEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples);
       ctx->vkCmdSetSampleMaskEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples, &pipeline->desc.samplemask);
       ctx->vkCmdSetAlphaToCoverageEnableEXT(ctx->current_cmd_buffer, pipeline->desc.alpha_to_coverage);
+
       vkCmdSetDepthTestEnable(ctx->current_cmd_buffer, pipeline->desc.depth_enabled);
-      vkCmdSetDepthWriteEnable(ctx->current_cmd_buffer, pipeline->desc.depth_write_enabled);
-      vkCmdSetDepthCompareOp(ctx->current_cmd_buffer, pipeline->desc.depth_compare_op);
+
+      if (pipeline->desc.fb->zbuf) {
+         vkCmdSetDepthWriteEnable(ctx->current_cmd_buffer, pipeline->desc.depth_write_enabled);
+         vkCmdSetDepthCompareOp(ctx->current_cmd_buffer, pipeline->desc.depth_compare_op);
+      }
+
+      if (pipeline->desc.fb->colorbuf) {
+         ctx->vkCmdSetColorBlendEnableEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.blendEnable);
+         ctx->vkCmdSetColorBlendEquationEXT(ctx->current_cmd_buffer, 0, 1, &(VkColorBlendEquationEXT){
+                                               .srcColorBlendFactor = pipeline->blend_state.srcColorBlendFactor,
+                                               .dstColorBlendFactor = pipeline->blend_state.dstColorBlendFactor,
+                                               .colorBlendOp = pipeline->blend_state.colorBlendOp,
+                                               .srcAlphaBlendFactor = pipeline->blend_state.srcAlphaBlendFactor,
+                                               .dstAlphaBlendFactor = pipeline->blend_state.dstAlphaBlendFactor,
+                                               .alphaBlendOp = pipeline->blend_state.alphaBlendOp,
+                                            });
+         ctx->vkCmdSetColorWriteMaskEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.colorWriteMask);
+      }
    }
 }
 
@@ -1525,7 +1546,10 @@ vk_create_context(const program_options *options)
 
    if (ext_dyn3.extendedDynamicState3RasterizationSamples ||
        ext_dyn3.extendedDynamicState3SampleMask ||
-       ext_dyn3.extendedDynamicState3AlphaToCoverageEnable) {
+       ext_dyn3.extendedDynamicState3AlphaToCoverageEnable ||
+       ext_dyn3.extendedDynamicState3ColorBlendEnable ||
+       ext_dyn3.extendedDynamicState3ColorBlendEquation ||
+       ext_dyn3.extendedDynamicState3ColorWriteMask) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_EXT_extended_dynamic_state3";
    }
@@ -1541,6 +1565,12 @@ vk_create_context(const program_options *options)
          error("extendedDynamicState3SampleMask is required.");
       if (!ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
          error("extendedDynamicState3AlphaToCoverageEnable is required.");
+      if (!ext_dyn3.extendedDynamicState3ColorBlendEnable)
+         error("extendedDynamicState3ColorBlendEnable is required.");
+      if (!ext_dyn3.extendedDynamicState3ColorBlendEquation)
+         error("extendedDynamicState3ColorBlendEquation is required.");
+      if (!ext_dyn3.extendedDynamicState3ColorWriteMask)
+         error("extendedDynamicState3ColorWriteMask is required.");
    }
 
    /* Open the device. */
@@ -1573,6 +1603,12 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
    if (ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
       GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
+   if (ext_dyn3.extendedDynamicState3ColorBlendEnable)
+      GET_PROC_ADDR(vkCmdSetColorBlendEnableEXT);
+   if (ext_dyn3.extendedDynamicState3ColorBlendEquation)
+      GET_PROC_ADDR(vkCmdSetColorBlendEquationEXT);
+   if (ext_dyn3.extendedDynamicState3ColorWriteMask)
+      GET_PROC_ADDR(vkCmdSetColorWriteMaskEXT);
 #undef GET_PROC_ADDR
 
    /* Get the queue. */
