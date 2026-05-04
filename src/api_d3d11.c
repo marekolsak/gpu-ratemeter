@@ -61,7 +61,7 @@ static api_pipeline *
 d3d11_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 {
    api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
-   pipeline->fb = desc->fb;
+   pipeline->desc = *desc;
 
 
    return pipeline;

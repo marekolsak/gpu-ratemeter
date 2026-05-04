@@ -153,7 +153,7 @@ write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels)
 void
 run_image_viewer(const char *image_filename)
 {
-   if (execl("/usr/bin/eog", "eog", image_filename, NULL) == -1)
+   if (execl("/usr/bin/xdg-open", "xdg-open", image_filename, NULL) == -1)
       error("failed to run an image viewer for %s (errno=%i)", image_filename, errno);
 }
 

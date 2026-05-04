@@ -828,30 +828,31 @@ static api_pipeline *
 vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 {
    api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
-   pipeline->fb = desc->fb;
+   pipeline->desc = *desc;
    pipeline->num_vb_desc = desc->num_vb_desc;
 
    /* Vertex buffers and attributes. */
-   VkVertexInputBindingDescription vb_desc[MAX_VERTEX_BUFFERS];
+   VkVertexInputBindingDescription vi_bindings[MAX_VERTEX_BUFFERS];
    VkVertexInputAttributeDescription attr_desc[MAX_VERTEX_BUFFERS];
 
    assert(desc->num_vb_desc <= MAX_VERTEX_BUFFERS);
 
    for (unsigned i = 0; i < desc->num_vb_desc; i++) {
-      vb_desc[i].binding = i;
-      vb_desc[i].stride = desc->vb_strides[i];
-      vb_desc[i].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+      pipeline->dyn_vi_bindings[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT;
+      pipeline->dyn_vi_bindings[i].binding = vi_bindings[i].binding = i;
+      pipeline->dyn_vi_bindings[i].stride = vi_bindings[i].stride = desc->vb_strides[i];
+      pipeline->dyn_vi_bindings[i].inputRate = vi_bindings[i].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-      attr_desc[i].location = i;
-      attr_desc[i].binding = i;
-      attr_desc[i].format = desc->vb_formats[i];
-      attr_desc[i].offset = 0;
+      pipeline->dyn_vi_attribs[i].location = attr_desc[i].location = i;
+      pipeline->dyn_vi_attribs[i].binding = attr_desc[i].binding = i;
+      pipeline->dyn_vi_attribs[i].format = attr_desc[i].format = desc->vb_formats[i];
+      pipeline->dyn_vi_attribs[i].offset = attr_desc[i].offset = 0;
    }
 
-   VkPipelineVertexInputStateCreateInfo vi_create_info = {
+   VkPipelineVertexInputStateCreateInfo vertex_input_state = (VkPipelineVertexInputStateCreateInfo){
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
       .vertexBindingDescriptionCount = desc->num_vb_desc,
-      .pVertexBindingDescriptions = vb_desc,
+      .pVertexBindingDescriptions = vi_bindings,
       .vertexAttributeDescriptionCount = desc->num_vb_desc,
       .pVertexAttributeDescriptions = attr_desc,
    };
@@ -887,36 +888,60 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       };
    }
 
+   bool uses_dynamic_state = ctx->options.api_flavor >= API_VK_DYNAMIC_STATE;
+   VkDynamicState dynamic_states[20] = {
+      VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT,
+      VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT,
+   };
+   unsigned num_always_dynamic_states = 2;
+   unsigned num_dynamic_states = 2;
+
+   if (uses_dynamic_state) {
+      if (desc->num_vb_desc) {
+         assert(num_dynamic_states < ARRAY_SIZE(dynamic_states));
+         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+      }
+
+      if (!desc->ms) {
+         assert(num_dynamic_states + 2 <= ARRAY_SIZE(dynamic_states));
+         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
+         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
+      }
+
+      assert(num_dynamic_states + 6 <= ARRAY_SIZE(dynamic_states));
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_CULL_MODE;
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_FRONT_FACE;
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
+      dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+   }
+
    /* Create the graphics pipeline. */
    VkGraphicsPipelineCreateInfo pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
       .stageCount = num_shaders,
       .pStages = shaders,
-      .pVertexInputState = &vi_create_info,
+      .pVertexInputState = uses_dynamic_state ? NULL : &vertex_input_state,
       .pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-         .topology = desc->topology,
-         .primitiveRestartEnable = desc->primitive_restart,
-      },
-      .pViewportState = &(VkPipelineViewportStateCreateInfo) {
-         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-         .viewportCount = 1,
-         .scissorCount = 1,
+         .topology = uses_dynamic_state ? 0 : desc->topology,
+         .primitiveRestartEnable = uses_dynamic_state ? false : desc->primitive_restart,
       },
       .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-         .rasterizerDiscardEnable = desc->rasterizer_discard,
-         .cullMode = desc->cull_mode,
-         .frontFace = VK_FRONT_FACE_CLOCKWISE,
+         .rasterizerDiscardEnable = uses_dynamic_state ? false : desc->rasterizer_discard,
+         .cullMode = uses_dynamic_state ? 0 : desc->cull_mode,
+         .frontFace = uses_dynamic_state ? 0 : VK_FRONT_FACE_CLOCKWISE,
          .lineWidth = 1.0f,
       },
       .pMultisampleState = &(VkPipelineMultisampleStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-         .rasterizationSamples = desc->fb->samples,
+         .rasterizationSamples = uses_dynamic_state ? 0 : desc->fb->samples,
          .sampleShadingEnable = desc->sample_shading,
          .minSampleShading = 1,
-         .pSampleMask = (VkSampleMask[]){desc->samplemask},
-         .alphaToCoverageEnable = desc->alpha_to_coverage,
+         .pSampleMask = uses_dynamic_state ? NULL : (VkSampleMask[]){desc->samplemask},
+         .alphaToCoverageEnable = uses_dynamic_state ? false : desc->alpha_to_coverage,
       },
       .pDepthStencilState = &(VkPipelineDepthStencilStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -937,18 +962,15 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
                .colorBlendOp = VK_BLEND_OP_ADD,
                .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
                .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-               .colorBlendOp = VK_BLEND_OP_ADD,
+               .alphaBlendOp = VK_BLEND_OP_ADD,
                .colorWriteMask = desc->colormask,
             },
          },
       },
       .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-         .dynamicStateCount = 2,
-         .pDynamicStates = (VkDynamicState[]) {
-             VK_DYNAMIC_STATE_VIEWPORT,
-             VK_DYNAMIC_STATE_SCISSOR,
-         },
+         .dynamicStateCount = uses_dynamic_state ? num_dynamic_states : num_always_dynamic_states,
+         .pDynamicStates = dynamic_states,
       },
       .layout = desc->desc_set_layout ? desc->desc_set_layout->pipeline_layout :
                                         ctx->empty_pipeline_layout,
@@ -988,6 +1010,27 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
    assert(pipeline);
    ctx->current_pipeline = pipeline;
    vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
+
+   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+      if (pipeline->num_vb_desc) {
+         ctx->vkCmdSetVertexInputEXT(ctx->current_cmd_buffer,
+                                     pipeline->num_vb_desc, pipeline->dyn_vi_bindings,
+                                     pipeline->num_vb_desc, pipeline->dyn_vi_attribs);
+      }
+
+      if (!pipeline->desc.ms) {
+         vkCmdSetPrimitiveTopology(ctx->current_cmd_buffer, pipeline->desc.topology);
+         vkCmdSetPrimitiveRestartEnable(ctx->current_cmd_buffer, pipeline->desc.primitive_restart);
+      }
+
+      vkCmdSetRasterizerDiscardEnable(ctx->current_cmd_buffer, pipeline->desc.rasterizer_discard);
+      vkCmdSetCullMode(ctx->current_cmd_buffer, pipeline->desc.cull_mode);
+      vkCmdSetFrontFace(ctx->current_cmd_buffer, VK_FRONT_FACE_CLOCKWISE);
+
+      ctx->vkCmdSetRasterizationSamplesEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples);
+      ctx->vkCmdSetSampleMaskEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples, &pipeline->desc.samplemask);
+      ctx->vkCmdSetAlphaToCoverageEnableEXT(ctx->current_cmd_buffer, pipeline->desc.alpha_to_coverage);
+   }
 }
 
 static void
@@ -1074,13 +1117,13 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       .minDepth = 0,
       .maxDepth = 1,
    };
-   vkCmdSetViewport(ctx->current_cmd_buffer, 0, 1, &viewport);
+   vkCmdSetViewportWithCount(ctx->current_cmd_buffer, 1, &viewport);
 
    const VkRect2D scissor = {
       .offset = { 0, 0 },
       .extent = { desc->fb->width, desc->fb->height },
    };
-   vkCmdSetScissor(ctx->current_cmd_buffer, 0, 1, &scissor);
+   vkCmdSetScissorWithCount(ctx->current_cmd_buffer, 1, &scissor);
 }
 
 static void
@@ -1301,8 +1344,16 @@ vk_create_context(const program_options *options)
    VkPhysicalDevice physical_device = pd[0];
    printf("Physical devices: %u\n", count);
 
+   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT ext_dyn3 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+   };
+   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vi_dyn = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
+      .pNext = &ext_dyn3,
+   };
    VkPhysicalDeviceFragmentShadingRateFeaturesKHR vrs = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
+      .pNext = &vi_dyn,
    };
    VkPhysicalDeviceMeshShaderFeaturesEXT mesh = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
@@ -1331,14 +1382,16 @@ vk_create_context(const program_options *options)
    vkGetPhysicalDeviceFeatures2(physical_device, &features2);
    vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
 
-   mesh.primitiveFragmentShadingRateMeshShader = false;
-
+   VkPhysicalDeviceExtendedDynamicState3PropertiesEXT ext_dyn3_properties = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT,
+   };
    VkPhysicalDeviceMeshShaderPropertiesEXT mesh_properties = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT,
+      .pNext = &ext_dyn3_properties,
    };
    VkPhysicalDeviceProperties2 device_properties = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-      .pNext = mesh.meshShader ? &mesh_properties : NULL,
+      .pNext = &mesh_properties,
    };
    vkGetPhysicalDeviceProperties2(physical_device, &device_properties);
    printf("Device: %s\n", device_properties.properties.deviceName);
@@ -1355,17 +1408,44 @@ vk_create_context(const program_options *options)
    unsigned num_enabled_extensions = 0;
    const char *enabled_extensions[5];
 
+   if (vi_dyn.vertexInputDynamicState) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_EXT_vertex_input_dynamic_state";
+   }
+
+   if (vrs.pipelineFragmentShadingRate) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_KHR_fragment_shading_rate";
+      vrs.attachmentFragmentShadingRate = false;
+   }
+
    if (mesh.meshShader) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_EXT_mesh_shader";
+      mesh.primitiveFragmentShadingRateMeshShader = false;
    }
+
    if (xfb.transformFeedback) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_EXT_transform_feedback";
    }
-   if (vrs.pipelineFragmentShadingRate) {
+
+   if (ext_dyn3.extendedDynamicState3RasterizationSamples ||
+       ext_dyn3.extendedDynamicState3SampleMask ||
+       ext_dyn3.extendedDynamicState3AlphaToCoverageEnable) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_KHR_fragment_shading_rate";
+      enabled_extensions[num_enabled_extensions++] = "VK_EXT_extended_dynamic_state3";
+   }
+
+   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+      if (!vi_dyn.vertexInputDynamicState)
+         error("VK_EXT_vertex_input_dynamic_state is required.");
+      if (!ext_dyn3.extendedDynamicState3RasterizationSamples)
+         error("extendedDynamicState3RasterizationSamples is required.");
+      if (!ext_dyn3.extendedDynamicState3SampleMask)
+         error("extendedDynamicState3SampleMask is required.");
+      if (!ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
+         error("extendedDynamicState3AlphaToCoverageEnable is required.");
    }
 
    /* Open the device. */
@@ -1386,8 +1466,18 @@ vk_create_context(const program_options *options)
                            NULL, &ctx->device));
 
    /* Get extension functions. */
-   ctx->vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)
-                                vkGetDeviceProcAddr(ctx->device, "vkCmdDrawMeshTasksEXT");
+#define GET_PROC_ADDR(name) ctx->name = (PFN_##name)vkGetDeviceProcAddr(ctx->device, #name)
+
+   if (vi_dyn.vertexInputDynamicState)
+      GET_PROC_ADDR(vkCmdSetVertexInputEXT);
+   if (mesh.meshShader)
+      GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
+   if (ext_dyn3.extendedDynamicState3RasterizationSamples)
+      GET_PROC_ADDR(vkCmdSetRasterizationSamplesEXT);
+   if (ext_dyn3.extendedDynamicState3SampleMask)
+      GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
+   if (ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
+      GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
 
    /* Get the queue. */
    vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {

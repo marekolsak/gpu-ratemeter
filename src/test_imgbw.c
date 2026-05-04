@@ -5,7 +5,6 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "common.h"
@@ -460,7 +459,7 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                      api_image *src;
                      api_image *dst;
                      api_framebuffer *fb;
-                  } state[2];
+                  } state[2] = {0};
 
                   for (unsigned size_index = 0; size_index <= 1; size_index++) {
                      unsigned mb_size = (size_index ? 256 : 8) * (DUMP_IMAGES ? 16 : 1024) * 1024;

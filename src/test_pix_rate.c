@@ -759,7 +759,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
             ctx->bind_descriptor_set(ctx, desc_set);
 
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                                   .fb = fbs[f].pipelines[p]->fb,
+                                   .fb = fbs[f].pipelines[p]->desc.fb,
                                    .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                                    .depth_clear_value = 0.5,
                                 });

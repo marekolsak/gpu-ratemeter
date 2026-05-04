@@ -46,6 +46,7 @@
  * - TES?
  * - GL clip planes
  * - multiview
+ * - task shader
  *
  * raster:
  * - test rasterizer efficiency with different screen-space triangle sizes (similar to pix)
@@ -87,18 +88,20 @@ get_substring_before_dot(const char *input, char *output, unsigned output_max_si
 static const struct {
    const char *name;
    api_context *(*create_context)(const program_options *options);
+   unsigned api_flavor;
 } apis[] = {
    {"d3d11", d3d11_create_context},
    {"d3d12", d3d12_create_context},
    {"gl", gl_create_context},
-   {"vk", vk_create_context},
+   {"vk", vk_create_context, API_VK_CORE},
+   {"vk_dyn", vk_create_context, API_VK_DYNAMIC_STATE},
 };
 
 static const struct {
    const char *name;
    void (*execute)(api_context *ctx, const char *test_suite_name);
    bool report_bandwidth;
-} suites[] = {
+} tests[] = {
    {"bufbw", test_buf_bandwidth, true},
    {"imgbw", test_img_bandwidth, true},
    {"pix", test_pix_rate},
@@ -144,6 +147,7 @@ main(int argc, char **argv)
 
    for (unsigned i = 0; i < ARRAY_SIZE(apis); i++) {
       if (!strcmp(api, apis[i].name)) {
+         options.api_flavor = apis[i].api_flavor;
          ctx = apis[i].create_context(&options);
          break;
       }
@@ -152,18 +156,18 @@ main(int argc, char **argv)
    if (!ctx)
       error("Invalid API or API selection missing in parameters: %s", api);
 
-   char test[16], test_suite_name[32];
-   name = get_substring_before_dot(name, test, sizeof(test));
+   char test[16], test_name[32];
+   get_substring_before_dot(name, test, sizeof(test));
 
-   snprintf(test_suite_name, sizeof(test_suite_name), "%s.%s", api, test);
+   snprintf(test_name, sizeof(test_name), "%s.%s", api, test);
 
-   printf("Starting %s...\n", test_suite_name);
+   printf("Starting %s...\n", test_name);
 
    bool executed = false;
-   for (unsigned i = 0; i < ARRAY_SIZE(suites); i++) {
-      if (!strcmp(test, suites[i].name)) {
-         ctx->options.report_bandwidth = suites[i].report_bandwidth;
-         suites[i].execute(ctx, test_suite_name);
+   for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {
+      if (!strcmp(test, tests[i].name)) {
+         ctx->options.report_bandwidth = tests[i].report_bandwidth;
+         tests[i].execute(ctx, test_name);
          executed = true;
          break;
       }

@@ -6,6 +6,7 @@
 #define COMMON_H
 
 #include <stdbool.h>
+#include <stdnoreturn.h>
 
 #ifndef VK_PRIVATE
 #define VK_NO_PROTOTYPES
@@ -205,10 +206,9 @@ typedef struct {
 } api_pipeline_desc;
 
 typedef struct {
-   api_framebuffer *fb;
+   api_pipeline_desc desc;
 
 #ifdef GL_PRIVATE
-   api_pipeline_desc desc;
    GLenum prim_mode;
    GLuint prog;
 #endif
@@ -216,6 +216,8 @@ typedef struct {
 #ifdef VK_PRIVATE
    unsigned num_vb_desc;
    VkPipeline pipeline;
+   VkVertexInputBindingDescription2EXT dyn_vi_bindings[MAX_VERTEX_BUFFERS];
+   VkVertexInputAttributeDescription2EXT dyn_vi_attribs[MAX_VERTEX_BUFFERS];
 #endif
 } api_pipeline;
 
@@ -250,7 +252,13 @@ typedef struct {
 
 #define MAX_COMMAND_BUFFERS   512
 
+enum {
+   API_VK_CORE,
+   API_VK_DYNAMIC_STATE,
+};
+
 typedef struct {
+   unsigned api_flavor;
    unsigned freq_mhz;
    unsigned max_rate;
    bool report_bandwidth;
@@ -363,6 +371,10 @@ typedef struct api_context {
 
    /* Extension functions. */
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
+   PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+   PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
+   PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
+   PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;
 
    /* Command buffers. */
    VkCommandPool cmd_buffer_pool;
@@ -386,7 +398,7 @@ typedef struct api_context {
 #define printflike(a, b) __attribute__((format(printf, (a), (b))))
 
 /* static_assert that can be used inside expressions. */
-#define STATIC_ASSERT_EXPR(cond) (sizeof(struct { _Static_assert(cond); }))
+#define STATIC_ASSERT_EXPR(cond) (sizeof(struct { _Static_assert(cond, ""); }))
 
 /* APIs. */
 api_context *d3d11_create_context(const program_options *options);
@@ -406,7 +418,7 @@ bool check_filter_string(const char *filter_string, const char *name);
 void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
                                            const char *bandwidth_format);
-void error(const char *format, ...) printflike(1, 2);
+noreturn void error(const char *format, ...) printflike(1, 2);
 char *strdup(const char *s);
 void print_progress(unsigned num_items, unsigned *num_processed_items, unsigned print_period);
 void write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels);
