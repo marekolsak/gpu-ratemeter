@@ -250,7 +250,7 @@ typedef struct {
    float depth_clear_value;
 } api_render_pass_desc;
 
-#define MAX_COMMAND_BUFFERS   512
+#define MAX_COMMAND_BUFFERS   1024
 
 enum {
    API_VK_CORE,
@@ -379,10 +379,9 @@ typedef struct api_context {
    /* Command buffers. */
    VkCommandPool cmd_buffer_pool;
    VkCommandBuffer cmd_buffers[MAX_COMMAND_BUFFERS];
-   VkFence fences[MAX_COMMAND_BUFFERS];
+   VkSemaphore timeline_semaphore;
+   uint64_t current_timeline_point;
    VkCommandBuffer current_cmd_buffer;
-   VkFence current_fence;
-   unsigned next_cmdbuf_index;
 
    /* Descriptor pool. */
    VkDescriptorPool descriptor_pool;

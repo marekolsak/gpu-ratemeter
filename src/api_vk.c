@@ -119,6 +119,18 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
    return index;
 }
 
+static void
+vk_wait_for_idle(api_context *ctx)
+{
+   vk_check(vkWaitSemaphores(ctx->device,
+                             &(VkSemaphoreWaitInfo){
+                                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                .semaphoreCount = 1,
+                                .pSemaphores = &ctx->timeline_semaphore,
+                                .pValues = &ctx->current_timeline_point,
+                             }, UINT64_MAX));
+}
+
 static api_buffer *
 vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
 {
@@ -1046,17 +1058,23 @@ static void
 vk_begin_cmdbuf(api_context *ctx)
 {
    assert(ctx->current_cmd_buffer == NULL);
-   assert(ctx->next_cmdbuf_index < MAX_COMMAND_BUFFERS);
-   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->next_cmdbuf_index];
-   ctx->current_fence = ctx->fences[ctx->next_cmdbuf_index];
 
-   vk_check(vkWaitForFences(ctx->device, 1, &ctx->current_fence, true, UINT64_MAX));
-   vk_check(vkResetFences(ctx->device, 1, &ctx->current_fence));
+   if (ctx->current_timeline_point >= MAX_COMMAND_BUFFERS - 1) {
+      uint64_t wait_point = ctx->current_timeline_point - 511;
 
+      vk_check(vkWaitSemaphores(ctx->device,
+                                &(VkSemaphoreWaitInfo){
+                                   .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                   .semaphoreCount = 1,
+                                   .pSemaphores = &ctx->timeline_semaphore,
+                                   .pValues = &wait_point,
+                                }, UINT64_MAX));
+   }
+
+   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->current_timeline_point % MAX_COMMAND_BUFFERS];
    vk_check(vkBeginCommandBuffer(ctx->current_cmd_buffer,
                                  &(VkCommandBufferBeginInfo) {
                                     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                    .flags = 0
                                  }));
 }
 
@@ -1065,31 +1083,28 @@ vk_end_cmdbuf_and_submit(api_context *ctx)
 {
    vk_check(vkEndCommandBuffer(ctx->current_cmd_buffer));
 
-   vk_check(vkQueueSubmit(ctx->queue, 1,
-      &(VkSubmitInfo) {
-         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-         .commandBufferCount = 1,
-         .pCommandBuffers = &ctx->current_cmd_buffer,
-      }, ctx->current_fence));
+   assert(ctx->current_timeline_point != UINT64_MAX);
+   ctx->current_timeline_point++;
 
-   ctx->next_cmdbuf_index = (ctx->next_cmdbuf_index + 1) % MAX_COMMAND_BUFFERS;
+   vk_check(vkQueueSubmit2(ctx->queue, 1,
+      &(VkSubmitInfo2) {
+         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+         .commandBufferInfoCount = 1,
+         .pCommandBufferInfos = &(VkCommandBufferSubmitInfo){
+             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+             .commandBuffer = ctx->current_cmd_buffer,
+         },
+         .signalSemaphoreInfoCount = 1,
+         .pSignalSemaphoreInfos = &(VkSemaphoreSubmitInfo){
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = ctx->timeline_semaphore,
+            .value = ctx->current_timeline_point,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+         },
+      }, NULL));
+
    ctx->current_cmd_buffer = NULL;
-   ctx->current_fence = NULL;
    ctx->current_pipeline = NULL;
-}
-
-static void
-wait_for_last_fence(api_context *ctx)
-{
-   unsigned last_cmdbuf = (ctx->next_cmdbuf_index - 1) % MAX_COMMAND_BUFFERS;
-
-   vk_check(vkWaitForFences(ctx->device, 1, &ctx->fences[last_cmdbuf], true, UINT64_MAX));
-}
-
-static void
-vk_wait_idle_before_deallocation(api_context *ctx)
-{
-   wait_for_last_fence(ctx);
 }
 
 static void
@@ -1226,7 +1241,7 @@ vk_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
    if (!pool->num_written_queries)
       return;
 
-   wait_for_last_fence(ctx);
+   vk_wait_for_idle(ctx);
    vk_check(vkGetQueryPoolResults(ctx->device, pool->pool, 0, pool->num_written_queries,
                                   sizeof(uint64_t) * pool->num_written_queries, pool->results,
                                   sizeof(uint64_t), VK_QUERY_RESULT_64_BIT));
@@ -1511,13 +1526,16 @@ vk_create_context(const program_options *options)
       },
       ctx->cmd_buffers));
 
-   for (unsigned i = 0; i < MAX_COMMAND_BUFFERS; i++) {
-      vk_check(vkCreateFence(ctx->device, &(VkFenceCreateInfo){
-                                .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-                                .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-                             },
-                             NULL, &ctx->fences[i]));
-   }
+   vk_check(vkCreateSemaphore(ctx->device,
+                              &(VkSemaphoreCreateInfo){
+                                 .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                                 .pNext = &(VkSemaphoreTypeCreateInfo){
+                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+                                },
+                              },
+                              NULL, &ctx->timeline_semaphore));
+   ctx->current_timeline_point = 0;
 
    vk_check(vkCreateDescriptorPool(ctx->device,
                                    &(VkDescriptorPoolCreateInfo){
@@ -1547,7 +1565,6 @@ vk_create_context(const program_options *options)
                                    },
                                    NULL, &ctx->empty_pipeline_layout));
 
-   ctx->next_cmdbuf_index = 0;
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
@@ -1616,7 +1633,7 @@ vk_create_context(const program_options *options)
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;
-   ctx->wait_idle_before_deallocation = vk_wait_idle_before_deallocation;
+   ctx->wait_idle_before_deallocation = vk_wait_for_idle;
 
    ctx->begin_render_pass = vk_begin_render_pass;
    ctx->end_render_pass = vk_end_render_pass;
