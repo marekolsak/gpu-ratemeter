@@ -259,7 +259,8 @@ vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new
                                                       VK_IMAGE_ASPECT_DEPTH_BIT :
                                                       VK_IMAGE_ASPECT_COLOR_BIT,
                                      .levelCount = 1,
-                                     .layerCount = image->layer_count,
+                                     .layerCount = image->type == VK_IMAGE_TYPE_3D ?
+                                                      VK_REMAINING_ARRAY_LAYERS : image->layer_count,
                                   },
                                },
                             },
@@ -847,7 +848,9 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       pipeline->dyn_vi_bindings[i].binding = vi_bindings[i].binding = i;
       pipeline->dyn_vi_bindings[i].stride = vi_bindings[i].stride = desc->vb_strides[i];
       pipeline->dyn_vi_bindings[i].inputRate = vi_bindings[i].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+      pipeline->dyn_vi_bindings[i].divisor = 1;
 
+      pipeline->dyn_vi_attribs[i].sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT;
       pipeline->dyn_vi_attribs[i].location = attr_desc[i].location = i;
       pipeline->dyn_vi_attribs[i].binding = attr_desc[i].binding = i;
       pipeline->dyn_vi_attribs[i].format = attr_desc[i].format = desc->vb_formats[i];
@@ -902,13 +905,9 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    unsigned num_dynamic_states = 2;
 
    if (uses_dynamic_state) {
-      if (desc->num_vb_desc) {
-         assert(num_dynamic_states < ARRAY_SIZE(dynamic_states));
-         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
-      }
-
       if (!desc->ms) {
-         assert(num_dynamic_states + 2 <= ARRAY_SIZE(dynamic_states));
+         assert(num_dynamic_states + 3 <= ARRAY_SIZE(dynamic_states));
+         dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
          dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
          dynamic_states[num_dynamic_states++] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
       }
@@ -930,7 +929,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       .pVertexInputState = uses_dynamic_state ? NULL : &vertex_input_state,
       .pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-         .topology = uses_dynamic_state ? 0 : desc->topology,
+         .topology = desc->topology, /* the topology class must still match dynamic state */
          .primitiveRestartEnable = uses_dynamic_state ? false : desc->primitive_restart,
       },
       .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
@@ -942,7 +941,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pMultisampleState = &(VkPipelineMultisampleStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-         .rasterizationSamples = uses_dynamic_state ? 0 : desc->fb->samples,
+         .rasterizationSamples = uses_dynamic_state ? 1 : desc->fb->samples,
          .sampleShadingEnable = desc->sample_shading,
          .minSampleShading = 1,
          .pSampleMask = uses_dynamic_state ? NULL : (VkSampleMask[]){desc->samplemask},
@@ -1017,13 +1016,10 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
    vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 
    if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
-      if (pipeline->num_vb_desc) {
+      if (!pipeline->desc.ms) {
          ctx->vkCmdSetVertexInputEXT(ctx->current_cmd_buffer,
                                      pipeline->num_vb_desc, pipeline->dyn_vi_bindings,
                                      pipeline->num_vb_desc, pipeline->dyn_vi_attribs);
-      }
-
-      if (!pipeline->desc.ms) {
          vkCmdSetPrimitiveTopology(ctx->current_cmd_buffer, pipeline->desc.topology);
          vkCmdSetPrimitiveRestartEnable(ctx->current_cmd_buffer, pipeline->desc.primitive_restart);
       }
@@ -1427,7 +1423,6 @@ vk_create_context(const program_options *options)
    if (mesh.meshShader) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_EXT_mesh_shader";
-      mesh.primitiveFragmentShadingRateMeshShader = false;
    }
 
    if (xfb.transformFeedback) {

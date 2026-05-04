@@ -1591,7 +1591,8 @@ test_prim_rate(api_context *ctx, const char *test_suite_name)
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
-                                           FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                           /* 2 layers because we test gl_Layer. */
+                                           FB_SIZE, FB_SIZE, 2, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device);
    state->fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
                                        colorbuf->height, colorbuf->samples);

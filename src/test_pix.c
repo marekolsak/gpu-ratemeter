@@ -702,6 +702,9 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
          if (!format && (helper_invoc || a2c || colormask0 || colormask_x || blend))
             continue;
 
+         if (format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 && colormask_x)
+            continue;
+
          if (colormask_x && format_get_num_channels(format) == 1)
             continue;
 
