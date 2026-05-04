@@ -45,7 +45,7 @@ vk_has_validation_layer(void)
             return true;
     }
 
-    fprintf(stderr, "Warning: VK_LAYER_KHRONOS_validation not found.\n");
+    fprintf(stderr, "Note: VK_LAYER_KHRONOS_validation not found.\n");
     return false;
 }
 
@@ -507,86 +507,89 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->colorbuf = colorbuf;
    fb->zbuf = zbuf;
 
-   fb->colorbuf_att_index = 0;
-   fb->zbuf_att_index = 0;
-   fb->num_attachments = 0;
+   if (ctx->options.api_flavor == API_VK_CORE) {
+      fb->colorbuf_att_index = 0;
+      fb->zbuf_att_index = 0;
+      fb->num_attachments = 0;
 
-   VkAttachmentDescription att_descs[2];
-   VkImageView att_views[2];
+      VkAttachmentDescription att_descs[2];
+      VkImageView att_views[2];
 
-   if (colorbuf) {
-      assert(!format_is_depth_or_stencil(colorbuf->format));
-      assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+      if (colorbuf) {
+         assert(!format_is_depth_or_stencil(colorbuf->format));
+         assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
-      att_descs[fb->num_attachments] = (VkAttachmentDescription){
-         .format = colorbuf->format,
-         .samples = colorbuf->samples,
-         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-         .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-      };
+         att_descs[fb->num_attachments] = (VkAttachmentDescription){
+            .format = colorbuf->format,
+            .samples = colorbuf->samples,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+         };
 
-      att_views[fb->num_attachments] = colorbuf->render_compatible_view;
-      fb->colorbuf_att_index = fb->num_attachments;
-      fb->num_attachments++;
-   }
+         att_views[fb->num_attachments] = colorbuf->render_compatible_view;
+         fb->colorbuf_att_index = fb->num_attachments;
+         fb->num_attachments++;
+      }
 
-   if (zbuf) {
-      assert(zbuf->type != VK_IMAGE_TYPE_3D);
-      assert(!colorbuf || zbuf->depth == colorbuf->depth);
-      assert(fb->num_attachments < ARRAY_SIZE(att_descs));
+      if (zbuf) {
+         assert(zbuf->type != VK_IMAGE_TYPE_3D);
+         assert(!colorbuf || zbuf->depth == colorbuf->depth);
+         assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
-      att_descs[fb->num_attachments] = (VkAttachmentDescription){
-         .format = zbuf->format,
-         .samples = zbuf->samples,
-         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-      };
+         att_descs[fb->num_attachments] = (VkAttachmentDescription){
+            .format = zbuf->format,
+            .samples = zbuf->samples,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+         };
 
-      att_views[fb->num_attachments] = zbuf->render_compatible_view;
-      fb->zbuf_att_index = fb->num_attachments;
-      fb->num_attachments++;
-   }
+         att_views[fb->num_attachments] = zbuf->render_compatible_view;
+         fb->zbuf_att_index = fb->num_attachments;
+         fb->num_attachments++;
+      }
 
-   vk_check(vkCreateRenderPass(ctx->device,
-                               &(VkRenderPassCreateInfo) {
-                                  .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-                                  .attachmentCount = fb->num_attachments,
-                                  .pAttachments = att_descs,
-                                  .subpassCount = 1,
-                                  .pSubpasses = (VkSubpassDescription[]) {
-                                     {
-                                        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        .colorAttachmentCount = 1,
-                                        .pColorAttachments = (VkAttachmentReference[]) {
-                                           {
-                                              .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
-                                              .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+      vk_check(vkCreateRenderPass(ctx->device,
+                                  &(VkRenderPassCreateInfo) {
+                                     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                                     .attachmentCount = fb->num_attachments,
+                                     .pAttachments = att_descs,
+                                     .subpassCount = 1,
+                                     .pSubpasses = (VkSubpassDescription[]) {
+                                        {
+                                           .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                           .colorAttachmentCount = colorbuf ? 1 : 0,
+                                           .pColorAttachments = (VkAttachmentReference[]) {
+                                              {
+                                                 .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
+                                                 .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                              },
                                            },
-                                        },
-                                        .pDepthStencilAttachment = &(VkAttachmentReference) {
-                                           .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
-                                           .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                                        },
-                                     }
+                                           .pDepthStencilAttachment = &(VkAttachmentReference) {
+                                              .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
+                                              .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                           },
+                                        }
+                                     },
                                   },
-                               },
-                               NULL, &fb->render_pass));
+                                  NULL, &fb->render_pass));
 
-   vk_check(vkCreateFramebuffer(ctx->device,
-                                &(VkFramebufferCreateInfo) {
-                                   .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                                   .renderPass = fb->render_pass,
-                                   .attachmentCount = fb->num_attachments,
-                                   .pAttachments = att_views,
-                                   .width = fb->width,
-                                   .height = fb->height,
-                                   .layers = colorbuf ? colorbuf->depth : 1,
-                                },
-                                NULL, &fb->fb));
+      vk_check(vkCreateFramebuffer(ctx->device,
+                                   &(VkFramebufferCreateInfo) {
+                                      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                                      .renderPass = fb->render_pass,
+                                      .attachmentCount = fb->num_attachments,
+                                      .pAttachments = att_views,
+                                      .width = fb->width,
+                                      .height = fb->height,
+                                      .layers = colorbuf ? colorbuf->depth :
+                                                zbuf ? zbuf->depth : 1,
+                                   },
+                                   NULL, &fb->fb));
+   }
 
    return fb;
 }
@@ -594,8 +597,10 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
 static void
 vk_destroy_framebuffer(struct api_context *ctx, api_framebuffer *fb)
 {
-   vkDestroyFramebuffer(ctx->device, fb->fb, NULL);
-   vkDestroyRenderPass(ctx->device, fb->render_pass, NULL);
+   if (ctx->options.api_flavor == API_VK_CORE) {
+      vkDestroyFramebuffer(ctx->device, fb->fb, NULL);
+      vkDestroyRenderPass(ctx->device, fb->render_pass, NULL);
+   }
    free(fb);
 }
 
@@ -972,7 +977,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-         .attachmentCount = 1,
+         .attachmentCount = desc->fb->colorbuf ? 1 : 0,
          .pAttachments = (VkPipelineColorBlendAttachmentState[]) {
             {
                .blendEnable = desc->blend_src_color || desc->blend_src_alpha,
@@ -995,7 +1000,15 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .layout = desc->desc_set_layout ? desc->desc_set_layout->pipeline_layout :
                                         ctx->empty_pipeline_layout,
-      .renderPass = desc->fb->render_pass,
+      .renderPass = uses_dynamic_state ? NULL : desc->fb->render_pass,
+   };
+
+   VkPipelineRenderingCreateInfo dyn_rendering_pipeline_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+      .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
+      .pColorAttachmentFormats = desc->fb->colorbuf ? &desc->fb->colorbuf->format : NULL,
+      .depthAttachmentFormat = desc->fb->zbuf ? desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
+      .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
    };
 
    assert(desc->vrs_fragment_size[0] && desc->vrs_fragment_size[1]);
@@ -1010,8 +1023,17 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
    };
 
-   if (ctx->has_vrs)
-      pipeline_info.pNext = &vrs;
+   /* Chain structures. */
+   const void **pNext = &pipeline_info.pNext;
+
+   if (uses_dynamic_state) {
+      *pNext = &dyn_rendering_pipeline_info;
+      pNext = &dyn_rendering_pipeline_info.pNext;
+   }
+   if (ctx->has_vrs) {
+      *pNext = &vrs;
+      pNext = &vrs.pNext;
+   }
 
    vk_check(vkCreateGraphicsPipelines(ctx->device, (VkPipelineCache){ VK_NULL_HANDLE },
                                       1, &pipeline_info, NULL, &pipeline->pipeline));
@@ -1110,23 +1132,68 @@ vk_end_cmdbuf_and_submit(api_context *ctx)
 static void
 vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 {
-   VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
+   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+      if (desc->fb->colorbuf) {
+         vk_image_layout_transition(ctx, desc->fb->colorbuf,
+                                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+      }
+      if (desc->fb->zbuf) {
+         vk_image_layout_transition(ctx, desc->fb->zbuf,
+                                    VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+      }
 
-   if (desc->fb->colorbuf)
-      clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->color_clear_value};
-   if (desc->fb->zbuf)
-      clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->depth_clear_value};
+      vkCmdBeginRendering(ctx->current_cmd_buffer,
+                          &(VkRenderingInfo){
+                             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                             .renderArea = {
+                                .offset = {0, 0},
+                                .extent = {desc->fb->width, desc->fb->height},
+                             },
+                             .layerCount = desc->fb->colorbuf ? desc->fb->colorbuf->depth :
+                                           desc->fb->zbuf ? desc->fb->zbuf->depth : 1,
+                             .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
+                             .pColorAttachments = &(VkRenderingAttachmentInfo){
+                                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                                .imageView = desc->fb->colorbuf ?
+                                                desc->fb->colorbuf->render_compatible_view : NULL,
+                                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+                                .clearValue = {
+                                    .color = desc->color_clear_value,
+                                },
+                             },
+                             .pDepthAttachment = &(VkRenderingAttachmentInfo){
+                                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                                .imageView = desc->fb->zbuf ?
+                                                desc->fb->zbuf->render_compatible_view : NULL,
+                                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                .clearValue = {
+                                    .depthStencil = {desc->depth_clear_value, 0},
+                                },
+                             },
+                          });
+   } else {
+      VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
 
-   vkCmdBeginRenderPass(ctx->current_cmd_buffer,
-                        &(VkRenderPassBeginInfo) {
-                           .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                           .renderPass = desc->fb->render_pass,
-                           .framebuffer = desc->fb->fb,
-                           .renderArea = { { 0, 0 }, { desc->fb->width, desc->fb->height } },
-                           .clearValueCount = desc->fb->num_attachments,
-                           .pClearValues = clear_values,
-                        },
-                        VK_SUBPASS_CONTENTS_INLINE);
+      if (desc->fb->colorbuf)
+         clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->color_clear_value};
+      if (desc->fb->zbuf)
+         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->depth_clear_value};
+
+      vkCmdBeginRenderPass(ctx->current_cmd_buffer,
+                           &(VkRenderPassBeginInfo) {
+                              .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                              .renderPass = desc->fb->render_pass,
+                              .framebuffer = desc->fb->fb,
+                              .renderArea = { { 0, 0 }, { desc->fb->width, desc->fb->height } },
+                              .clearValueCount = desc->fb->num_attachments,
+                              .pClearValues = clear_values,
+                           },
+                           VK_SUBPASS_CONTENTS_INLINE);
+   }
 
    if (desc->fb->colorbuf)
       desc->fb->colorbuf->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1153,7 +1220,10 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 static void
 vk_end_render_pass(api_context *ctx)
 {
-   vkCmdEndRenderPass(ctx->current_cmd_buffer);
+   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE)
+      vkCmdEndRendering(ctx->current_cmd_buffer);
+   else
+      vkCmdEndRenderPass(ctx->current_cmd_buffer);
 }
 
 static void
@@ -1461,6 +1531,8 @@ vk_create_context(const program_options *options)
    }
 
    if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+      if (!vulkan13.dynamicRendering)
+         error("dynamicRendering is required.");
       if (!vi_dyn.vertexInputDynamicState)
          error("VK_EXT_vertex_input_dynamic_state is required.");
       if (!ext_dyn3.extendedDynamicState3RasterizationSamples)
@@ -1501,6 +1573,7 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
    if (ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
       GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
+#undef GET_PROC_ADDR
 
    /* Get the queue. */
    vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
