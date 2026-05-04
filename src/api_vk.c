@@ -926,7 +926,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
          dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
       }
 
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
+      //dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_CULL_MODE;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_FRONT_FACE;
       dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
@@ -951,7 +951,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-         .rasterizerDiscardEnable = uses_dynamic_state ? false : desc->rasterizer_discard,
+         .rasterizerDiscardEnable = desc->rasterizer_discard,
          .cullMode = uses_dynamic_state ? 0 : desc->cull_mode,
          .frontFace = uses_dynamic_state ? 0 : VK_FRONT_FACE_CLOCKWISE,
          .lineWidth = 1.0f,
@@ -1041,7 +1041,7 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
          vkCmdSetPrimitiveRestartEnable(ctx->current_cmd_buffer, pipeline->desc.primitive_restart);
       }
 
-      vkCmdSetRasterizerDiscardEnable(ctx->current_cmd_buffer, pipeline->desc.rasterizer_discard);
+      //vkCmdSetRasterizerDiscardEnable(ctx->current_cmd_buffer, pipeline->desc.rasterizer_discard);
       vkCmdSetCullMode(ctx->current_cmd_buffer, pipeline->desc.cull_mode);
       vkCmdSetFrontFace(ctx->current_cmd_buffer, VK_FRONT_FACE_CLOCKWISE);
 
