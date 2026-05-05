@@ -391,7 +391,7 @@ static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_uint = {.uint32 = {23, 45, 89, 107}};
 
 static void
-run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *num_tests,
+run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tests,
     api_timestamp_query_pool *timestamps)
 {
    if (stage == REPORT) {
@@ -846,16 +846,16 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
 }
 
 void
-test_img_bandwidth(api_context *ctx, const char *test_suite_name)
+test_img_bandwidth(api_context *ctx, const char *test_name)
 {
    unsigned num_tests = 0;
 
-   run(ctx, test_suite_name, COUNT_TESTS, &num_tests, NULL);
+   run(ctx, test_name, COUNT_TESTS, &num_tests, NULL);
 
    api_timestamp_query_pool *timestamps = ctx->create_timestamp_pool(ctx, num_tests * 2);
 
-   run(ctx, test_suite_name, RUN, &num_tests, timestamps);
+   run(ctx, test_name, RUN, &num_tests, timestamps);
 
    ctx->query_timestamps(ctx, timestamps);
-   run(ctx, test_suite_name, REPORT, NULL, timestamps);
+   run(ctx, test_name, REPORT, NULL, timestamps);
 }

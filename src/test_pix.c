@@ -533,7 +533,7 @@ test_filter(api_context *ctx, unsigned samples, const pipeline_info *pipeline)
 }
 
 static void
-run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned samples,
+run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
                   compiled_shaders_state *compiled_shaders)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
@@ -851,7 +851,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
       get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, &pipelines[p]);
 
       char name[256];
-      snprintf(name, sizeof(name), "%s%s", test_suite_name, pipeline_name);
+      snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
       printf("%-85s", name);
 
       for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
@@ -876,7 +876,7 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
 }
 
 void
-test_pix_rate(api_context *ctx, const char *test_suite_name)
+test_pix_rate(api_context *ctx, const char *test_name)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)];
 
@@ -914,8 +914,8 @@ test_pix_rate(api_context *ctx, const char *test_suite_name)
       free(fs_out_uint);
    }
 
-   run_test_pix_rate(ctx, test_suite_name, 1, compiled_shaders);
+   run_test_pix_rate(ctx, test_name, 1, compiled_shaders);
 
    if (ctx->supported_color_sample_counts & VK_SAMPLE_COUNT_8_BIT)
-      run_test_pix_rate(ctx, test_suite_name, 8, compiled_shaders);
+      run_test_pix_rate(ctx, test_name, 8, compiled_shaders);
 }

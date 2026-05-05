@@ -318,7 +318,7 @@ typedef struct unique_buffer_set {
 } unique_buffer_set;
 
 typedef struct {
-   const char *test_suite_name;
+   const char *test_name;
 
    api_shader *ms[NUM_GEOMETRY_STYLES][NUM_SPECIAL1_ATTRIBUTES][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_shader *vs[NUM_SPECIAL1_ATTRIBUTES][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
@@ -1524,7 +1524,7 @@ get_test_name(char *out, unsigned out_size, const test_state *state, const test_
             test->special2 == SPECIAL2_OUTPUT_LAYER ? ".output_layer" :
             test->special2 == SPECIAL2_OUTPUT_VRS1x1 ? ".output_vrs1x1" : "INVALID");
 
-   snprintf(out, out_size, "%s%s%s%s%s", state->test_suite_name, cull_info1, geom,
+   snprintf(out, out_size, "%s%s%s%s%s", state->test_name, cull_info1, geom,
             cull_method, special2);
 }
 
@@ -1584,11 +1584,11 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
 }
 
 void
-test_prim_rate(api_context *ctx, const char *test_suite_name)
+test_prim_rate(api_context *ctx, const char *test_name)
 {
    test_state *state = calloc(1, sizeof(test_state));
 
-   state->test_suite_name = test_suite_name;
+   state->test_name = test_name;
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,

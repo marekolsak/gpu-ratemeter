@@ -109,7 +109,7 @@ enum test_stage {
 };
 
 static void
-run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
+run(api_context *ctx, const char *test_name, enum test_stage stage,
     api_timestamp_query_pool *timestamps, unsigned *num_tests)
 {
    if (stage == REPORT) {
@@ -169,7 +169,7 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
             if (stage == REPORT) {
                char name[1024];
 
-               snprintf(name, sizeof(name), "%s.%s.%s.%s", test_suite_name,
+               snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
                         test_strings[test_flavor], cached ? "hit" : "miss",
                         align_info[align].string);
                printf("%-53s", name);
@@ -246,22 +246,22 @@ run(api_context *ctx, const char *test_suite_name, enum test_stage stage,
 }
 
 void
-test_buf_bandwidth(api_context *ctx, const char *test_suite_name)
+test_buf_bandwidth(api_context *ctx, const char *test_name)
 {
    unsigned num_tests = 0;
-   run(ctx, test_suite_name, COUNT_TESTS, NULL, &num_tests);
+   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests);
 
    /* Create timestamp queries. */
    api_timestamp_query_pool *timestamps =
       ctx->create_timestamp_pool(ctx, num_tests * 2);
 
    printf("Executing tests ...");
-   run(ctx, test_suite_name, RUN, timestamps, &num_tests);
+   run(ctx, test_name, RUN, timestamps, &num_tests);
 
    puts("");
    puts("Reading back results...");
    ctx->query_timestamps(ctx, timestamps);
 
    puts("Units: GB/s");
-   run(ctx, test_suite_name, REPORT, timestamps, &num_tests);
+   run(ctx, test_name, REPORT, timestamps, &num_tests);
 }

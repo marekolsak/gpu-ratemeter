@@ -99,7 +99,7 @@ static const struct {
 
 static const struct {
    const char *name;
-   void (*execute)(api_context *ctx, const char *test_suite_name);
+   void (*execute)(api_context *ctx, const char *test_name);
    bool report_bandwidth;
 } tests[] = {
    {"bufbw", test_buf_bandwidth, true},

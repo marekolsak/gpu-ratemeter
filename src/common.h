@@ -423,11 +423,11 @@ api_context *gl_create_context(const program_options *options);
 api_context *vk_create_context(const program_options *options);
 
 /* Tests. */
-void test_buf_bandwidth(api_context *ctx, const char *test_suite_name);
-void test_img_bandwidth(api_context *ctx, const char *test_suite_name);
-void test_pix_rate(api_context *ctx, const char *test_suite_name);
-void test_prim_rate(api_context *ctx, const char *test_suite_name);
-void test_sanity(api_context *ctx, const char *test_suite_name);
+void test_buf_bandwidth(api_context *ctx, const char *test_name);
+void test_img_bandwidth(api_context *ctx, const char *test_name);
+void test_pix_rate(api_context *ctx, const char *test_name);
+void test_prim_rate(api_context *ctx, const char *test_name);
+void test_sanity(api_context *ctx, const char *test_name);
 
 /* utils.c */
 bool check_filter_string(const char *filter_string, const char *name);

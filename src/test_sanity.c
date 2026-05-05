@@ -129,7 +129,7 @@ init_cube_vb(api_context *ctx, uint64_t *vb_offsets)
 }
 
 void
-test_sanity(api_context *ctx, const char *test_suite_name)
+test_sanity(api_context *ctx, const char *test_name)
 {
    uint64_t vb_offsets[3];
 
