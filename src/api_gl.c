@@ -624,6 +624,13 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
 static void
 gl_destroy_framebuffer(api_context *ctx, api_framebuffer *fb)
 {
+   assert(fb != ctx->fb);
+
+   if (fb == ctx->prev_fb) {
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      ctx->prev_fb = NULL;
+   }
+
    glDeleteFramebuffers(1, &fb->id);
    free(fb);
 }
@@ -1031,33 +1038,40 @@ gl_wait_idle_before_deallocation(api_context *ctx)
 static void
 gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 {
-   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, desc->fb->id);
-   glViewport(0, 0, desc->fb->width, desc->fb->height);
+   ctx->fb = desc->fb;
 
-   if (desc->fb->colorbuf) {
-      /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
-      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-      if (format_is_sint((desc->fb->colorbuf->format)))
-         glClearBufferiv(GL_COLOR, 0, desc->color_clear_value.int32);
-      else if (format_is_integer(desc->fb->colorbuf->format))
-         glClearBufferuiv(GL_COLOR, 0, desc->color_clear_value.uint32);
-      else
-         glClearBufferfv(GL_COLOR, 0, desc->color_clear_value.float32);
+   if (desc->fb != ctx->prev_fb) {
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, desc->fb->id);
+      glViewport(0, 0, desc->fb->width, desc->fb->height);
+      ctx->prev_fb = NULL;
    }
 
-   if (desc->fb->zbuf) {
-      glDepthMask(GL_TRUE);
-      glClearBufferfv(GL_DEPTH, 0, &desc->depth_clear_value);
-   }
+   if (desc->clear) {
+      if (desc->fb->colorbuf) {
+         /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
+         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-   gl_set_current_pipeline_color_depth_masks(ctx);
+         if (format_is_sint((desc->fb->colorbuf->format)))
+            glClearBufferiv(GL_COLOR, 0, desc->color_clear_value.int32);
+         else if (format_is_integer(desc->fb->colorbuf->format))
+            glClearBufferuiv(GL_COLOR, 0, desc->color_clear_value.uint32);
+         else
+            glClearBufferfv(GL_COLOR, 0, desc->color_clear_value.float32);
+      }
+
+      if (desc->fb->zbuf) {
+         glDepthMask(GL_TRUE);
+         glClearBufferfv(GL_DEPTH, 0, &desc->depth_clear_value);
+      }
+
+      gl_set_current_pipeline_color_depth_masks(ctx);
+   }
 }
 
 static void
 gl_end_render_pass(api_context *ctx)
 {
-   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+   ctx->prev_fb = ctx->fb;
 }
 
 static void
@@ -1094,8 +1108,8 @@ gl_pipeline_barrier(api_context *ctx, VkPipelineStageFlagBits2 stage_bits)
 {
    GLbitfield barrier = 0;
 
-   if (stage_bits & VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
-      barrier |= GL_ALL_BARRIER_BITS;
+   if (!stage_bits && ctx->options.rdna4_timestamp_wa)
+      barrier |= GL_ELEMENT_ARRAY_BARRIER_BIT; /* PS_PARTIAL_FLUSH in mesa/radeonsi */
 
    assert(barrier);
    glMemoryBarrier(barrier);

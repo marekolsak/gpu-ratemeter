@@ -214,6 +214,7 @@ test_sanity(api_context *ctx, const char *test_suite_name)
    ctx->begin_cmdbuf(ctx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = fb,
+                             .clear = true,
                              .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                           });
    ctx->bind_pipeline(ctx, pipeline);

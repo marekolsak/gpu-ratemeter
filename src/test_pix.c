@@ -761,23 +761,33 @@ run_test_pix_rate(api_context *ctx, const char *test_suite_name, unsigned sample
          if (!formats[f].format)
             ctx->bind_descriptor_set(ctx, desc_set);
 
+         ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
+
+         /* Render pass for the warm-up. */
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
+                                   .clear = true,
                                    .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                                    .depth_clear_value = 0.5,
                                 });
-         ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
-
          /* Warm up the GPU. */
          ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3 / 4,
                                          .instance_count = 1});
+         ctx->end_render_pass(ctx);
 
+         /* Unfortunately needed. */
+         if (ctx->options.rdna4_timestamp_wa)
+            ctx->pipeline_barrier(ctx, 0);
+
+         /* Render pass for the measurement. */
+         ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                                   .fb = fbs[f].pipelines[p]->desc.fb,
+                                });
          /* Measure. */
          ctx->write_next_timestamp(ctx, timestamps);
          ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3,
                                          .instance_count = 1});
          ctx->write_next_timestamp(ctx, timestamps);
-
          ctx->end_render_pass(ctx);
          ctx->end_cmdbuf_and_submit(ctx);
 

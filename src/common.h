@@ -106,8 +106,8 @@ typedef struct {
 #endif
 
 #ifdef VK_PRIVATE
-   VkRenderPass render_pass;
-   VkFramebuffer fb;
+   VkRenderPass render_pass[2];  /* 0=no clear, 1=clear */
+   VkFramebuffer fb[2];          /* 0=no clear, 1=clear */
    unsigned num_attachments;
    unsigned colorbuf_att_index;
    unsigned zbuf_att_index;
@@ -248,6 +248,7 @@ typedef struct {
 
 typedef struct {
    api_framebuffer *fb;
+   bool clear;
    VkClearColorValue color_clear_value;
    float depth_clear_value;
 } api_render_pass_desc;
@@ -369,6 +370,8 @@ typedef struct api_context {
    /* Private members. */
 #ifdef GL_PRIVATE
    api_pipeline *current_pipeline;
+   api_framebuffer *fb;
+   api_framebuffer *prev_fb;
 #endif
 
 #ifdef VK_PRIVATE

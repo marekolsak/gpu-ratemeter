@@ -246,7 +246,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                            });
 
    ctx->begin_cmdbuf(ctx);
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb});
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb, .clear = true});
 
    ctx->bind_pipeline(ctx, pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
@@ -760,6 +760,7 @@ run(api_context *ctx, const char *test_suite_name, test_stage stage, unsigned *n
                                     ctx->begin_render_pass(ctx,
                                                            &(api_render_pass_desc) {
                                                               .fb = state[size_index].fb,
+                                                              .clear = true,
                                                               .color_clear_value = *clear_color,
                                                            });
                                     ctx->end_render_pass(ctx);
