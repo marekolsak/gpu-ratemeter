@@ -4,7 +4,7 @@
 
 /* TODO:
  *
- * Test suites:
+ * Tests:
  * - iobw (port shader-io-rate)
  * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
  * - rt
@@ -110,23 +110,64 @@ static const struct {
    {"sanity", test_sanity},
 };
 
+typedef enum {
+   OPTION_BOOL,
+   OPTION_UINT,
+   OPTION_STRING,
+} option_type;
+
+typedef struct {
+   option_type type;
+   const char *name;
+   unsigned offset;
+} option_desc;
+
+static const option_desc option_list[] = {
+   {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
+   {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
+   {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
+   {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},
+   {OPTION_STRING, "-filter=", offsetof(program_options, test_filter)},
+   {OPTION_STRING, "-format=", offsetof(program_options, format_filter)},
+};
+
 int
 main(int argc, char **argv)
 {
    program_options options = {0};
 
    for (unsigned i = 1; i < argc - 1; i++) {
-      if (!strncmp(argv[i], "-freq=", 6))
-         sscanf(argv[i] + 6, "%u", &options.freq_mhz);
-      else if (!strncmp(argv[i], "-maxrate=", 9))
-         sscanf(argv[i] + 9, "%u", &options.max_rate);
-      else if (!strcmp(argv[i], "-lean"))
-         options.lean = true;
-      else if (!strncmp(argv[i], "-filter=", 8))
-         options.test_filter = argv[i] + 8;
-      else if (!strncmp(argv[i], "-format=", 8))
-         options.format_filter = argv[i] + 8;
-      else
+      bool valid = false;
+
+      for (unsigned o = 0; o < ARRAY_SIZE(option_list); o++) {
+         unsigned len = option_list[o].type != OPTION_BOOL ? strlen(option_list[o].name) : 0;
+
+         switch (option_list[o].type) {
+         case OPTION_BOOL:
+            if (!strcmp(argv[i], option_list[o].name)) {
+               *((uint8_t*)&options + option_list[o].offset) = true;
+               valid = true;
+            }
+            break;
+         case OPTION_UINT:
+            if (!strncmp(argv[i], option_list[o].name, len)) {
+               sscanf(argv[i] + len, "%u",
+                      (unsigned*)((uint8_t*)&options + option_list[o].offset));
+               valid = true;
+            }
+            break;
+         case OPTION_STRING:
+            if (!strncmp(argv[i], option_list[o].name, len)) {
+               *(const char**)((uint8_t*)&options + option_list[o].offset) = argv[i] + len;
+               valid = true;
+            }
+            break;
+         }
+         if (valid)
+            break;
+      }
+
+      if (!valid)
          error("Unknown option: %s", argv[i]);
    }
 

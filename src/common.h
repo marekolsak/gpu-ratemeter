@@ -260,11 +260,19 @@ enum {
 };
 
 typedef struct {
+   /* API and test options. */
    unsigned api_flavor;
+   bool report_bandwidth;
+
+   /* Bool options.*/
+   bool lean;
+   bool rdna4_timestamp_wa;
+
+   /* Uint options. */
    unsigned freq_mhz;
    unsigned max_rate;
-   bool report_bandwidth;
-   bool lean;
+
+   /* String options. */
    const char *test_filter;
    const char *format_filter;
 } program_options;
