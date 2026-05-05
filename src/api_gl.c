@@ -1072,6 +1072,7 @@ static void
 gl_end_render_pass(api_context *ctx)
 {
    ctx->prev_fb = ctx->fb;
+   ctx->fb = NULL;
 }
 
 static void
@@ -1104,15 +1105,16 @@ gl_draw(api_context *ctx, const api_draw_desc *desc)
 }
 
 static void
-gl_pipeline_barrier(api_context *ctx, VkPipelineStageFlagBits2 stage_bits)
+gl_driver_workaround(api_context *ctx, driver_wa wa)
 {
-   GLbitfield barrier = 0;
-
-   if (!stage_bits && ctx->options.rdna4_timestamp_wa)
-      barrier |= GL_ELEMENT_ARRAY_BARRIER_BIT; /* PS_PARTIAL_FLUSH in mesa/radeonsi */
-
-   assert(barrier);
-   glMemoryBarrier(barrier);
+   switch (wa) {
+   case WA_RDNA4_TIMESTAMP_BUG:
+      if (ctx->options.rdna4_timestamp_wa)
+         glMemoryBarrier(GL_ELEMENT_ARRAY_BARRIER_BIT); /* PS/CS_PARTIAL_FLUSH in mesa/radeonsi */
+      break;
+   default:
+      error("invalid workaround enum");
+   }
 }
 
 static api_timestamp_query_pool *
@@ -1271,7 +1273,7 @@ gl_create_context(const program_options *options)
    ctx->bind_vertex_buffers = gl_bind_vertex_buffers;
    ctx->bind_index_buffer = gl_bind_index_buffer;
    ctx->draw = gl_draw;
-   ctx->pipeline_barrier = gl_pipeline_barrier;
+   ctx->driver_workaround = gl_driver_workaround;
 
    ctx->create_timestamp_pool = gl_create_timestamp_pool;
    ctx->write_next_timestamp = gl_write_next_timestamp;

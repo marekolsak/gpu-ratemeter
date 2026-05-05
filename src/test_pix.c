@@ -777,7 +777,7 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
 
          /* Unfortunately needed. */
          if (ctx->options.rdna4_timestamp_wa)
-            ctx->pipeline_barrier(ctx, 0);
+            ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
 
          /* Render pass for the measurement. */
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){

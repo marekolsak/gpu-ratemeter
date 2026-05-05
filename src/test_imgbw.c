@@ -752,8 +752,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               /* Run tests. */
                               for (unsigned i = 0; i < NUM_WARMUP_RUNS + NUM_RUNS; i++) {
                                  /* The first few just warm up caches and the hw. */
-                                 if (i == NUM_WARMUP_RUNS)
+                                 if (i == NUM_WARMUP_RUNS) {
+                                    ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
                                     ctx->write_next_timestamp(ctx, timestamps);
+                                 }
 
                                  switch (test_index) {
                                  case TEST_FB_CLEAR:
@@ -764,9 +766,6 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                               .color_clear_value = *clear_color,
                                                            });
                                     ctx->end_render_pass(ctx);
-
-                                    /* TODO: Consider removing this. */
-                                    ctx->pipeline_barrier(ctx, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
                                     break;
 
                                  case TEST_CLEAR:

@@ -1301,10 +1301,23 @@ vk_draw(api_context *ctx, const api_draw_desc *desc)
 }
 
 static void
-vk_pipeline_barrier(struct api_context *ctx, VkPipelineStageFlagBits2 stage_bits)
+vk_driver_workaround(struct api_context *ctx, driver_wa wa)
 {
-   if (!stage_bits && ctx->options.rdna4_timestamp_wa)
-      stage_bits = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT; /* PS_PARTIAL_FLUSH */
+   VkPipelineStageFlagBits2 stage_bits = 0;
+
+   switch (wa) {
+   case WA_RDNA4_TIMESTAMP_BUG:
+      if (ctx->options.rdna4_timestamp_wa) {
+         stage_bits = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |   /* PS_PARTIAL_FLUSH */
+                      VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;     /* CS_PARTIAL_FLUSH */
+      }
+      break;
+   default:
+      error("invalid workaround enum");
+   }
+
+   if (!stage_bits)
+      return;
 
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
                             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -1777,7 +1790,7 @@ vk_create_context(const program_options *options)
    ctx->bind_vertex_buffers = vk_bind_vertex_buffers;
    ctx->bind_index_buffer = vk_bind_index_buffer;
    ctx->draw = vk_draw;
-   ctx->pipeline_barrier = vk_pipeline_barrier;
+   ctx->driver_workaround = vk_driver_workaround;
 
    ctx->create_timestamp_pool = vk_create_timestamp_pool;
    ctx->write_next_timestamp = vk_write_next_timestamp;

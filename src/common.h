@@ -278,6 +278,10 @@ typedef struct {
    const char *format_filter;
 } program_options;
 
+typedef enum {
+   WA_RDNA4_TIMESTAMP_BUG,
+} driver_wa;
+
 typedef struct api_context {
    program_options options;
 
@@ -361,7 +365,7 @@ typedef struct api_context {
    void (*bind_vertex_buffers)(struct api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets);
    void (*bind_index_buffer)(struct api_context *ctx, api_buffer *ib);
    void (*draw)(struct api_context *ctx, const api_draw_desc *desc);
-   void (*pipeline_barrier)(struct api_context *ctx, VkPipelineStageFlagBits2 stage_bits);
+   void (*driver_workaround)(struct api_context *ctx, driver_wa wa);
 
    api_timestamp_query_pool *(*create_timestamp_pool)(struct api_context *ctx, unsigned num_queries);
    void (*write_next_timestamp)(struct api_context *ctx, api_timestamp_query_pool *pool);
