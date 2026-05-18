@@ -149,23 +149,23 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_y", "gl_FragCoord.yyyy"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_z", "gl_FragCoord.zzzz"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_w", "gl_FragCoord.wwww"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy", "gl_FragCoord.xyyy"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_zw", "gl_FragCoord.zwww"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyz", "gl_FragCoord.xyzz"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyw", "gl_FragCoord.xyww"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw", "gl_FragCoord"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face", "gl_FragCoord.xyyy + vec4(gl_FrontFacing)"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.samplemask", "gl_FragCoord.xyyy + vec4(gl_SampleMaskIn[0])"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.samplemask", "gl_FragCoord.xyyy + vec4(gl_FrontFacing) + vec4(gl_SampleMaskIn[0])"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "gl_FragCoord + vec4(gl_FrontFacing) + vec4(gl_SampleMaskIn[0])"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy", "vec4(dot(gl_FragCoord.xy, vec2(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_zw", "vec4(dot(gl_FragCoord.zw, vec2(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyz", "vec4(dot(gl_FragCoord.xyz, vec3(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyw", "vec4(dot(gl_FragCoord.xyw, vec3(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw", "vec4(dot(gl_FragCoord, vec4(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid", "vec4(gl_SampleID)"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos", "vec4(gl_SampleID) + gl_SamplePosition.xyyy"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplemask", "vec4(gl_SampleID) + vec4(gl_SampleMaskIn[0])"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask", "vec4(gl_SampleID) + gl_SamplePosition.xyyy + vec4(gl_SampleMaskIn[0])"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xy", "vec4(gl_SampleID) + gl_FragCoord.xyyy"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_z", "vec4(gl_SampleID) + gl_FragCoord.zzzz"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xyzw", "vec4(gl_SampleID) + gl_FragCoord"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask.fragpos_xyzw.face", "vec4(gl_SampleID) + gl_SamplePosition.xyyy + vec4(gl_SampleMaskIn[0]) + gl_FragCoord.xyzw + vec4(gl_FrontFacing)")
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplemask", "vec4(float(gl_SampleID) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xy", "vec4(float(gl_SampleID) + dot(gl_FragCoord.xy, vec2(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_z", "vec4(float(gl_SampleID) + gl_FragCoord.z)"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xyzw", "vec4(float(gl_SampleID) + dot(gl_FragCoord, vec4(1)))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask.fragpos_xyzw.face", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)) + float(gl_SampleMaskIn[0]) + dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing))")
 
 #define INPUTS1(qual1_name, qual1) \
    INPUTS(1, qual1_name, qual1, 0, "", ""), \
