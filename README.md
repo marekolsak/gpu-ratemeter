@@ -105,8 +105,7 @@ WIP (functionally mostly finished, try it)
 Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
 Decoding subtest names:
-- `noaa`: the framebuffer has 1 sample
-- `msaa8`: the framebuffer has 8 samples
+- `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
 - `fs_empty`: empty fragment shader
 - `fs_discard`: the fragment shader only contains `discard;`
 - `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
