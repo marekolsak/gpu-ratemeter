@@ -143,8 +143,11 @@ typedef struct {
 
 #define INPUTS(num1, qual1_name, qual1, num2, qual2_name, qual2) \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, num1 || num2 ? "" : ".const_fill", "vec4(0.5, 0.4, 0, 1)"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, num1 || num2 ? ".msaa_disabled" : ".const_fill.msaa_disabled", "vec4(0.5, 0.4, 0, 1)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".face", "vec4(gl_FrontFacing)"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".face.cull_back", "vec4(gl_FrontFacing)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".samplemask", "vec4(gl_SampleMaskIn[0])"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".samplemask.msaa_disabled", "vec4(gl_SampleMaskIn[0])"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_x", "gl_FragCoord.xxxx"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_y", "gl_FragCoord.yyyy"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_z", "gl_FragCoord.zzzz"), \
@@ -155,9 +158,14 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyw", "vec4(dot(gl_FragCoord.xyw, vec3(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw", "vec4(dot(gl_FragCoord, vec4(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.cull_back", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.samplemask.msaa_disabled", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.cull_back", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.msaa_disabled", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.cull_back.msaa_disabled", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid", "vec4(gl_SampleID)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplemask", "vec4(float(gl_SampleID) + float(gl_SampleMaskIn[0]))"), \
@@ -551,13 +559,12 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
       bool sample_shading = strstr(pipeline_name, "_sample") || /* per-sample interpolation */
                             strstr(pipeline_name, "sampleid") ||
                             strstr(pipeline_name, "samplepos");
+      bool cull_back = strstr(pipeline_name, ".cull_back");
+      bool msaa_disabled = strstr(pipeline_name, ".msaa_disabled");
 
-      if (!test_filter(ctx, samples, &pipelines[p])) {
-         skip_pipeline[p] = true;
-         continue;
-      }
-
-      if (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample")) {
+      if (!test_filter(ctx, samples, &pipelines[p]) ||
+          (samples == 1 && msaa_disabled) ||
+          (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample"))) {
          skip_pipeline[p] = true;
          continue;
       }
@@ -577,11 +584,13 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
 
       pipeline_descs[p] = (api_pipeline_desc){
          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+         .cull_mode = cull_back ? VK_CULL_MODE_BACK_BIT : 0,
          .vs = compiled_shaders[p].vs,
 
          .vrs_fragment_size = {1, 1},
          .sample_shading = sample_shading,
          .samplemask = (1 << samples) - 1,
+         .msaa_disabled = msaa_disabled,
          .depth_enabled = strstr(pipeline_name, "zbuf") && !strstr(pipeline_name, "z_disabled"),
          .depth_write_enabled = !strstr(pipeline_name, ".ztest"),
          .depth_compare_op = strstr(pipeline_name, ".ztest_never") ? VK_COMPARE_OP_NEVER :
@@ -808,7 +817,7 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
                                      "billion pixels/second (no MSAA) or billion samples/second (MSAA)");
    }
 
-   printf("%-85s", "Formats");
+   printf("%-87s", "Formats");
 
    unsigned off = 0;
 
@@ -852,7 +861,7 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
 
       char name[256];
       snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
-      printf("%-85s", name);
+      printf("%-87s", name);
 
       for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
          if (fbs[f].skip)

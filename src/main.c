@@ -14,8 +14,8 @@
  * - sampler: image load and filter rate
  *
  * APIs:
+ * - Vulkan modes: GPL, KSO
  * - DX12
- * - Vulkan modes: 1) all states are dynamic, 2) same as 1 but also using VK_EXT_graphics_pipeline_library
  * - DX11
  * - CUDA? (for ML)
  * - OpenCL?
@@ -36,6 +36,7 @@
  * pix:
  * - multiview
  * - render to 3D texture?
+ * - draw a statically-tessellated full-screen quad, quads should fill the screen in the Morton order
  *
  * prim:
  * - VS + transform feedback
@@ -47,12 +48,7 @@
  * - GL clip planes
  * - multiview
  * - task shader
- *
- * raster:
- * - test rasterizer efficiency with different screen-space triangle sizes (similar to pix)
- *
- * AMD TODO:
- * - pix: timestamp queries are broken on gfx12 with Z/samplemask/A2C outputs and 128bpp formats, test older gens
+ * - fill the screen in the Morton order instead of linearly
  */
 
 #include <stdio.h>

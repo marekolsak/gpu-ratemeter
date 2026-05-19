@@ -997,7 +997,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_pipeline *pipeline)
       glDisable(GL_BLEND);
    }
 
-   if (pipeline->desc.fb->samples > 1) {
+   if (pipeline->desc.fb->samples > 1 && !pipeline->desc.msaa_disabled) {
       glEnable(GL_MULTISAMPLE);
       glEnable(GL_SAMPLE_MASK);
    } else {

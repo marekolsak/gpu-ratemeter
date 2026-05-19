@@ -194,6 +194,7 @@ typedef struct {
 
    uint8_t vrs_fragment_size[2];
    bool sample_shading;
+   bool msaa_disabled;
    unsigned samplemask;
    bool depth_enabled;
    bool depth_write_enabled;
