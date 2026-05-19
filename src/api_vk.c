@@ -993,7 +993,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pMultisampleState = &(VkPipelineMultisampleStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-         .rasterizationSamples = uses_dynamic_state || desc->msaa_disabled ? 1 : desc->fb->samples,
+         .rasterizationSamples = uses_dynamic_state ? 1 : desc->fb->samples,
          .sampleShadingEnable = desc->sample_shading,
          .minSampleShading = 1,
          .pSampleMask = uses_dynamic_state ? NULL : (VkSampleMask[]){desc->samplemask},
@@ -1086,8 +1086,7 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
       vkCmdSetCullMode(ctx->current_cmd_buffer, pipeline->desc.cull_mode);
       vkCmdSetFrontFace(ctx->current_cmd_buffer, VK_FRONT_FACE_CLOCKWISE);
 
-      ctx->vkCmdSetRasterizationSamplesEXT(ctx->current_cmd_buffer,
-                                           pipeline->desc.msaa_disabled ? 1 : pipeline->desc.fb->samples);
+      ctx->vkCmdSetRasterizationSamplesEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples);
       ctx->vkCmdSetSampleMaskEXT(ctx->current_cmd_buffer, pipeline->desc.fb->samples, &pipeline->desc.samplemask);
       ctx->vkCmdSetAlphaToCoverageEnableEXT(ctx->current_cmd_buffer, pipeline->desc.alpha_to_coverage);
 

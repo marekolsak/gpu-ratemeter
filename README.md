@@ -121,7 +121,6 @@ Decoding subtest names:
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS coarse shading
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
-- `msaa_disabled`: MSAA is disabled (only 1 rasterization sample)
 - Used system values are indicated as follows:
   - `face`: `gl_FrontFacing`
   - `samplemask`: `gl_SampleMaskIn`
