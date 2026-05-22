@@ -575,6 +575,8 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
          continue;
       }
 
+      assert(compiled_shaders[p].vs);
+
       pipeline_descs[p] = (api_pipeline_desc){
          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
          .cull_mode = cull_back ? VK_CULL_MODE_BACK_BIT : 0,
@@ -880,12 +882,22 @@ void
 test_pix_rate(api_context *ctx, const char *test_name)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)];
+   static const unsigned sample_counts[] = {1, 4, 8};
 
    puts("Compiling shaders...");
 
    /* Compile shaders. */
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
-      if (!test_filter(ctx, 1, &pipelines[p]) && !test_filter(ctx, 8, &pipelines[p]))
+      bool match = false;
+
+      for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
+         if (test_filter(ctx, sample_counts[s], &pipelines[p])) {
+            match = true;
+            break;
+         }
+      }
+
+      if (!match)
          continue;
 
       compiled_shaders[p].vs = ctx->create_shader(ctx, pipelines[p].vs_source, api_shader_vs);
@@ -915,11 +927,8 @@ test_pix_rate(api_context *ctx, const char *test_name)
       free(fs_out_uint);
    }
 
-   run_test_pix_rate(ctx, test_name, 1, compiled_shaders);
-
-   if (ctx->supported_color_sample_counts & VK_SAMPLE_COUNT_4_BIT)
-      run_test_pix_rate(ctx, test_name, 4, compiled_shaders);
-
-   if (ctx->supported_color_sample_counts & VK_SAMPLE_COUNT_8_BIT)
-      run_test_pix_rate(ctx, test_name, 8, compiled_shaders);
+   for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
+      if (ctx->supported_color_sample_counts & sample_counts[s])
+         run_test_pix_rate(ctx, test_name, sample_counts[s], compiled_shaders);
+   }
 }
