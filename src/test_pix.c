@@ -138,6 +138,7 @@ typedef struct {
    "   for (int i = 0; i < "#num2" ; i++) v *= linear[i]; \n" \
    "#endif \n" \
    \
+   "   v.x *= v.y * v.z * v.w; \n" \
    "   store_output_color0(v + " sysval_code "); \n" \
    "}\n"}
 

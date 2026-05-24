@@ -34,6 +34,7 @@
  * - VK_KHR_copy_memory_indirect
  *
  * pix:
+ * - ztest.pass + discard
  * - multiview
  * - render to 3D texture?
  * - draw a statically-tessellated full-screen quad, quads should fill the screen in the Morton order
