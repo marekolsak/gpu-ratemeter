@@ -537,7 +537,7 @@ test_filter(api_context *ctx, unsigned samples, const pipeline_info *pipeline)
 }
 
 static void
-run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
+run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                   compiled_shaders_state *compiled_shaders)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
@@ -879,7 +879,7 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
 }
 
 void
-test_pix_rate(api_context *ctx, const char *test_name)
+test_pix(api_context *ctx, const char *test_name)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)];
    static const unsigned sample_counts[] = {1, 4, 8};
@@ -929,6 +929,6 @@ test_pix_rate(api_context *ctx, const char *test_name)
 
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
       if (ctx->supported_color_sample_counts & sample_counts[s])
-         run_test_pix_rate(ctx, test_name, sample_counts[s], compiled_shaders);
+         run_test_pix(ctx, test_name, sample_counts[s], compiled_shaders);
    }
 }

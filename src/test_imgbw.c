@@ -845,7 +845,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 }
 
 void
-test_img_bandwidth(api_context *ctx, const char *test_name)
+test_imgbw(api_context *ctx, const char *test_name)
 {
    unsigned num_tests = 0;
 

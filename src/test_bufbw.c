@@ -246,7 +246,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
 }
 
 void
-test_buf_bandwidth(api_context *ctx, const char *test_name)
+test_bufbw(api_context *ctx, const char *test_name)
 {
    unsigned num_tests = 0;
    run(ctx, test_name, COUNT_TESTS, NULL, &num_tests);

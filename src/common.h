@@ -291,12 +291,14 @@ typedef struct api_context {
    bool has_image_tiling_linear;
    double timestamp_period_in_seconds;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
+   bool has_vs_tes_layer_output;
    bool has_vrs;
    bool has_xfb;
    bool has_clear_image_region;
    bool has_blit_image_3d;
    bool has_blit_image_msaa;
    bool has_resolve_image_yflip;
+   bool has_sparse_buffer;
    VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
@@ -427,10 +429,10 @@ api_context *gl_create_context(const program_options *options);
 api_context *vk_create_context(const program_options *options);
 
 /* Tests. */
-void test_buf_bandwidth(api_context *ctx, const char *test_name);
-void test_img_bandwidth(api_context *ctx, const char *test_name);
-void test_pix_rate(api_context *ctx, const char *test_name);
-void test_prim_rate(api_context *ctx, const char *test_name);
+void test_bufbw(api_context *ctx, const char *test_name);
+void test_imgbw(api_context *ctx, const char *test_name);
+void test_pix(api_context *ctx, const char *test_name);
+void test_prim(api_context *ctx, const char *test_name);
 void test_sanity(api_context *ctx, const char *test_name);
 
 /* utils.c */

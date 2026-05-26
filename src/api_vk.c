@@ -1532,11 +1532,11 @@ vk_create_context(const program_options *options)
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
       .pNext = &vulkan12,
    };
-   VkPhysicalDeviceFeatures2 features2 = {
+   VkPhysicalDeviceFeatures2 vulkan10 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
       .pNext = &vulkan11,
    };
-   vkGetPhysicalDeviceFeatures2(physical_device, &features2);
+   vkGetPhysicalDeviceFeatures2(physical_device, &vulkan10);
    vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
 
    VkPhysicalDeviceExtendedDynamicState3PropertiesEXT ext_dyn3_properties = {
@@ -1619,7 +1619,7 @@ vk_create_context(const program_options *options)
    vk_check(vkCreateDevice(physical_device,
                            &(VkDeviceCreateInfo) {
                               .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                              .pNext = &features2,
+                              .pNext = &vulkan10,
                               .queueCreateInfoCount = 1,
                               .pQueueCreateInfos = &(VkDeviceQueueCreateInfo) {
                                  .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1728,12 +1728,14 @@ vk_create_context(const program_options *options)
    ctx->has_image_tiling_linear = true;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
+   ctx->has_vs_tes_layer_output = vulkan12.shaderOutputLayer;
    ctx->has_vrs = vrs.pipelineFragmentShadingRate;
    ctx->has_xfb = xfb.transformFeedback;
    ctx->has_clear_image_region = false;
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
    ctx->has_resolve_image_yflip = false;
+   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
 
    ctx->device_mem_usage = 0;

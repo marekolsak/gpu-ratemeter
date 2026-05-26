@@ -22,6 +22,7 @@
  *
  * bufbw:
  * - VK_KHR_copy_memory_indirect
+ * - transfer queue
  *
  * imgbw:
  * - clears:
@@ -32,6 +33,7 @@
  * - 2D array images
  * - Z/S?
  * - VK_KHR_copy_memory_indirect
+ * - transfer queue
  *
  * pix:
  * - ztest.pass + discard
@@ -99,11 +101,11 @@ static const struct {
    void (*execute)(api_context *ctx, const char *test_name);
    bool report_bandwidth;
 } tests[] = {
-   {"bufbw", test_buf_bandwidth, true},
-   {"imgbw", test_img_bandwidth, true},
-   {"pix", test_pix_rate},
-   {"pixbw", test_pix_rate, true},
-   {"prim", test_prim_rate},
+   {"bufbw", test_bufbw, true},
+   {"imgbw", test_imgbw, true},
+   {"pix", test_pix},
+   {"pixbw", test_pix, true},
+   {"prim", test_prim},
    {"sanity", test_sanity},
 };
 

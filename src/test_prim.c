@@ -433,6 +433,8 @@ compile_vs(api_context *ctx, unsigned num_varyings, enum special_attribute1 spec
       special2_code_vs_vert = "gl_PointSize = gl_InstanceID > 0 ? 0 : 1; \n";
       break;
    case SPECIAL2_OUTPUT_LAYER:
+      if (!ctx->has_vs_tes_layer_output)
+         return NULL;
       /* It's always 0, but we don't want the driver think that we are setting 0. */
       special2_code_vs_vert = "gl_Layer = gl_InstanceID; \n";
       break;
@@ -1589,7 +1591,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
 }
 
 void
-test_prim_rate(api_context *ctx, const char *test_name)
+test_prim(api_context *ctx, const char *test_name)
 {
    test_state *state = calloc(1, sizeof(test_state));
 

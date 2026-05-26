@@ -1200,11 +1200,13 @@ gl_create_context(const program_options *options)
    ctx->has_host_cached_heap = true;
    ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
    ctx->timestamp_period_in_seconds = 0.000000001;
+   ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
    ctx->has_xfb = true;
    ctx->has_clear_image_region = true;
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
    ctx->has_resolve_image_yflip = true;
+   ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
 
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
