@@ -783,16 +783,15 @@ run_test_pix_rate(api_context *ctx, const char *test_name, unsigned samples,
          if (ctx->options.rdna4_timestamp_wa)
             ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
 
+         ctx->write_next_timestamp(ctx, timestamps);
          /* Render pass for the measurement. */
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                 });
-         /* Measure. */
-         ctx->write_next_timestamp(ctx, timestamps);
          ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3,
                                          .instance_count = 1});
-         ctx->write_next_timestamp(ctx, timestamps);
          ctx->end_render_pass(ctx);
+         ctx->write_next_timestamp(ctx, timestamps);
          ctx->end_cmdbuf_and_submit(ctx);
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);

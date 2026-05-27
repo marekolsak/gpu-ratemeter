@@ -1300,13 +1300,9 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    assert(num_iterations);
    assert(buffer_set->vb);
 
-   ctx->begin_cmdbuf(ctx);
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                             .fb = state->fb,
-                             .clear = true,
-                             .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
-                          });
    assert(state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
+
+   ctx->begin_cmdbuf(ctx);
    ctx->bind_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
    unsigned count = 0;
@@ -1330,13 +1326,22 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    }
 
    /* Warm up the GPU. */
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                             .fb = state->fb,
+                             .clear = true,
+                             .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
+                          });
    run_draws(ctx, num_iterations / 4, test->geom_style, count);
-
-   ctx->write_next_timestamp(ctx, state->timestamps);
-   run_draws(ctx, num_iterations, test->geom_style, count);
-   ctx->write_next_timestamp(ctx, state->timestamps);
-
    ctx->end_render_pass(ctx);
+
+   ctx->write_next_timestamp(ctx, state->timestamps);
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                             .fb = state->fb,
+                          });
+   run_draws(ctx, num_iterations, test->geom_style, count);
+   ctx->end_render_pass(ctx);
+   ctx->write_next_timestamp(ctx, state->timestamps);
+
    ctx->end_cmdbuf_and_submit(ctx);
 }
 
