@@ -53,7 +53,7 @@ static int
 vk_find_heap_with_flags(api_context *ctx, unsigned supported_heap_mask,
                         VkMemoryPropertyFlags require_flags, VkMemoryPropertyFlags disallow_flags)
 {
-   for (unsigned i = 0; (1u << i) <= supported_heap_mask && i <= ctx->memory_properties.memoryTypeCount; i++) {
+   for (unsigned i = 0; i < ctx->memory_properties.memoryTypeCount; i++) {
       if (!(supported_heap_mask & (1u << i)))
           continue;
 
