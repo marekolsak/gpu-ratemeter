@@ -75,20 +75,24 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
    if (heap == api_heap_host_uncached && !ctx->has_host_uncached_heap)
       heap = api_heap_host_cached;
 
-   if (heap == api_heap_host_cached && !ctx->has_host_cached_heap)
+   if (heap == api_heap_host_cached && !ctx->has_host_cached_heap) {
+      require_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       heap = api_heap_device;
+   }
 
    switch (heap) {
    case api_heap_device:
-      require_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      require_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
       break;
    case api_heap_host_uncached:
-      disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                       VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      require_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                        VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       break;
    case api_heap_host_cached:
-      require_flags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-      disallow_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      require_flags |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
       break;
    default:
       error("invalid heap type");
