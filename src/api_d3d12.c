@@ -8,7 +8,7 @@
 #include "common.h"
 
 static api_buffer *
-d3d12_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
+d3d12_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned sparse_block_size)
 {
    api_buffer *buf = calloc(1, sizeof(api_buffer));
    buf->size = size;
@@ -78,7 +78,7 @@ d3d12_begin_cmdbuf(api_context *ctx)
 }
 
 static void
-d3d12_end_cmdbuf_and_submit(api_context *ctx)
+d3d12_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
 {
 }
 

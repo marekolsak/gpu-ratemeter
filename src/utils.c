@@ -48,7 +48,7 @@ check_filter_string(const char *filter_string, const char *name)
 void
 print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                       uint64_t num_units, const char *rate_format,
-                                      const char *bandwidth_format)
+                                      const char *bandwidth_format, unsigned bandwidth_exp2_divisor)
 {
    assert(pool->num_read_queries + 1 < pool->num_written_queries);
    uint64_t start = pool->results[pool->num_read_queries++];
@@ -56,7 +56,7 @@ print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool
    double rate = num_units / ((end - start) * ctx->timestamp_period_in_seconds);
 
    if (ctx->options.report_bandwidth) {
-      printf(bandwidth_format, rate / (1024 * 1024 * 1024));
+      printf(bandwidth_format, rate / (1ull << bandwidth_exp2_divisor));
    } else {
       /* If the frequency is set, print the results in units per clock cycle, else print it
        * in billions per second.
@@ -582,4 +582,32 @@ float_to_half(float val)
 
    result = (s << 15) | (e << 10) | m;
    return result;
+}
+
+unsigned
+bitcount(unsigned n)
+{
+   /* K&R classic bitcount.
+    *
+    * For each iteration, clear the LSB from the bitfield.
+    * Requires only one iteration per set bit, instead of
+    * one iteration per bit less than highest set bit.
+    */
+   unsigned bits;
+   for (bits = 0; n; bits++) {
+      n &= n - 1;
+   }
+   return bits;
+}
+
+unsigned
+logbase2(unsigned n)
+{
+   unsigned pos = 0;
+   if (n >= 1 << 16) { n >>= 16; pos += 16; }
+   if (n >= 1 <<  8) { n >>=  8; pos +=  8; }
+   if (n >= 1 <<  4) { n >>=  4; pos +=  4; }
+   if (n >= 1 <<  2) { n >>=  2; pos +=  2; }
+   if (n >= 1 <<  1) {           pos +=  1; }
+   return pos;
 }

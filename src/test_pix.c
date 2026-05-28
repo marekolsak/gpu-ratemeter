@@ -792,7 +792,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                          .instance_count = 1});
          ctx->end_render_pass(ctx);
          ctx->write_next_timestamp(ctx, timestamps);
-         ctx->end_cmdbuf_and_submit(ctx);
+         ctx->end_cmdbuf_and_submit(ctx, NULL);
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
       }
@@ -872,7 +872,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             num_units *= get_pixel_size_from_format(formats[f].format);
 
          print_throughput_from_next_timestamps(ctx, timestamps, num_units,
-                                               ",%7.1f", ",%7.0f");
+                                               ",%7.1f", ",%7.0f", 30);
       }
       puts("");
    }

@@ -127,9 +127,10 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
 
    /* Create buffers. */
    /* We allocate enough memory and cycle through the whole range to prevent caching. */
-   api_buffer *devmem0 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_device);
-   api_buffer *devmem1 = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_device);
-   api_buffer *hostmem = ctx->create_buffer(ctx, 2 * MAX_SIZE + 256, api_heap_host_uncached);
+   unsigned buf_size = stage == RUN ? 2 * MAX_SIZE + 256 : 1;
+   api_buffer *devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   api_buffer *devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   api_buffer *hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
 
    unsigned num_visited_tests = 0;
 
@@ -221,7 +222,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                   }
 
                   ctx->write_next_timestamp(ctx, timestamps);
-                  ctx->end_cmdbuf_and_submit(ctx);
+                  ctx->end_cmdbuf_and_submit(ctx, NULL);
                }
 
                if (stage == REPORT) {
@@ -231,7 +232,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                    */
                   uint64_t num_bytes = (uint64_t)size * NUM_RUNS *
                                        (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
-                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f");
+                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f", 30);
                }
 
                if (stage == RUN)

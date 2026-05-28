@@ -1,4 +1,5 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  * SPDX-License-Identifier: MIT
  */
 
@@ -26,7 +27,7 @@
    } while(0)
 
 static api_buffer *
-gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
+gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned sparse_block_size)
 {
    api_buffer *buf = calloc(1, sizeof(api_buffer));
    buf->size = size;
@@ -1022,7 +1023,7 @@ gl_begin_cmdbuf(api_context *ctx)
 }
 
 static void
-gl_end_cmdbuf_and_submit(api_context *ctx)
+gl_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
 {
    gl_bind_unbind_pipeline(ctx, NULL);
    glFlush();
@@ -1206,7 +1207,13 @@ gl_create_context(const program_options *options)
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
    ctx->has_resolve_image_yflip = true;
+
+#if 0 /* not implemented for now */
    ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
+
+   if (GLAD_GL_ARB_sparse_buffer)
+      glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
+#endif
 
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);

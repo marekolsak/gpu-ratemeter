@@ -107,6 +107,7 @@ static const struct {
    {"pixbw", test_pix, true},
    {"prim", test_prim},
    {"sanity", test_sanity},
+   {"sparsebind", test_sparsebind, true},
 };
 
 typedef enum {

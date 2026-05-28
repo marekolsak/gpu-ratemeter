@@ -1,6 +1,7 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  *
- * For code from vkcube:
+ * The initial code was based on vkcube:
  *    Copyright (c) 2012 Arvin Schnell <arvin.schnell@gmail.com>
  *    Copyright (c) 2012 Rob Clark <rob@ti.com>
  *    Copyright © 2015 Intel Corporation
@@ -130,30 +131,33 @@ vk_wait_for_idle(api_context *ctx)
                              &(VkSemaphoreWaitInfo){
                                 .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                 .semaphoreCount = 1,
-                                .pSemaphores = &ctx->timeline_semaphore,
-                                .pValues = &ctx->current_timeline_point,
+                                .pSemaphores = &ctx->gfx_semaphore,
+                                .pValues = &ctx->gfx_timeline_point,
                              }, UINT64_MAX));
 }
 
 static api_buffer *
-vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
+vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned sparse_block_size)
 {
    api_buffer *buf = calloc(1, sizeof(api_buffer));
    buf->size = size;
    buf->heap = heap;
+   buf->sparse_block_size = sparse_block_size;
 
    vk_check(vkCreateBuffer(ctx->device,
                            &(VkBufferCreateInfo) {
                               .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                              .flags = sparse_block_size ? VK_BUFFER_CREATE_SPARSE_BINDING_BIT |
+                                                           VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT : 0,
                               .size = size,
                               .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                              VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                              VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                              VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
-                              VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-                              VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                       VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                       (ctx->has_xfb ? VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT : 0) |
+                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
                            },
                            NULL, &buf->buffer));
 
@@ -166,17 +170,44 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap)
             reqs.memoryTypeBits, heap);
    }
 
-   vk_check(vkAllocateMemory(ctx->device,
-                             &(VkMemoryAllocateInfo) {
-                                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                .allocationSize = reqs.size,
-                                .memoryTypeIndex = mem_type_index,
-                             },
-                             NULL, &buf->mem));
-   vk_check(vkBindBufferMemory(ctx->device, buf->buffer, buf->mem, 0));
+   if (sparse_block_size) {
+      assert(ctx->sparse_buffer_alignment <= sparse_block_size);
+      buf->num_mem_allocations = (size + sparse_block_size - 1) / sparse_block_size;
+   } else {
+      buf->num_mem_allocations = 1;
+   }
 
-   if (heap == api_heap_device)
-      ctx->device_mem_usage += reqs.size;
+   buf->mem = calloc(buf->num_mem_allocations, sizeof(*buf->mem));
+
+   for (unsigned i = 0; i < buf->num_mem_allocations; i++) {
+      vk_check(vkAllocateMemory(ctx->device,
+                                &(VkMemoryAllocateInfo) {
+                                   .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                   .allocationSize = sparse_block_size ? sparse_block_size : reqs.size,
+                                   .memoryTypeIndex = mem_type_index,
+                                },
+                                NULL, &buf->mem[i]));
+   }
+
+   if (sparse_block_size) {
+      buf->sparse_binds = calloc(buf->num_mem_allocations, sizeof(*buf->sparse_binds));
+      buf->sparse_unbinds = calloc(buf->num_mem_allocations, sizeof(*buf->sparse_unbinds));
+
+      for (unsigned i = 0; i < buf->num_mem_allocations; i++) {
+         buf->sparse_binds[i].resourceOffset = i * sparse_block_size;
+         buf->sparse_binds[i].size = sparse_block_size;
+         buf->sparse_binds[i].memory = buf->mem[i];
+
+         buf->sparse_unbinds[i].resourceOffset = i * sparse_block_size;
+         buf->sparse_unbinds[i].size = sparse_block_size;
+      }
+   } else {
+      vk_check(vkBindBufferMemory(ctx->device, buf->buffer, *buf->mem, 0));
+
+      if (heap == api_heap_device)
+         ctx->device_mem_usage += reqs.size;
+   }
+
    return buf;
 }
 
@@ -248,6 +279,47 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                                },
                             },
                          });
+}
+
+static void
+vk_buffer_bind_sparse(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
+                      bool bind, api_fence **signal_fence)
+{
+   assert(offset % buf->sparse_block_size == 0);
+   assert(size % buf->sparse_block_size == 0);
+
+   uint64_t first_block = offset / buf->sparse_block_size;
+   uint64_t num_blocks = size / buf->sparse_block_size;
+
+   if (signal_fence) {
+      assert(ctx->has_async_sparse_queue);
+      assert(ctx->sparse_timeline_point != UINT64_MAX);
+      ctx->sparse_timeline_point++;
+
+      *signal_fence = calloc(1, sizeof(api_fence));
+      (*signal_fence)->semaphore = ctx->sparse_semaphore;
+      (*signal_fence)->timeline_point = ctx->sparse_timeline_point;
+   }
+
+   /* If signal_fence != NULL, use the async sparse queue. */
+   vk_check(vkQueueBindSparse(signal_fence ? ctx->sparse_queue : ctx->gfx_queue, 1,
+                              &(VkBindSparseInfo){
+                                 .sType = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO,
+                                 .bufferBindCount = 1,
+                                 .pBufferBinds = &(VkSparseBufferMemoryBindInfo){
+                                    .buffer = buf->buffer,
+                                    .bindCount = num_blocks,
+                                    .pBinds = bind ? &buf->sparse_binds[first_block] :
+                                    &buf->sparse_unbinds[first_block],
+                                 },
+                                 .signalSemaphoreCount = signal_fence ? 1 : 0,
+                                 .pSignalSemaphores = &ctx->sparse_semaphore,
+                                 .pNext = &(VkTimelineSemaphoreSubmitInfo){
+                                    .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+                                    .signalSemaphoreValueCount = signal_fence ? 1 : 0,
+                                    .pSignalSemaphoreValues = &ctx->sparse_timeline_point,
+                                 },
+                              }, NULL));
 }
 
 static void
@@ -835,7 +907,7 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
       if (images[i]->layout != VK_IMAGE_LAYOUT_GENERAL) {
          ctx->begin_cmdbuf(ctx);
          vk_image_layout_transition(ctx, images[i], VK_IMAGE_LAYOUT_GENERAL);
-         ctx->end_cmdbuf_and_submit(ctx);
+         ctx->end_cmdbuf_and_submit(ctx, NULL);
       }
 
       image_infos[i].sampler = NULL;
@@ -1126,19 +1198,19 @@ vk_begin_cmdbuf(api_context *ctx)
 {
    assert(ctx->current_cmd_buffer == NULL);
 
-   if (ctx->current_timeline_point >= MAX_COMMAND_BUFFERS - 1) {
-      uint64_t wait_point = ctx->current_timeline_point - 511;
+   if (ctx->gfx_timeline_point >= MAX_COMMAND_BUFFERS - 1) {
+      uint64_t wait_point = ctx->gfx_timeline_point - 511;
 
       vk_check(vkWaitSemaphores(ctx->device,
                                 &(VkSemaphoreWaitInfo){
                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                    .semaphoreCount = 1,
-                                   .pSemaphores = &ctx->timeline_semaphore,
+                                   .pSemaphores = &ctx->gfx_semaphore,
                                    .pValues = &wait_point,
                                 }, UINT64_MAX));
    }
 
-   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->current_timeline_point % MAX_COMMAND_BUFFERS];
+   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->gfx_timeline_point % MAX_COMMAND_BUFFERS];
    vk_check(vkBeginCommandBuffer(ctx->current_cmd_buffer,
                                  &(VkCommandBufferBeginInfo) {
                                     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1146,26 +1218,33 @@ vk_begin_cmdbuf(api_context *ctx)
 }
 
 static void
-vk_end_cmdbuf_and_submit(api_context *ctx)
+vk_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
 {
    vk_check(vkEndCommandBuffer(ctx->current_cmd_buffer));
 
-   assert(ctx->current_timeline_point != UINT64_MAX);
-   ctx->current_timeline_point++;
+   assert(ctx->gfx_timeline_point != UINT64_MAX);
+   ctx->gfx_timeline_point++;
 
-   vk_check(vkQueueSubmit2(ctx->queue, 1,
+   vk_check(vkQueueSubmit2(ctx->gfx_queue, 1,
       &(VkSubmitInfo2) {
          .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+         .waitSemaphoreInfoCount = wait_fence ? 1 : 0,
+         .pWaitSemaphoreInfos = &(VkSemaphoreSubmitInfo){
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = wait_fence ? wait_fence->semaphore : NULL,
+            .value = wait_fence ? wait_fence->timeline_point : 0,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+         },
          .commandBufferInfoCount = 1,
          .pCommandBufferInfos = &(VkCommandBufferSubmitInfo){
-             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-             .commandBuffer = ctx->current_cmd_buffer,
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .commandBuffer = ctx->current_cmd_buffer,
          },
          .signalSemaphoreInfoCount = 1,
          .pSignalSemaphoreInfos = &(VkSemaphoreSubmitInfo){
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = ctx->timeline_semaphore,
-            .value = ctx->current_timeline_point,
+            .semaphore = ctx->gfx_semaphore,
+            .value = ctx->gfx_timeline_point,
             .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
          },
       }, NULL));
@@ -1352,7 +1431,7 @@ vk_create_timestamp_pool(api_context *ctx, unsigned num_queries)
 
    vk_begin_cmdbuf(ctx);
    vkCmdResetQueryPool(ctx->current_cmd_buffer, pool->pool, 0, pool->num_queries);
-   vk_end_cmdbuf_and_submit(ctx);
+   vk_end_cmdbuf_and_submit(ctx, NULL);
 
    return pool;
 }
@@ -1384,12 +1463,12 @@ static void
 vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                       const void *data)
 {
-   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached);
+   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached, false);
    uint8_t *map;
 
-   vk_check(vkMapMemory(ctx->device, staging->mem, 0, size, 0, (void**)&map));
+   vk_check(vkMapMemory(ctx->device, *staging->mem, 0, size, 0, (void**)&map));
    memcpy(map, data, size);
-   vkUnmapMemory(ctx->device, staging->mem);
+   vkUnmapMemory(ctx->device, *staging->mem);
 
    vk_begin_cmdbuf(ctx);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
@@ -1419,7 +1498,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
                                .size = size,
                             },
                          });
-   vk_end_cmdbuf_and_submit(ctx);
+   vk_end_cmdbuf_and_submit(ctx, NULL);
 }
 
 static void
@@ -1459,9 +1538,9 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                          .dstOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
                       },
                   });
-   vk_end_cmdbuf_and_submit(ctx);
+   vk_end_cmdbuf_and_submit(ctx, NULL);
 
-   vk_check(vkQueueWaitIdle(ctx->queue));
+   vk_check(vkQueueWaitIdle(ctx->gfx_queue));
 
    void *map;
    vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
@@ -1551,16 +1630,31 @@ vk_create_context(const program_options *options)
       .pNext = &mesh_properties,
    };
    vkGetPhysicalDeviceProperties2(physical_device, &device_properties);
-   printf("Device: %s\n", device_properties.properties.deviceName);
+   printf("Selected device: %s\n", device_properties.properties.deviceName);
 
    /* Check that the first queue support graphics. */
-   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, NULL);
-   if (!count)
-      error("vkGetPhysicalDeviceQueueFamilyProperties returned count=0");
-   VkQueueFamilyProperties *queue_props = alloca(sizeof(queue_props[0]) * count);
-   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, queue_props);
-   if (!(queue_props[0].queueFlags & VK_QUEUE_GRAPHICS_BIT))
-      error("the first queue must have VK_QUEUE_GRAPHICS_BIT");
+   unsigned num_queue_families;
+   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, NULL);
+   if (!num_queue_families)
+      error("vkGetPhysicalDeviceQueueFamilyProperties returned num_queue_families=0");
+
+   VkQueueFamilyProperties *queue_props = alloca(sizeof(queue_props[0]) * num_queue_families);
+   vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_props);
+
+   int gfx_queue_family_index = -1;
+   int compute_queue_family_index = -1;
+
+   for (unsigned i = 0; i < num_queue_families; i++) {
+      if (gfx_queue_family_index == -1 && queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+         gfx_queue_family_index = i;
+
+      if (compute_queue_family_index == -1 && !(queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+          queue_props[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+         compute_queue_family_index = i;
+   }
+
+   if (gfx_queue_family_index == -1)
+      error("VK_QUEUE_GRAPHICS_BIT not supported");
 
    unsigned num_enabled_extensions = 0;
    const char *enabled_extensions[5];
@@ -1620,12 +1714,20 @@ vk_create_context(const program_options *options)
                            &(VkDeviceCreateInfo) {
                               .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                               .pNext = &vulkan10,
-                              .queueCreateInfoCount = 1,
-                              .pQueueCreateInfos = &(VkDeviceQueueCreateInfo) {
-                                 .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                 .queueFamilyIndex = 0,
-                                 .queueCount = 1,
-                                 .pQueuePriorities = (float[]) { 1.0f },
+                              .queueCreateInfoCount = compute_queue_family_index != -1 ? 2 : 1,
+                              .pQueueCreateInfos = (VkDeviceQueueCreateInfo[]) {
+                                 {
+                                    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                    .queueFamilyIndex = gfx_queue_family_index,
+                                    .queueCount = 1,
+                                    .pQueuePriorities = (float[]) {1},
+                                 },
+                                 {
+                                    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                                    .queueFamilyIndex = compute_queue_family_index,
+                                    .queueCount = 2,
+                                    .pQueuePriorities = (float[]) {1, 1},
+                                 },
                               },
                               .enabledExtensionCount = num_enabled_extensions,
                               .ppEnabledExtensionNames = enabled_extensions,
@@ -1655,12 +1757,24 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
 #undef GET_PROC_ADDR
 
-   /* Get the queue. */
+   /* Get the queues. */
    vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
                         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-                        .queueFamilyIndex = 0,
+                        .queueFamilyIndex = gfx_queue_family_index,
                         .queueIndex = 0,
-                     }, &ctx->queue);
+                     }, &ctx->gfx_queue);
+
+   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
+                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                        .queueFamilyIndex = compute_queue_family_index,
+                        .queueIndex = 0,
+                     }, &ctx->compute_queue);
+
+   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
+                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                        .queueFamilyIndex = compute_queue_family_index,
+                        .queueIndex = 1,
+                     }, &ctx->sparse_queue);
 
    vk_check(vkCreateCommandPool(ctx->device,
                                 &(const VkCommandPoolCreateInfo) {
@@ -1687,8 +1801,16 @@ vk_create_context(const program_options *options)
                                     .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
                                 },
                               },
-                              NULL, &ctx->timeline_semaphore));
-   ctx->current_timeline_point = 0;
+                              NULL, &ctx->gfx_semaphore));
+   vk_check(vkCreateSemaphore(ctx->device,
+                              &(VkSemaphoreCreateInfo){
+                                 .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                                 .pNext = &(VkSemaphoreTypeCreateInfo){
+                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+                                },
+                              },
+                              NULL, &ctx->sparse_semaphore));
 
    vk_check(vkCreateDescriptorPool(ctx->device,
                                    &(VkDescriptorPoolCreateInfo){
@@ -1735,8 +1857,30 @@ vk_create_context(const program_options *options)
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
    ctx->has_resolve_image_yflip = false;
-   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer;
+   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer &&
+                            queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+   ctx->has_async_sparse_queue = compute_queue_family_index != -1 &&
+                                 queue_props[compute_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
+
+   if (ctx->has_sparse_buffer) {
+      VkMemoryRequirements2 sparse_buf_mem_req = {
+          .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+      };
+      vkGetDeviceBufferMemoryRequirements(ctx->device,
+                                          &(VkDeviceBufferMemoryRequirements){
+                                             .sType = VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS,
+                                             .pCreateInfo = &(VkBufferCreateInfo){
+                                                .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                                .flags = VK_BUFFER_CREATE_SPARSE_BINDING_BIT |
+                                                VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT,
+                                                .size = 512 << 20,
+                                                .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                                             },
+                                          }, &sparse_buf_mem_req);
+      ctx->sparse_buffer_alignment = sparse_buf_mem_req.memoryRequirements.alignment;
+   }
 
    ctx->device_mem_usage = 0;
 
@@ -1759,6 +1903,7 @@ vk_create_context(const program_options *options)
    ctx->upload_buffer_data = vk_upload_buffer_data;
    ctx->clear_buffer = vk_clear_buffer;
    ctx->copy_buffer = vk_copy_buffer;
+   ctx->buffer_bind_sparse = vk_buffer_bind_sparse;
 
    ctx->create_image = vk_create_image;
    ctx->destroy_image = vk_destroy_image;

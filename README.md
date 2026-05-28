@@ -1,6 +1,3 @@
-> [!note]
-> This is still under development. The tests described below are complete.
-
 [[_TOC_]]
 
 # Introduction and Project Vision
@@ -52,6 +49,7 @@ The following tests are available:
 - `prim`: primitive throughput in primitives/clock
 - `rt`: ray tracing performance in rays/clock **{- (not implemented yet) -}**
 - `sanity`: verify that the API works by drawing an object and saving the result into a PNG file
+- `sparsebind`: sparse bind throughput in API calls/s
 
 > [!tip]
 > - Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
@@ -166,6 +164,27 @@ Decoding subtest names:
 Optional parameters:
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 
+## `sparsebind`: Sparse Bind Throughput (API calls/s)
+
+This measures the throughput of sparse bind/unbind operations in API calls/s.
+
+Each sparse bind/unbind operation is followed by either no command buffer, empty command buffer, or simple command buffer. The command buffer, if present, always waits for its sparse bind/unbind operation.
+
+The last 2 columns show test results for an asynchronous sparse bind queue that runs with no waits.
+
+The buffer used for testing is divided into an equal number of sparse blocks. Each sparse block has its own memory allocation that can be bound/unbound.
+
+Decoding subtest names:
+- `bind_one`: each call binds 1 new sparse block, increasing the number of bound sparse blocks monotonically (the subtest always starts with all sparse blocks unbound)
+- `unbind_one`: each call unbinds 1 sparse block, decreasing the number of bound sparse blocks monotonically (the subtest always starts with all sparse blocks bound)
+- `bind_unbind_same_one`: even calls bind the same sparse block, odd calls unbind it
+- `bind_unbind_all`: even calls bind all sparse blocks at once, odd calls unbind all at once
+- `sizeNm`: the buffer has N MB
+- `blockNk`: each sparse block has N KB
+- `start_bound`: the subtest starts with all sparse blocks bound (`bind_one` never has this, `unbind_one` always has this)
+
+OpenGL support is not implemented.
+
 # How to Build
 
 ## Linux
@@ -191,6 +210,6 @@ We recommend that the GPU power profile is set to maintain a constant GPU graphi
 
 Run `sudo umr --gui &`, select your GPU in the tab at the top, and then select the Power tab. In there, select one of the DPM (dynamic power management) profiles that begin with `profile`. All `profile_*` profiles maintain constant pre-determined frequencies. The frequency changes are shown in real time on the Power tab.
 
-Since constant frequencies defeat power optimizations and can cause more heat to be generated, the firmware will change the profile back to `auto` if temperatures exceed safe limits. This will be immediately visible in the real time frequency chart on the Power tab.
+Since constant frequencies defeat power optimizations and can cause more heat to be generated, the firmware may change the profile back to `auto` if temperatures exceed safe limits. This will be immediately visible in the real time frequency chart on the Power tab.
 
 Get `umr` here: https://gitlab.freedesktop.org/tomstdenis/umr

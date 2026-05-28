@@ -40,6 +40,7 @@ gpu_ratemeter_files = files(
   'src/test_pix.c',
   'src/test_prim.c',
   'src/test_sanity.c',
+  'src/test_sparsebind.c',
   'src/utils.c',
 )
 

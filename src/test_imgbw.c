@@ -252,7 +252,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
 
    ctx->end_render_pass(ctx);
-   ctx->end_cmdbuf_and_submit(ctx);
+   ctx->end_cmdbuf_and_submit(ctx, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_fbs));
@@ -552,7 +552,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               case FILL_SOLID: {
                                  ctx->begin_cmdbuf(ctx);
                                  ctx->clear_image(ctx, state[size_index].src, NULL, clear_color);
-                                 ctx->end_cmdbuf_and_submit(ctx);
+                                 ctx->end_cmdbuf_and_submit(ctx, NULL);
                                  break;
                               }
 
@@ -794,7 +794,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               }
 
                               ctx->write_next_timestamp(ctx, timestamps);
-                              ctx->end_cmdbuf_and_submit(ctx);
+                              ctx->end_cmdbuf_and_submit(ctx, NULL);
                            }
 
                            /* Get results. */
@@ -811,7 +811,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  bytes = num_pixels * msaa_pix_size * 2;
 
                               print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
-                                                                    " , %9.2f");
+                                                                    " , %9.2f", 30);
                            }
                         }
 

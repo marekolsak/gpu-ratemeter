@@ -1,4 +1,5 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  * SPDX-License-Identifier: MIT
  */
 
@@ -17,11 +18,22 @@
 extern "C" {
 #endif
 
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
-#define ALIGN_POT(x, pot_align) (((x) + (pot_align) - 1) & ~((pot_align) - 1))
-#define ALIGN_NPOT(x, npot_align) (((x) + (npot_align) - 1) / (npot_align) * (npot_align))
-#define IS_POT(v) (((v) & ((v) - 1)) == 0)
-#define MIN2( A, B )   ( (A)<(B) ? (A) : (B) )
+#define ARRAY_SIZE(x)               (sizeof(x) / sizeof(x[0]))
+#define ALIGN_POT(x, pot_align)     (((x) + (pot_align) - 1) & ~((pot_align) - 1))
+#define ALIGN_NPOT(x, npot_align)   (((x) + (npot_align) - 1) / (npot_align) * (npot_align))
+#define IS_POT(v)                   (((v) & ((v) - 1)) == 0)
+#define MIN2(a, b)                  ((a) < (b) ? (a) : (b))
+#define MAX2(a, b)                  ((a) > (b) ? (a) : (b))
+
+/* Return a base 2 logarithm of a power of two as a constant expression if n is a constant
+ * expression.
+ */
+#define LOG2_POT(n) ( \
+    ((!!((n) & 0xAAAAAAAAu)) << 0) | \
+    ((!!((n) & 0xCCCCCCCCu)) << 1) | \
+    ((!!((n) & 0xF0F0F0F0u)) << 2) | \
+    ((!!((n) & 0xFF00FF00u)) << 3) | \
+    ((!!((n) & 0xFFFF0000u)) << 4))
 
 typedef enum {
    api_shader_vs,
@@ -48,6 +60,7 @@ typedef struct {
 typedef struct {
    uint64_t size;
    api_heap_type heap;
+   unsigned sparse_block_size;
 
 #ifdef GL_PRIVATE
    GLuint id;
@@ -55,7 +68,10 @@ typedef struct {
 
 #ifdef VK_PRIVATE
    VkBuffer buffer;
-   VkDeviceMemory mem;
+   VkDeviceMemory *mem;
+   unsigned num_mem_allocations;
+   VkSparseMemoryBind *sparse_binds;
+   VkSparseMemoryBind *sparse_unbinds;
 #endif
 } api_buffer;
 
@@ -253,6 +269,13 @@ typedef struct {
    float depth_clear_value;
 } api_render_pass_desc;
 
+typedef struct {
+#ifdef VK_PRIVATE
+   VkSemaphore semaphore;
+   uint64_t timeline_point;
+#endif
+} api_fence;
+
 #define MAX_COMMAND_BUFFERS   1024
 
 enum {
@@ -299,6 +322,8 @@ typedef struct api_context {
    bool has_blit_image_msaa;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
+   bool has_async_sparse_queue;
+   unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
@@ -307,7 +332,8 @@ typedef struct api_context {
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);
 
-   api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap);
+   api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap,
+                                unsigned sparse_block_size);
    void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
    void (*upload_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, const void *data);
@@ -315,6 +341,8 @@ typedef struct api_context {
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
+   void (*buffer_bind_sparse)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
+                              uint64_t size, bool bind, api_fence **signal_fence);
 
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
@@ -358,7 +386,7 @@ typedef struct api_context {
    void (*bind_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
 
    void (*begin_cmdbuf)(struct api_context *ctx);
-   void (*end_cmdbuf_and_submit)(struct api_context *ctx);
+   void (*end_cmdbuf_and_submit)(struct api_context *ctx, api_fence *wait_fence);
    void (*wait_idle_before_deallocation)(struct api_context *ctx);
 
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
@@ -386,7 +414,9 @@ typedef struct api_context {
    /* Device. */
    VkPhysicalDeviceMemoryProperties memory_properties;
    VkDevice device;
-   VkQueue queue;
+   VkQueue gfx_queue;
+   VkQueue compute_queue;
+   VkQueue sparse_queue;
 
    /* Extension functions. */
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
@@ -402,8 +432,10 @@ typedef struct api_context {
    /* Command buffers. */
    VkCommandPool cmd_buffer_pool;
    VkCommandBuffer cmd_buffers[MAX_COMMAND_BUFFERS];
-   VkSemaphore timeline_semaphore;
-   uint64_t current_timeline_point;
+   VkSemaphore gfx_semaphore;
+   uint64_t gfx_timeline_point;
+   VkSemaphore sparse_semaphore;
+   uint64_t sparse_timeline_point;
    VkCommandBuffer current_cmd_buffer;
 
    /* Descriptor pool. */
@@ -434,12 +466,13 @@ void test_imgbw(api_context *ctx, const char *test_name);
 void test_pix(api_context *ctx, const char *test_name);
 void test_prim(api_context *ctx, const char *test_name);
 void test_sanity(api_context *ctx, const char *test_name);
+void test_sparsebind(api_context *ctx, const char *test_name);
 
 /* utils.c */
 bool check_filter_string(const char *filter_string, const char *name);
 void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
-                                           const char *bandwidth_format);
+                                           const char *bandwidth_format, unsigned bandwidth_exp2_divisor);
 noreturn void error(const char *format, ...) printflike(1, 2);
 char *strdup(const char *s);
 void print_progress(unsigned num_items, unsigned *num_processed_items, unsigned print_period);
@@ -452,6 +485,8 @@ unsigned format_get_num_channels(VkFormat format);
 bool format_is_depth_or_stencil(VkFormat format);
 unsigned get_next_power_of_two(unsigned x);
 uint16_t float_to_half(float val);
+unsigned bitcount(unsigned n);
+unsigned logbase2(unsigned n);
 
 #ifdef __cplusplus
 }

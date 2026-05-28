@@ -1179,7 +1179,7 @@ init_buffers(api_context *ctx, test_state *state, const test_info *test)
    unsigned vb_size = buffer_set->vb_special1_offset + special1_size;
 
    /* Create buffers. */
-   buffer_set->vb = ctx->create_buffer(ctx, vb_size, api_heap_device);
+   buffer_set->vb = ctx->create_buffer(ctx, vb_size, api_heap_device, 0);
    ctx->upload_buffer_data(ctx, buffer_set->vb, 0, 16, zero_stride_attrib);
    ctx->upload_buffer_data(ctx, buffer_set->vb, buffer_set->vb_pos_offset, pos_size, vertices);
    if (special0_size)
@@ -1191,14 +1191,16 @@ init_buffers(api_context *ctx, test_state *state, const test_info *test)
    free(special1);
 
    if (indices) {
-      buffer_set->ib = ctx->create_buffer(ctx, ib_size, api_heap_device);
+      buffer_set->ib = ctx->create_buffer(ctx, ib_size, api_heap_device, 0);
       ctx->upload_buffer_data(ctx, buffer_set->ib, 0, ib_size, indices);
       free(indices);
    }
 
    if (mesh_groups) {
-      buffer_set->mesh_group_buf = ctx->create_buffer(ctx, 16 + mesh_group_data_size, api_heap_device);
-      ctx->upload_buffer_data(ctx, buffer_set->mesh_group_buf, 16, mesh_group_data_size, mesh_groups);
+      buffer_set->mesh_group_buf = ctx->create_buffer(ctx, 16 + mesh_group_data_size,
+                                                      api_heap_device, 0);
+      ctx->upload_buffer_data(ctx, buffer_set->mesh_group_buf, 16, mesh_group_data_size,
+                              mesh_groups);
       free(mesh_groups);
    }
 
@@ -1344,7 +1346,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    ctx->end_render_pass(ctx);
    ctx->write_next_timestamp(ctx, state->timestamps);
 
-   ctx->end_cmdbuf_and_submit(ctx);
+   ctx->end_cmdbuf_and_submit(ctx, NULL);
 }
 
 static void
@@ -1578,7 +1580,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
          if (state->pipelines[test->geom_style][test->cull_method][test->special2][v]) {
             print_throughput_from_next_timestamps(ctx, state->timestamps,
                                                   NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
-                                                  ctx->options.max_rate ? ",%6.1f" : ",%6.2f", NULL);
+                                                  ctx->options.max_rate ? ",%6.1f" : ",%6.2f", NULL, 0);
          } else {
             printf(",   n/a");
          }
