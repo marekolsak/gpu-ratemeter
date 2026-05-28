@@ -193,7 +193,7 @@ generate_tests(unsigned *tests, unsigned max_tests, unsigned *num_tests)
 static bool
 print_na(api_context *ctx, test_flags flags, cmdbuf_option cmdbuf_option, bool async)
 {
-   if (!ctx->has_async_sparse_queue && async)
+   if (async && (!ctx->has_async_sparse_queue || flags & NO_BIND))
       return true;
 
    return !(flags & ~(NO_BIND | SIZE_REGULAR | BLOCK_REGULAR)) && cmdbuf_option == CMDBUF_NONE;
