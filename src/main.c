@@ -124,6 +124,7 @@ typedef struct {
 
 static const option_desc option_list[] = {
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
+   {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},

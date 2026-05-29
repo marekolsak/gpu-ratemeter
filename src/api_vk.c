@@ -34,20 +34,23 @@
    } while(0)
 
 static bool
-vk_has_validation_layer(void)
+vk_has_validation_layer(api_context *ctx)
 {
-    uint32_t count;
-    vk_check(vkEnumerateInstanceLayerProperties(&count, NULL));
-    VkLayerProperties *props = alloca(sizeof(*props) * count);
-    vk_check(vkEnumerateInstanceLayerProperties(&count, props));
+   if (ctx->options.no_validator)
+      return false;
 
-    for (unsigned i = 0; i < count; i++) {
-        if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation"))
-            return true;
-    }
+   uint32_t count;
+   vk_check(vkEnumerateInstanceLayerProperties(&count, NULL));
+   VkLayerProperties *props = alloca(sizeof(*props) * count);
+   vk_check(vkEnumerateInstanceLayerProperties(&count, props));
 
-    fprintf(stderr, "Note: VK_LAYER_KHRONOS_validation not found.\n");
-    return false;
+   for (unsigned i = 0; i < count; i++) {
+      if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation"))
+         return true;
+   }
+
+   fprintf(stderr, "Note: VK_LAYER_KHRONOS_validation not found.\n");
+   return false;
 }
 
 static int
@@ -1563,7 +1566,7 @@ vk_create_context(const program_options *options)
                                    .pApplicationName = "main",
                                    .apiVersion = VK_MAKE_VERSION(1, 3, 0),
                                 },
-                                .enabledLayerCount = vk_has_validation_layer() ? 1 : 0,
+                                .enabledLayerCount = vk_has_validation_layer(ctx) ? 1 : 0,
                                 .ppEnabledLayerNames = (const char *[1]) {
                                    "VK_LAYER_KHRONOS_validation",
                                 },

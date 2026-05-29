@@ -290,6 +290,7 @@ typedef struct {
 
    /* Bool options.*/
    bool lean;
+   bool no_validator;
    bool rdna4_timestamp_wa;
 
    /* Uint options. */

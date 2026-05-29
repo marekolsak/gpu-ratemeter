@@ -56,6 +56,8 @@ The following tests are available:
 > - The output is a table in CSV. Paste it into a spreadsheet to make easy comparisons of different runs.
 
 Optional parameters common to all tests:
+- `-no-validator: disable the Vulkan validation layer (enabled by default)
+- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)
 - `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting memory bandwidth)
 
