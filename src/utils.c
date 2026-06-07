@@ -45,15 +45,21 @@ check_filter_string(const char *filter_string, const char *name)
    return strstr(name, filter_string) != 0;
 }
 
+double
+get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+{
+   assert(pool->num_read_queries + 1 < pool->num_written_queries);
+   uint64_t start = pool->results[pool->num_read_queries++];
+   uint64_t end = pool->results[pool->num_read_queries++];
+   return (end - start) * ctx->timestamp_period_in_seconds;
+}
+
 void
 print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                       uint64_t num_units, const char *rate_format,
                                       const char *bandwidth_format, unsigned bandwidth_exp2_divisor)
 {
-   assert(pool->num_read_queries + 1 < pool->num_written_queries);
-   uint64_t start = pool->results[pool->num_read_queries++];
-   uint64_t end = pool->results[pool->num_read_queries++];
-   double rate = num_units / ((end - start) * ctx->timestamp_period_in_seconds);
+   double rate = num_units /  get_time_in_seconds_from_timestamps(ctx, pool);
 
    if (ctx->options.report_bandwidth) {
       printf(bandwidth_format, rate / (1ull << bandwidth_exp2_divisor));

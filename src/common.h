@@ -50,6 +50,7 @@ typedef enum {
    api_heap_device,
    api_heap_host_uncached,
    api_heap_host_cached,
+   api_num_heaps,
 } api_heap_type;
 
 typedef struct {
@@ -139,18 +140,22 @@ typedef struct {
 #define MAX_DESCRIPTOR_SETS                     1024
 #define MAX_UNIFORM_BUFFER_BINDINGS             1
 #define MAX_UNIFORM_BUFFER_ARRAY_SIZE           1
+#define MAX_STORAGE_BUFFER_BINDINGS             2
+#define MAX_STORAGE_BUFFER_ARRAY_SIZE           1
 #define MAX_UNIFORM_TEXEL_BUFFER_BINDINGS       5
 #define MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE     8
+#define MAX_COMBINED_IMAGE_SAMPLER_BINDINGS     1
 #define MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE   1
 #define MAX_STORAGE_IMAGE_BINDINGS              1
 #define MAX_STORAGE_IMAGE_ARRAY_SIZE            1
 
 /* This is really just a binding layout, not a descriptor layout. */
 typedef struct {
-   api_descriptor_binding uniform_buffer;
+   api_descriptor_binding uniform_buffer[MAX_UNIFORM_BUFFER_BINDINGS];
+   api_descriptor_binding storage_buffer[MAX_STORAGE_BUFFER_BINDINGS];
    api_descriptor_binding uniform_texel_buffer[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS];
-   api_descriptor_binding combined_image_sampler;
-   api_descriptor_binding storage_image;
+   api_descriptor_binding combined_image_sampler[MAX_COMBINED_IMAGE_SAMPLER_BINDINGS];
+   api_descriptor_binding storage_image[MAX_STORAGE_IMAGE_BINDINGS];
 } api_descriptor_set_layout_desc;
 
 typedef struct {
@@ -240,6 +245,16 @@ typedef struct {
 } api_pipeline;
 
 typedef struct {
+#ifdef GL_PRIVATE
+   GLuint prog;
+#endif
+
+#ifdef VK_PRIVATE
+   VkPipeline pipeline;
+#endif
+} api_compute_pipeline;
+
+typedef struct {
    bool indexed;
    bool mesh_shader;
    unsigned count;
@@ -324,6 +339,9 @@ typedef struct api_context {
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
    bool has_async_sparse_queue;
+   bool has_shader_subgroup_clock;
+   unsigned max_uniform_buffer_range;
+   unsigned max_storage_buffer_range;
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
 
@@ -338,6 +356,8 @@ typedef struct api_context {
    void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
    void (*upload_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, const void *data);
+   void (*get_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
+                           uint64_t size, void *data);
    void (*clear_buffer)(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
@@ -370,21 +390,34 @@ typedef struct api_context {
 
    api_descriptor_set *(*create_descriptor_set)(struct api_context *ctx, api_descriptor_set_layout *layout);
    void (*set_uniform_buffer_descriptor)(struct api_context *ctx, api_descriptor_set *set,
-                                         api_buffer *buffer, uint64_t offset, uint64_t size);
+                                         unsigned binding_index, api_buffer *buffer, uint64_t offset,
+                                         uint64_t size);
+   void (*set_storage_buffer_descriptor)(struct api_context *ctx, api_descriptor_set *set,
+                                         unsigned binding_index, api_buffer *buffer, uint64_t offset,
+                                         uint64_t size);
    void (*set_uniform_texel_buffer_descriptors)(struct api_context *ctx, api_descriptor_set *set,
                                                 unsigned binding_index, unsigned num_buffers,
                                                 api_buffer **buffers, VkFormat *formats,
                                                 uint64_t *offsets, uint64_t *sizes);
    void (*set_combined_image_sampler_descriptors)(struct api_context *ctx, api_descriptor_set *set,
-                                                  unsigned num_samplers, api_image **images);
+                                                  unsigned binding_index, unsigned num_samplers,
+                                                  api_image **images);
    void (*set_storage_image_descriptors)(struct api_context *ctx, api_descriptor_set *set,
-                                         unsigned num_images, api_image **images);
+                                         unsigned binding_index, unsigned num_images,
+                                         api_image **images);
    void (*destroy_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
    void (*bind_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
 
    api_pipeline *(*create_pipeline)(struct api_context *ctx, const api_pipeline_desc *desc);
    void (*destroy_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
    void (*bind_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
+
+   api_compute_pipeline *(*create_compute_pipeline)(struct api_context *ctx, api_shader *shader,
+                                                    api_descriptor_set_layout *layout);
+   void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
+   void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
+   void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
+   void (*pipeline_barrier_buffer)(struct api_context *ctx, api_buffer *buf);
 
    void (*begin_cmdbuf)(struct api_context *ctx);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx, api_fence *wait_fence);
@@ -396,6 +429,7 @@ typedef struct api_context {
    void (*bind_vertex_buffers)(struct api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets);
    void (*bind_index_buffer)(struct api_context *ctx, api_buffer *ib);
    void (*draw)(struct api_context *ctx, const api_draw_desc *desc);
+
    void (*driver_workaround)(struct api_context *ctx, driver_wa wa);
 
    api_timestamp_query_pool *(*create_timestamp_pool)(struct api_context *ctx, unsigned num_queries);
@@ -471,6 +505,7 @@ void test_sparsebind(api_context *ctx, const char *test_name);
 
 /* utils.c */
 bool check_filter_string(const char *filter_string, const char *name);
+double get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *pool);
 void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
                                            const char *bandwidth_format, unsigned bandwidth_exp2_divisor);

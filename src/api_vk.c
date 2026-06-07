@@ -160,6 +160,7 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                                        (ctx->has_xfb ? VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT : 0) |
                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
                            },
                            NULL, &buf->buffer));
@@ -215,25 +216,51 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
 }
 
 static void
-vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
+vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers,
+                            api_buffer **buffers, uint64_t *offsets, uint64_t *sizes)
 {
-   vkCmdFillBuffer(ctx->current_cmd_buffer, buf->buffer, offset, size, value);
+   VkBufferMemoryBarrier2 *barriers = alloca(sizeof(barriers[0]) * num_buffers);
+
+   for (unsigned i = 0; i < num_buffers; i++) {
+      VkAccessFlags2 access = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+                              VK_ACCESS_2_INDEX_READ_BIT |
+                              VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT |
+                              VK_ACCESS_2_UNIFORM_READ_BIT |
+                              VK_ACCESS_2_SHADER_READ_BIT |
+                              VK_ACCESS_2_SHADER_WRITE_BIT |
+                              VK_ACCESS_2_TRANSFER_READ_BIT |
+                              VK_ACCESS_2_TRANSFER_WRITE_BIT |
+                              VK_ACCESS_2_MEMORY_READ_BIT |
+                              VK_ACCESS_2_MEMORY_WRITE_BIT |
+                              VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+                              VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+                              VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
+                              (ctx->has_xfb ? VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT : 0);
+
+      barriers[i] = (VkBufferMemoryBarrier2){
+                    .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+                    .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                    .srcAccessMask = access,
+                    .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                    .dstAccessMask = access,
+                    .buffer = buffers[i]->buffer,
+                    .offset = offsets[i],
+                    .size = sizes[i],
+      };
+   }
 
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
                             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .bufferMemoryBarrierCount = 1,
-                            .pBufferMemoryBarriers = &(VkBufferMemoryBarrier2) {
-                               .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                               .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                               .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                               .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
-                                                VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                               .buffer = buf->buffer,
-                               .offset = offset,
-                               .size = size,
-                            },
+                            .bufferMemoryBarrierCount = num_buffers,
+                            .pBufferMemoryBarriers = barriers,
                          });
+}
+
+static void
+vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
+{
+   vkCmdFillBuffer(ctx->current_cmd_buffer, buf->buffer, offset, size, value);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
 }
 
 static void
@@ -253,39 +280,12 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                           .size = size,
                        },
                     });
-
-   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
-                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .bufferMemoryBarrierCount = 2,
-                            .pBufferMemoryBarriers = (VkBufferMemoryBarrier2[2]) {
-                               {
-                                  .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                                  .srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-                                  .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
-                                                   VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                                  .buffer = src->buffer,
-                                  .offset = src_offset,
-                                  .size = size,
-                               },
-                               {
-                                  .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                                  .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                                  .dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT |
-                                                   VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                                  .buffer = dst->buffer,
-                                  .offset = dst_offset,
-                                  .size = size,
-                               },
-                            },
-                         });
+   vk_pipeline_barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
+                               (uint64_t[2]){src_offset, dst_offset}, (uint64_t[2]){size, size});
 }
 
 static void
-vk_buffer_bind_sparse(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
+vk_buffer_bind_sparse(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                       bool bind, api_fence **signal_fence)
 {
    assert(offset % buf->sparse_block_size == 0);
@@ -450,7 +450,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
 }
 
 static void
-vk_destroy_image(struct api_context *ctx, api_image *image)
+vk_destroy_image(api_context *ctx, api_image *image)
 {
    vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
    vkDestroyImage(ctx->device, image->image, NULL);
@@ -459,7 +459,7 @@ vk_destroy_image(struct api_context *ctx, api_image *image)
 }
 
 static void
-vk_clear_image(struct api_context *ctx, api_image *image, const api_image_box *box,
+vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
                const VkClearColorValue *value)
 {
    assert(!format_is_depth_or_stencil(image->format));
@@ -477,7 +477,7 @@ vk_clear_image(struct api_context *ctx, api_image *image, const api_image_box *b
 }
 
 static void
-vk_blit_image(struct api_context *ctx, api_blit_desc *desc)
+vk_blit_image(api_context *ctx, api_blit_desc *desc)
 {
    bool is_resolve = desc->src->samples > 1 && desc->dst->samples == 1;
    assert(!format_is_depth_or_stencil(desc->src->format));
@@ -684,7 +684,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
 }
 
 static void
-vk_destroy_framebuffer(struct api_context *ctx, api_framebuffer *fb)
+vk_destroy_framebuffer(api_context *ctx, api_framebuffer *fb)
 {
    if (ctx->options.api_flavor == API_VK_CORE) {
       for (unsigned clear = 0; clear < 2; clear++) {
@@ -731,7 +731,7 @@ vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
 
    shaderc_compilation_result_t result =
        shaderc_compile_into_spv(ctx->glsl_compiler, source, strlen(source),
-                                shaderc_type, "", "main", ctx->glsl_compiler_options);
+                                shaderc_type, "file", "main", ctx->glsl_compiler_options);
    if (!result)
       error("shaderc_compile_into_spv returned NULL");
 
@@ -762,20 +762,37 @@ vk_create_descriptor_set_layout(api_context *ctx,
    layout->desc = *desc;
 
    VkShaderStageFlags stage_flags = (ctx->max_mesh_workgroup_size ? VK_SHADER_STAGE_MESH_BIT_EXT : 0) |
-                                    VK_SHADER_STAGE_FRAGMENT_BIT;
+                                    VK_SHADER_STAGE_FRAGMENT_BIT |
+                                    VK_SHADER_STAGE_COMPUTE_BIT;
    unsigned num_bindings = 0;
    VkDescriptorSetLayoutBinding desc_set_layout_bindings[8];
 
-   if (desc->uniform_buffer.array_size) {
-      assert(desc->uniform_buffer.array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
-      assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+   for (unsigned i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++) {
+      if (desc->uniform_buffer[i].array_size) {
+         assert(desc->uniform_buffer[i].array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
+         assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
 
-      desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
-         .binding = desc->uniform_buffer.vk_binding,
-         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-         .descriptorCount = desc->uniform_buffer.array_size,
-         .stageFlags = stage_flags,
-      };
+         desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+            .binding = desc->uniform_buffer[i].vk_binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = desc->uniform_buffer[i].array_size,
+            .stageFlags = stage_flags,
+         };
+      }
+   }
+
+   for (unsigned i = 0; i < MAX_STORAGE_BUFFER_BINDINGS; i++) {
+      if (desc->storage_buffer[i].array_size) {
+         assert(desc->storage_buffer[i].array_size <= MAX_STORAGE_BUFFER_ARRAY_SIZE);
+         assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+
+         desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+            .binding = desc->storage_buffer[i].vk_binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = desc->storage_buffer[i].array_size,
+            .stageFlags = stage_flags,
+         };
+      }
    }
 
    for (unsigned i = 0; i < MAX_UNIFORM_TEXEL_BUFFER_BINDINGS; i++) {
@@ -792,16 +809,18 @@ vk_create_descriptor_set_layout(api_context *ctx,
       }
    }
 
-   if (desc->storage_image.array_size) {
-      assert(desc->storage_image.array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
-      assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+   for (unsigned i = 0; i < MAX_STORAGE_IMAGE_BINDINGS; i++) {
+      if (desc->storage_image[i].array_size) {
+         assert(desc->storage_image[i].array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
+         assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
 
-      desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
-         .binding = desc->storage_image.vk_binding,
-         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         .descriptorCount = desc->storage_image.array_size,
-         .stageFlags = stage_flags,
-      };
+         desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+            .binding = desc->storage_image[i].vk_binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = desc->storage_image[i].array_size,
+            .stageFlags = stage_flags,
+         };
+      }
    }
 
    vk_check(vkCreateDescriptorSetLayout(ctx->device,
@@ -842,19 +861,42 @@ vk_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
 }
 
 static void
-vk_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
+vk_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
-   assert(set->layout->desc.uniform_buffer.array_size);
+   assert(1 <= set->layout->desc.uniform_buffer[binding_index].array_size);
 
    vkUpdateDescriptorSets(ctx->device, 1,
                           &(VkWriteDescriptorSet){
                              .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                              .dstSet = set->set,
-                             .dstBinding = set->layout->desc.uniform_buffer.vk_binding,
+                             .dstBinding = set->layout->desc.uniform_buffer[binding_index].vk_binding,
                              .dstArrayElement = 0,
                              .descriptorCount = 1,
                              .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                             .pBufferInfo = &(VkDescriptorBufferInfo){
+                                .buffer = buffer->buffer,
+                                .offset = offset,
+                                .range = size,
+                             },
+                          },
+                          0, NULL);
+}
+
+static void
+vk_set_storage_buffer_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
+                                  api_buffer *buffer, uint64_t offset, uint64_t size)
+{
+   assert(1 <= set->layout->desc.storage_buffer[binding_index].array_size);
+
+   vkUpdateDescriptorSets(ctx->device, 1,
+                          &(VkWriteDescriptorSet){
+                             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set->set,
+                             .dstBinding = set->layout->desc.storage_buffer[binding_index].vk_binding,
+                             .dstArrayElement = 0,
+                             .descriptorCount = 1,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                              .pBufferInfo = &(VkDescriptorBufferInfo){
                                 .buffer = buffer->buffer,
                                 .offset = offset,
@@ -900,10 +942,10 @@ vk_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *se
 }
 
 static void
-vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned num_images,
-                                 api_image **images)
+vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
+                                 unsigned num_images, api_image **images)
 {
-   assert(num_images <= set->layout->desc.storage_image.array_size);
+   assert(num_images <= set->layout->desc.storage_image[binding_index].array_size);
    VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_images);
 
    for (unsigned i = 0; i < num_images; i++) {
@@ -922,7 +964,7 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
                           &(VkWriteDescriptorSet){
                              .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                              .dstSet = set->set,
-                             .dstBinding = set->layout->desc.storage_image.vk_binding,
+                             .dstBinding = set->layout->desc.storage_image[binding_index].vk_binding,
                              .dstArrayElement = 0,
                              .descriptorCount = num_images,
                              .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -935,6 +977,8 @@ static void
 vk_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
 {
    vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
+   vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                            set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
 }
 
@@ -1139,7 +1183,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 }
 
 static void
-vk_destroy_pipeline(struct api_context *ctx, api_pipeline *pipeline)
+vk_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
 {
    vkDestroyPipeline(ctx->device, pipeline->pipeline, NULL);
    free(pipeline);
@@ -1194,6 +1238,52 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
                                              pipeline->vrs.combinerOps);
       }
    }
+}
+
+static api_compute_pipeline *
+vk_create_compute_pipeline(api_context *ctx, api_shader *shader,
+                           api_descriptor_set_layout *layout)
+{
+   api_compute_pipeline *pipeline = calloc(1, sizeof(api_compute_pipeline));
+
+   vk_check(vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1,
+                                     &(VkComputePipelineCreateInfo){
+                                        .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+                                        .stage  = (VkPipelineShaderStageCreateInfo){
+                                           .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                           .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+                                           .module = shader->module,
+                                           .pName  = "main",
+                                        },
+                                        .layout = layout->pipeline_layout,
+                                     },
+                                     NULL, &pipeline->pipeline));
+   return pipeline;
+}
+
+static void
+vk_destroy_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
+{
+   vkDestroyPipeline(ctx->device, pipeline->pipeline, NULL);
+   free(pipeline);
+}
+
+static void
+vk_bind_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
+{
+   vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline);
+}
+
+static void
+vk_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
+{
+   vkCmdDispatch(ctx->current_cmd_buffer, num_x, num_y, num_z);
+}
+
+static void
+vk_pipeline_barrier_buffer(struct api_context *ctx, api_buffer *buf)
+{
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[1]){0}, (uint64_t[1]){buf->size});
 }
 
 static void
@@ -1387,7 +1477,7 @@ vk_draw(api_context *ctx, const api_draw_desc *desc)
 }
 
 static void
-vk_driver_workaround(struct api_context *ctx, driver_wa wa)
+vk_driver_workaround(api_context *ctx, driver_wa wa)
 {
    VkPipelineStageFlagBits2 stage_bits = 0;
 
@@ -1474,6 +1564,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
    vkUnmapMemory(ctx->device, *staging->mem);
 
    vk_begin_cmdbuf(ctx);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
                     &(VkCopyBufferInfo2) {
                        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
@@ -1487,21 +1578,38 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
                           .size = size,
                        },
                     });
-   vkCmdPipelineBarrier2(ctx->current_cmd_buffer, &(VkDependencyInfo) {
-                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .bufferMemoryBarrierCount = 1,
-                            .pBufferMemoryBarriers = &(VkBufferMemoryBarrier2) {
-                               .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-                               .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                               .dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
-                               .dstAccessMask = VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
-                               .buffer = buf->buffer,
-                               .offset = offset,
-                               .size = size,
-                            },
-                         });
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
    vk_end_cmdbuf_and_submit(ctx, NULL);
+}
+
+static void
+vk_get_buffer_data(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
+                   void *data)
+{
+   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_cached, 0);
+
+   vk_begin_cmdbuf(ctx);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
+   vkCmdCopyBuffer2(ctx->current_cmd_buffer,
+                    &(VkCopyBufferInfo2) {
+                       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+                       .srcBuffer = buf->buffer,
+                       .dstBuffer = staging->buffer,
+                       .regionCount = 1,
+                       .pRegions = &(VkBufferCopy2) {
+                          .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+                          .srcOffset = offset,
+                          .dstOffset = 0,
+                          .size = size,
+                       },
+                    });
+   vk_end_cmdbuf_and_submit(ctx, NULL);
+   vk_wait_for_idle(ctx);
+
+   void *map;
+   vk_check(vkMapMemory(ctx->device, staging->mem[0], 0, size, 0, &map));
+   memcpy(data, map, size);
+   vkUnmapMemory(ctx->device, staging->mem[0]);
 }
 
 static void
@@ -1542,8 +1650,7 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                       },
                   });
    vk_end_cmdbuf_and_submit(ctx, NULL);
-
-   vk_check(vkQueueWaitIdle(ctx->gfx_queue));
+   vk_wait_for_idle(ctx);
 
    void *map;
    vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
@@ -1583,8 +1690,12 @@ vk_create_context(const program_options *options)
    VkPhysicalDevice physical_device = pd[0];
    printf("Physical devices: %u\n", count);
 
+   VkPhysicalDeviceShaderClockFeaturesKHR shader_clock = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+   };
    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT ext_dyn3 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+      .pNext = &shader_clock,
    };
    VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vi_dyn = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
@@ -1660,7 +1771,7 @@ vk_create_context(const program_options *options)
       error("VK_QUEUE_GRAPHICS_BIT not supported");
 
    unsigned num_enabled_extensions = 0;
-   const char *enabled_extensions[5];
+   const char *enabled_extensions[7];
 
    if (vi_dyn.vertexInputDynamicState) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
@@ -1691,6 +1802,11 @@ vk_create_context(const program_options *options)
        ext_dyn3.extendedDynamicState3ColorWriteMask) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_EXT_extended_dynamic_state3";
+   }
+
+   if (shader_clock.shaderSubgroupClock) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_KHR_shader_clock";
    }
 
    if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
@@ -1819,8 +1935,16 @@ vk_create_context(const program_options *options)
                                    &(VkDescriptorPoolCreateInfo){
                                       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                       .maxSets = MAX_DESCRIPTOR_SETS,
-                                      .poolSizeCount = 3,
-                                      .pPoolSizes = (VkDescriptorPoolSize[3]){
+                                      .poolSizeCount = 4,
+                                      .pPoolSizes = (VkDescriptorPoolSize[4]){
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_BUFFER_BINDINGS,
+                                         },
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_STORAGE_BUFFER_BINDINGS,
+                                         },
                                          {
                                             .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                                             .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_STORAGE_IMAGE_BINDINGS,
@@ -1828,10 +1952,6 @@ vk_create_context(const program_options *options)
                                          {
                                             .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
                                             .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_TEXEL_BUFFER_BINDINGS,
-                                         },
-                                         {
-                                            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_BUFFER_BINDINGS,
                                          },
                                       },
                                    },
@@ -1864,6 +1984,9 @@ vk_create_context(const program_options *options)
                             queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
    ctx->has_async_sparse_queue = compute_queue_family_index != -1 &&
                                  queue_props[compute_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+   ctx->has_shader_subgroup_clock = shader_clock.shaderSubgroupClock;
+   ctx->max_uniform_buffer_range = device_properties.properties.limits.maxUniformBufferRange;
+   ctx->max_storage_buffer_range = device_properties.properties.limits.maxStorageBufferRange;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
 
    if (ctx->has_sparse_buffer) {
@@ -1904,6 +2027,7 @@ vk_create_context(const program_options *options)
    ctx->create_buffer = vk_create_buffer;
    ctx->destroy_buffer = NULL;
    ctx->upload_buffer_data = vk_upload_buffer_data;
+   ctx->get_buffer_data = vk_get_buffer_data;
    ctx->clear_buffer = vk_clear_buffer;
    ctx->copy_buffer = vk_copy_buffer;
    ctx->buffer_bind_sparse = vk_buffer_bind_sparse;
@@ -1926,6 +2050,7 @@ vk_create_context(const program_options *options)
    ctx->create_descriptor_set = vk_create_descriptor_set;
    ctx->destroy_descriptor_set = NULL;
    ctx->set_uniform_buffer_descriptor = vk_set_uniform_buffer_descriptors;
+   ctx->set_storage_buffer_descriptor = vk_set_storage_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = vk_set_uniform_texel_buffer_descriptors;
    ctx->set_storage_image_descriptors = vk_set_storage_image_descriptors;
    ctx->bind_descriptor_set = vk_bind_descriptor_set;
@@ -1933,6 +2058,12 @@ vk_create_context(const program_options *options)
    ctx->create_pipeline = vk_create_pipeline;
    ctx->destroy_pipeline = vk_destroy_pipeline;
    ctx->bind_pipeline = vk_bind_pipeline;
+
+   ctx->create_compute_pipeline = vk_create_compute_pipeline;
+   ctx->destroy_compute_pipeline = vk_destroy_compute_pipeline;
+   ctx->bind_compute_pipeline = vk_bind_compute_pipeline;
+   ctx->dispatch = vk_dispatch;
+   ctx->pipeline_barrier_buffer = vk_pipeline_barrier_buffer;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;

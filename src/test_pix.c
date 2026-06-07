@@ -642,10 +642,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    api_descriptor_set_layout *desc_set_layout =
       ctx->create_descriptor_set_layout(ctx,
                                         &(api_descriptor_set_layout_desc) {
-                                           .storage_image.array_size = 1,
+                                           .storage_image[0].array_size = 1,
                                         });
    api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
-   ctx->set_storage_image_descriptors(ctx, desc_set, 1, &store_image);
+   ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
 
    /* Create pipelines. */
    unsigned num_visited_pipelines = 0;

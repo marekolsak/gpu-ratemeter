@@ -703,11 +703,16 @@ gl_create_descriptor_set_layout(api_context *ctx,
    api_descriptor_set_layout *layout = calloc(1, sizeof(api_descriptor_set_layout));
    layout->desc = *desc;
 
-   assert(desc->uniform_buffer.array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
+   for (unsigned i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++)
+      assert(desc->uniform_buffer[i].array_size <= MAX_UNIFORM_BUFFER_ARRAY_SIZE);
+   for (unsigned i = 0; i < MAX_STORAGE_BUFFER_BINDINGS; i++)
+      assert(desc->storage_buffer[i].array_size <= MAX_STORAGE_BUFFER_ARRAY_SIZE);
    for (unsigned i = 0; i < MAX_UNIFORM_TEXEL_BUFFER_BINDINGS; i++)
       assert(desc->uniform_texel_buffer[i].array_size <= MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE);
-   assert(desc->combined_image_sampler.array_size <= MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE);
-   assert(desc->storage_image.array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
+   for (unsigned i = 0; i < MAX_COMBINED_IMAGE_SAMPLER_BINDINGS; i++)
+      assert(desc->combined_image_sampler[i].array_size <= MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE);
+   for (unsigned i = 0; i < MAX_STORAGE_IMAGE_BINDINGS; i++)
+      assert(desc->storage_image[i].array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
 
    return layout;
 }
@@ -734,13 +739,24 @@ gl_destroy_descriptor_set(api_context *ctx, api_descriptor_set *set)
 }
 
 static void
-gl_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set,
+gl_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
-   assert(set->layout->desc.uniform_buffer.array_size);
+   assert(1 <= set->layout->desc.uniform_buffer[binding_index].array_size);
    set->ubo_id = buffer->id;
    set->ubo_offset = offset;
    set->ubo_size = size;
+}
+
+static void
+gl_set_storage_buffer_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
+                                  api_buffer *buffer, uint64_t offset, uint64_t size)
+{
+   assert(1 <= set->layout->desc.storage_buffer[binding_index].array_size);
+   /*set->ssbo_id = buffer->id;
+   set->ssbo_offset = offset;
+   set->ssbo_size = size;*/
+   assert(0);
 }
 
 static void
@@ -762,10 +778,11 @@ gl_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *se
 }
 
 static void
-gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *set, unsigned num_samplers,
+gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *set,
+                                          unsigned binding_index, unsigned num_samplers,
                                           api_image **images)
 {
-   assert(num_samplers <= set->layout->desc.combined_image_sampler.array_size);
+   assert(num_samplers <= set->layout->desc.combined_image_sampler[binding_index].array_size);
 
    glDeleteTextures(num_samplers, set->tex_ids);
 
@@ -781,10 +798,10 @@ gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *
 }
 
 static void
-gl_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned num_images,
-                                 api_image **images)
+gl_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
+                                 unsigned num_images, api_image **images)
 {
-   assert(num_images <= set->layout->desc.storage_image.array_size);
+   assert(num_images <= set->layout->desc.storage_image[binding_index].array_size);
 
    for (unsigned i = 0; i < num_images; i++)
       set->image_ids[i] = images[i]->id;
@@ -793,9 +810,11 @@ gl_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
 static void
 gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
 {
-   if (set->layout->desc.uniform_buffer.array_size) {
-      glBindBufferRange(GL_UNIFORM_BUFFER, set->layout->desc.uniform_buffer.gl_binding,
-                        set->ubo_id, set->ubo_offset, set->ubo_size);
+   for (unsigned i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++) {
+      if (set->layout->desc.uniform_buffer[i].array_size) {
+         glBindBufferRange(GL_UNIFORM_BUFFER, set->layout->desc.uniform_buffer[i].gl_binding,
+                           set->ubo_id, set->ubo_offset, set->ubo_size);
+      }
    }
 
    for (unsigned i = 0; i < MAX_UNIFORM_TEXEL_BUFFER_BINDINGS; i++) {
@@ -805,14 +824,18 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
       }
    }
 
-   if (set->layout->desc.combined_image_sampler.array_size) {
-      glBindTextures(set->layout->desc.combined_image_sampler.gl_binding,
-                     set->layout->desc.combined_image_sampler.array_size, set->tex_ids);
+   for (unsigned i = 0; i < MAX_COMBINED_IMAGE_SAMPLER_BINDINGS; i++) {
+      if (set->layout->desc.combined_image_sampler[i].array_size) {
+         glBindTextures(set->layout->desc.combined_image_sampler[i].gl_binding,
+                        set->layout->desc.combined_image_sampler[i].array_size, set->tex_ids);
+      }
    }
 
-   if (set->layout->desc.storage_image.array_size) {
-      glBindImageTextures(set->layout->desc.storage_image.gl_binding,
-                          set->layout->desc.storage_image.array_size, set->image_ids);
+   for (unsigned i = 0; i < MAX_STORAGE_IMAGE_BINDINGS; i++) {
+      if (set->layout->desc.storage_image[i].array_size) {
+         glBindImageTextures(set->layout->desc.storage_image[i].gl_binding,
+                             set->layout->desc.storage_image[i].array_size, set->image_ids);
+      }
    }
 }
 
@@ -1184,7 +1207,7 @@ gl_create_context(const program_options *options)
    gl_check_no_error();
 
    if (GLVersion.major < 4 || (GLVersion.major == 4 && GLVersion.minor < 6))
-      error("OpenGL 4.6 required");
+      error("OpenGL 4.6 is required.");
 
    printf("Renderer: %s\n", glGetString(GL_RENDERER));
 
@@ -1207,6 +1230,9 @@ gl_create_context(const program_options *options)
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
    ctx->has_resolve_image_yflip = true;
+
+   glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, (GLint*)&ctx->max_uniform_buffer_range);
+   glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, (GLint*)&ctx->max_storage_buffer_range);
 
 #if 0 /* not implemented for now */
    ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
@@ -1263,6 +1289,7 @@ gl_create_context(const program_options *options)
    ctx->create_descriptor_set = gl_create_descriptor_set;
    ctx->destroy_descriptor_set = gl_destroy_descriptor_set;
    ctx->set_uniform_buffer_descriptor = gl_set_uniform_buffer_descriptors;
+   ctx->set_storage_buffer_descriptor = gl_set_storage_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = gl_set_uniform_texel_buffer_descriptors;
    ctx->set_combined_image_sampler_descriptors = gl_set_combined_image_sampler_descriptors;
    ctx->set_storage_image_descriptors = gl_set_storage_image_descriptors;

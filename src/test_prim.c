@@ -1220,7 +1220,7 @@ init_buffers(api_context *ctx, test_state *state, const test_info *test)
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          buffer_set->mesh_desc_set[v] = ctx->create_descriptor_set(ctx, state->ms_desc_set_layout[v]);
 
-         ctx->set_uniform_buffer_descriptor(ctx, buffer_set->mesh_desc_set[v],
+         ctx->set_uniform_buffer_descriptor(ctx, buffer_set->mesh_desc_set[v], 0,
                                             buffer_set->mesh_group_buf, 0,
                                             buffer_set->mesh_group_buf->size);
 
@@ -1614,7 +1614,7 @@ test_prim(api_context *ctx, const char *test_name)
    if (ctx->max_mesh_workgroup_size) {
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          api_descriptor_set_layout_desc desc = {
-            .uniform_buffer.array_size = 1
+            .uniform_buffer[0].array_size = 1,
          };
 
          /* indices, pos, special0, special1 */

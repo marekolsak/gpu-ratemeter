@@ -12,6 +12,8 @@
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
+ * - memory latency (pointer chasing), target: cache, VRAM, GTT, IOMMU latency
+ * - instruction fetch latency (jump chasing)
  *
  * APIs:
  * - Vulkan modes: GPL, KSO
@@ -36,10 +38,10 @@
  * - transfer queue
  *
  * pix:
- * - ztest.pass + discard
- * - multiview
+ * - ztest.pass + discard (RB+)
+ * - multiview (also viewindex FS sysval overhead)
  * - render to 3D texture?
- * - draw a statically-tessellated full-screen quad, quads should fill the screen in the Morton order
+ * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
  *
  * prim:
  * - VS + transform feedback
