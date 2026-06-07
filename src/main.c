@@ -105,6 +105,7 @@ static const struct {
 } tests[] = {
    {"bufbw", test_bufbw, true},
    {"imgbw", test_imgbw, true},
+   {"latency", test_latency},
    {"pix", test_pix},
    {"pixbw", test_pix, true},
    {"prim", test_prim},

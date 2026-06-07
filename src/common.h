@@ -498,6 +498,7 @@ api_context *vk_create_context(const program_options *options);
 /* Tests. */
 void test_bufbw(api_context *ctx, const char *test_name);
 void test_imgbw(api_context *ctx, const char *test_name);
+void test_latency(api_context *ctx, const char *test_name);
 void test_pix(api_context *ctx, const char *test_name);
 void test_prim(api_context *ctx, const char *test_name);
 void test_sanity(api_context *ctx, const char *test_name);
