@@ -44,6 +44,7 @@ The following tests are available:
 - `mma`: matrix multiply accumulate in TBD units **{- (not implemented yet) -}**
 - `imgbw`: image clears, image copies, blits, and MSAA resolve in GB/s **{- (not finished yet) -}**
 - `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, port from piglit) -}**
+- `latency`: memory load latency in clock cycles
 - `pix`: pixel throughput in samples/clock, all subtests are run with 1x MSAA and 8x MSAA
 - `pixbw`: color buffer write throughput in GB/s, same subtests as `pix`
 - `prim`: primitive throughput in primitives/clock
@@ -99,6 +100,35 @@ Decoding subtest names:
 ## `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
 WIP (functionally mostly finished, try it)
+
+## `latency`: Memory Load Latency in Clock Cycles
+
+The test measures memory load latency as observed by shaders. Besides measuring latencies of all cache levels and memory, it can also be used to infer cache sizes and cache line sizes of all cache levels.
+
+It reports the average number of elapsed ticks of the shader subgroup clock between issued loads and reading their result. Both uniform (scalar) and non-uniform (vector) latencies are measured.
+
+Buffers of different sizes are completely traversed via load indirections in a manner that prevents cache hits if the whole buffer doesn't fit in the cache.
+The results are printed for each tested buffer size. Each printed latency should exactly correspond to the latency of the last cache level that can hold
+the buffer of that size.
+
+Required parameters:
+- `-maxsize=N`: The largest buffer size to test. This should be a power of two. It should also be > last level cache size to measure memory (cache miss) latency if needed.
+Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
+- `-spacing=N`: The load addresses are multiples of this number. This should be a power of two and <= cache line size.
+This also affects the total number of load indirections per shader, which is `maxsize / spacing`.
+Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.
+If spacing > cache line size, the latency of tested buffer sizes will no longer be aligned with cache sizes because a subset of cache-line-sized buffer segments
+is never loaded, reducing cache utilization (this behavior can be exploited to find the exact cache line size for each cache level).
+
+Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
+
+Decoding subtest names:
+- `nonuniform`: the load address is non-uniform
+- `uniform`: the load address is uniform
+- `devmem`: the traversed buffer is in device memory
+- `hostmem`: the traversed buffer is in host memory
+
+Only Vulkan is supported.
 
 ## `pix`: Pixel Throughput (samples/clock)
 
@@ -185,7 +215,7 @@ Decoding subtest names:
 - `blockNk`: each sparse block has N KB
 - `start_bound`: the subtest starts with all sparse blocks bound (`bind_one` never has this, `unbind_one` always has this)
 
-OpenGL support is not implemented.
+Only Vulkan is supported.
 
 # How to Build
 

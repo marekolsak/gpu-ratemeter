@@ -12,7 +12,6 @@
 
 #include "common.h"
 
-#define UNROLL_LOOP        0
 #define MIN_MEM_SIZE       1024
 
 typedef enum {
@@ -41,75 +40,68 @@ static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_indirections,
                                 unsigned spacing, unsigned max_size)
 {
-   int max_len = 1100 + 44 * num_indirections;
-   int len = 0;
-   char *source = (char*)malloc(max_len);
+   char source[1200];
 
-   len += snprintf(source + len, MAX2(max_len - len, 0),
-                   "#version 450 \n"
-                   "#extension GL_ARB_shader_clock : require \n"
-                   "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
-                   "\n"
+   int len = snprintf(source, ARRAY_SIZE(source),
+                      "#version 450 \n"
+                      "#extension GL_ARB_shader_clock : require \n"
+                      "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
+                      "\n"
 
-                   "#define UNIFORM %s \n"
-                   "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
-                   "\n"
+                      "#define UNIFORM %s \n"
+                      "#define NUM_INDIRECTIONS %u \n"
+                      "#define MAX_SIZE %u \n"
+                      "#define SPACING %u \n"
+                      "\n"
 
-                   "layout(set = 0, binding = 0, std430) readonly restrict buffer B0 { \n"
-                   "   uint offsets[%u]; \n"
-                   "} jumpbuf; \n"
-                   "\n"
+                      "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
+                      "\n"
 
-                   "layout(set = 0, binding = 1, std430) buffer B1 { \n"
-                   "   uint64_t clock_cycles; \n"
-                   "   uint64_t last_offset; \n"
-                   "} result; \n"
-                   "\n"
+                      "layout(set = 0, binding = 0, std430) readonly restrict buffer B0 { \n"
+                      "   uint offsets[MAX_SIZE / 4]; \n"
+                      "} jumpbuf; \n"
+                      "\n"
 
-                   "void main() { \n"
-                   "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * %u; \n"
-                   "   uint offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                   "\n"
+                      "layout(set = 0, binding = 1, std430) buffer B1 { \n"
+                      "   uint64_t clock_cycles; \n"
+                      "   uint64_t last_offset; \n"
+                      "} result; \n"
+                      "\n"
 
-                   /* Warm up the caches by executing all indirections or until the buffer wraps
-                    * around, whichever is less. This caches as much data as the caches can hold.
-                    */
-                   "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                   "   for (int i = 0; i < %u; i++) { \n"
-                   "      uint prev_offset = offset; \n"
-                   "      offset = jumpbuf.offsets[offset / 4].x; \n"
-                   "      if (offset < prev_offset) \n"
-                   "         break; \n"
-                   "   } \n"
-                   "\n"
+                      "void main() { \n"
+                      "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * SPACING; \n"
+                      "   uint offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "\n"
 
-                   "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                   "   uint64_t start_cycles = clockARB(); \n"
-                   "\n",
-                   uniform ? "true" : "false", max_size / 4, spacing, num_indirections);
+                      /* Warm up the caches by executing all indirections or until the buffer wraps
+                       * around, whichever is less. This caches as much data as the caches can hold.
+                       */
+                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) { \n"
+                      "      uint prev_offset = offset; \n"
+                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "      if (offset < prev_offset) \n"
+                      "         break; \n"
+                      "   } \n"
+                      "\n"
 
-#if UNROLL_LOOP
-   for (unsigned i = 0; i < num_indirections; i++) {
-      len += snprintf(source + len, MAX2(max_len - len, 0),
-                      "   offset = jumpbuf.offsets[offset / 4].x; \n");
-   }
-#else
-   len += snprintf(source + len, MAX2(max_len - len, 0),
-                   "   for (int i = 0; i < %u; i++) \n"
-                   "      offset = jumpbuf.offsets[offset / 4].x; \n", num_indirections);
-#endif
+                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   uint64_t start_cycles = clockARB(); \n"
+                      "\n"
 
-   len += snprintf(source + len, MAX2(max_len - len, 0),
-                   "   result.clock_cycles = clockARB() - start_cycles; \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
+                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "\n"
 
-                   /* Also store the offset to make the indirections not dead. */
-                   "   result.last_offset = offset; \n"
-                   "} \n");
-   assert(len < max_len);
+                      "   result.clock_cycles = clockARB() - start_cycles; \n"
 
-   api_shader *cs = ctx->create_shader(ctx, source, api_shader_cs);
-   free(source);
-   return cs;
+                      /* Also store the offset to make the indirections not dead. */
+                      "   result.last_offset = offset; \n"
+                      "} \n",
+                      uniform ? "true" : "false", num_indirections, max_size, spacing);
+   assert(len < ARRAY_SIZE(source));
+
+   return ctx->create_shader(ctx, source, api_shader_cs);
 }
 
 static unsigned
@@ -405,9 +397,11 @@ test_latency(api_context *ctx, const char *test_name)
    test_state state = {0};
    state.num_indirections = ctx->options.max_size / ctx->options.spacing;
 
+   printf("Indirections per shader: %u\n", state.num_indirections);
+   puts("Building compute pipelines...");
+
    run(ctx, test_name, INIT, &state);
 
-   printf("Indirections per shader: %u\n", state.num_indirections);
    printf("Executing tests ...");
 
    run(ctx, test_name, RUN, &state);
