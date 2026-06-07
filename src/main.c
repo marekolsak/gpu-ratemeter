@@ -12,8 +12,8 @@
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
- * - memory latency (pointer chasing), target: cache, VRAM, GTT, IOMMU latency
- * - instruction fetch latency (jump chasing)
+ * - latency: shared memory, uncached memory (GL2 bypass), 4K buffers mapped next to each other (pages),
+ *            instruction fetch (jump chasing)
  *
  * APIs:
  * - Vulkan modes: GPL, KSO
@@ -56,6 +56,7 @@
  * - fill the screen in the Morton order instead of linearly
  */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -117,6 +118,7 @@ typedef enum {
    OPTION_BOOL,
    OPTION_UINT,
    OPTION_STRING,
+   OPTION_MEMSIZE,
 } option_type;
 
 typedef struct {
@@ -131,8 +133,10 @@ static const option_desc option_list[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},
+   {OPTION_UINT, "-spacing=", offsetof(program_options, spacing)},
    {OPTION_STRING, "-filter=", offsetof(program_options, test_filter)},
    {OPTION_STRING, "-format=", offsetof(program_options, format_filter)},
+   {OPTION_MEMSIZE, "-maxsize=", offsetof(program_options, max_size)},
 };
 
 int
@@ -163,6 +167,20 @@ main(int argc, char **argv)
          case OPTION_STRING:
             if (!strncmp(argv[i], option_list[o].name, len)) {
                *(const char**)((uint8_t*)&options + option_list[o].offset) = argv[i] + len;
+               valid = true;
+            }
+            break;
+         case OPTION_MEMSIZE:
+            if (!strncmp(argv[i], option_list[o].name, len)) {
+               uint64_t *value = (uint64_t*)((uint8_t*)&options + option_list[o].offset);
+               const char *arg = argv[i] + len;
+               char si_prefix = arg[strlen(arg) - 1];
+               unsigned order = si_prefix == 'K' ? 1 :
+                                si_prefix == 'M' ? 2 :
+                                si_prefix == 'G' ? 3 :
+                                si_prefix == 'T' ? 4 : 0;
+               sscanf(arg, "%"PRIu64, value);
+               *value *= 1ull << (10 * order);
                valid = true;
             }
             break;

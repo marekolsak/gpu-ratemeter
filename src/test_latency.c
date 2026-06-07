@@ -116,8 +116,6 @@ typedef enum {
 
 typedef struct {
    unsigned num_indirections;
-   unsigned spacing;
-   unsigned max_size;
    unsigned num_tests;
 
    api_descriptor_set_layout *layout;
@@ -153,17 +151,19 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
       for (int uniform = 0; uniform <= 1; uniform++) {
          api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, state->num_indirections,
-                                                          state->spacing, state->max_size);
+                                                          ctx->options.spacing,
+                                                          ctx->options.max_size);
          state->pipelines[uniform] = ctx->create_compute_pipeline(ctx, cs, state->layout);
       }
 
       /* Initialize the rest. */
       state->num_tests = 0;
-      state->jump_buf_data = (uint32_t*)malloc(state->max_size);
+      state->jump_buf_data = (uint32_t*)malloc(ctx->options.max_size);
 
-      state->jump_buf[api_heap_device] = ctx->create_buffer(ctx, state->max_size, api_heap_device, 0);
+      state->jump_buf[api_heap_device] = ctx->create_buffer(ctx, ctx->options.max_size,
+                                                            api_heap_device, 0);
       if (ctx->has_host_uncached_heap) {
-         state->jump_buf[api_heap_host_uncached] = ctx->create_buffer(ctx, state->max_size,
+         state->jump_buf[api_heap_host_uncached] = ctx->create_buffer(ctx, ctx->options.max_size,
                                                                       api_heap_host_uncached, 0);
       }
    }
@@ -189,7 +189,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
       printf("%-*s,", name_indent, "Size");
 
-      for (unsigned size = MIN_MEM_SIZE; size <= state->max_size; size = get_next_size(size)) {
+      for (unsigned size = MIN_MEM_SIZE; size <= ctx->options.max_size; size = get_next_size(size)) {
          unsigned number = 0;
          unsigned order;
 
@@ -227,16 +227,17 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
             printf("%-*s,", name_indent, name);
          }
 
-         for (unsigned size = MIN_MEM_SIZE; size <= state->max_size; size = get_next_size(size)) {
+         for (unsigned size = MIN_MEM_SIZE; size <= ctx->options.max_size;
+              size = get_next_size(size)) {
             switch (stage) {
             case INIT:
                break;
 
             case RUN:
-               set_jump_buffer_data(ctx, state->jump_buf[heap], state->spacing, size,
+               set_jump_buffer_data(ctx, state->jump_buf[heap], ctx->options.spacing, size,
                                     state->jump_buf_data);
                ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0,
-                                                  state->jump_buf[heap], 0, state->max_size);
+                                                  state->jump_buf[heap], 0, ctx->options.max_size);
 
                ctx->begin_cmdbuf(ctx);
                ctx->bind_descriptor_set(ctx, state->sets[test_index]);
@@ -254,7 +255,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                 * InvocationID=1 ahead by one spacing.
                 */
                uint64_t expected_last_offset =
-                  (state->spacing * (1 + !uniform + state->num_indirections)) % size;
+                  (ctx->options.spacing * (1 + !uniform + state->num_indirections)) % size;
 
                assert(last_offset == expected_last_offset);
 
@@ -301,27 +302,33 @@ test_latency(api_context *ctx, const char *test_name)
     * - this can be used to find the true cache size and cache line size
     */
 
-   test_state state = {0};
-   state.num_indirections = 1 << 20;
-   state.spacing = 64;
-
-   uint64_t max_size = (uint64_t)state.spacing * state.num_indirections;
-
-   if (max_size > UINT32_MAX)
-      error("Maximum size exceeded. (need = %"PRIu64")\n", max_size);
-
-   state.max_size = max_size;
-
-   if (state.max_size > ctx->max_storage_buffer_range) {
-      error("The maximum storage buffer range is %u KB, need %u KB.\n",
-            ctx->max_storage_buffer_range >> 10, state.max_size >> 10);
+   if (!ctx->options.spacing || !ctx->options.max_size) {
+      error("Missing parameters.\n"
+            "\n"
+            "Required parameters:\n"
+            "   -spacing=N        The spacing between addresses in bytes (e.g. 64).\n"
+            "                     It should be <= cache line size to get valid results.\n"
+            "   -maxsize=N[KMGT]  The maximum tested buffer size (e.g. 32M), it should be\n"
+            "                     slightly greater than the last level cache size.\n");
    }
+
+   if (ctx->options.max_size > ctx->max_storage_buffer_range) {
+      error("The maximum storage buffer range is %u MB, specified %"PRIu64" MB.\n",
+            ctx->max_storage_buffer_range >> 20, ctx->options.max_size >> 20);
+   }
+
+   test_state state = {0};
+   state.num_indirections = ctx->options.max_size / ctx->options.spacing;
 
    run(ctx, test_name, INIT, &state);
 
+   printf("Indirections per shader: %u\n", state.num_indirections);
    printf("Executing tests ...");
+
    run(ctx, test_name, RUN, &state);
+
    puts("");
+   puts("Reading back results...");
 
    run(ctx, test_name, REPORT, &state);
 

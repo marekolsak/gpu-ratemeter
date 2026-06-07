@@ -311,10 +311,14 @@ typedef struct {
    /* Uint options. */
    unsigned freq_mhz;
    unsigned max_rate;
+   unsigned spacing;
 
    /* String options. */
    const char *test_filter;
    const char *format_filter;
+
+   /* Memory size options. */
+   uint64_t max_size;
 } program_options;
 
 typedef enum {
