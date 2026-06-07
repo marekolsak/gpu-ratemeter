@@ -15,6 +15,28 @@
 #define UNROLL_LOOP        0
 #define MIN_MEM_SIZE       1024
 
+typedef enum {
+   INIT,
+   RUN,
+   REPORT,
+} test_stage;
+
+typedef struct {
+   unsigned num_indirections;
+   unsigned num_tests;
+
+   api_descriptor_set_layout *layout;
+   api_compute_pipeline *pipelines[2];
+   api_descriptor_set **sets;
+
+   uint32_t *sequence_tmp;
+   uint32_t *jump_buf_data;
+   api_buffer *jump_buf[2];
+
+   api_buffer *result_buf;
+   uint64_t *results;
+} test_state;
+
 static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_indirections,
                                 unsigned spacing, unsigned max_size)
@@ -90,50 +112,119 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
    return cs;
 }
 
-static void
-set_jump_buffer_data(api_context *ctx, api_buffer *buf, unsigned spacing, unsigned size, uint32_t *tmp)
-{
-   assert(spacing % 4 == 0);
-   assert(size % spacing == 0);
-
-   memset(tmp, 0, size);
-   unsigned num_steps = size / spacing;
-
-   for (unsigned i = 0; i < num_steps - 1; i++)
-      tmp[i * spacing / 4] = (i + 1) * spacing;
-
-   /* Close the circle. */
-   tmp[(num_steps - 1) * spacing / 4] = 0;
-
-   ctx->upload_buffer_data(ctx, buf, 0, size, tmp);
-}
-
-typedef enum {
-   INIT,
-   RUN,
-   REPORT,
-} test_stage;
-
-typedef struct {
-   unsigned num_indirections;
-   unsigned num_tests;
-
-   api_descriptor_set_layout *layout;
-   api_compute_pipeline *pipelines[2];
-   api_descriptor_set **sets;
-
-   uint32_t *jump_buf_data;
-   api_buffer *jump_buf[2];
-
-   api_buffer *result_buf;
-   uint64_t *results;
-} test_state;
-
 static unsigned
 get_next_size(unsigned size)
 {
    unsigned pot = 1 << logbase2(size);
    return size + pot / 2;
+}
+
+#if 0
+#define DBG_PRINT(...) printf(__VA_ARGS__)
+#else
+#define DBG_PRINT(...)
+#endif
+
+static void
+generate_sequence(uint32_t *array, unsigned base, unsigned n)
+{
+   /* With cache line size = 4 elements and sequence (0, 1, 2, 3, 4, 5, 6, 7), we would get cache
+    * hits at 0->1->2->3 and 4->5->6->7, skewing our results. To prevent that, the closer
+    * the indirections are in a sequence, the farther apart they should be in memory. In that
+    * example, an optimal sequence would be (0, 4, 2, 6, 1, 5, 3, 7).
+    *
+    * Therefore, we need to generate a sequence of numbers minimizing address locality. For n=8,
+    * the above sequence can be rewritten as:
+    *    i=0: 0 = 0 * n/8 + 0 * n/4 + 0 * n/2
+    *    i=1: 4 = 0 * n/8 + 0 * n/4 + 1 * n/2
+    *    i=2: 2 = 0 * n/8 + 1 * n/4 + 0 * n/2
+    *    i=3: 6 = 0 * n/8 + 1 * n/4 + 1 * n/2
+    *    i=4: 1 = 1 * n/8 + 0 * n/4 + 0 * n/2
+    *    i=5: 5 = 1 * n/8 + 0 * n/4 + 1 * n/2
+    *    i=6: 3 = 1 * n/8 + 1 * n/4 + 0 * n/2
+    *    i=7: 7 = 1 * n/8 + 1 * n/4 + 1 * n/2
+    *
+    * In that, we see dot products of boolean vectors made of bits of "i" and constant vector
+    * (n >> log2(n), n >> log2(n)-1, ..., n >> 1).
+    *
+    * Similarly for k=2^x, n=3*k, for example k=4, n=12, i.e. n is half way between 2 powers of
+    * two, we need:
+    *    j=0:   0 = 0 * k/4 + 0 * k/2 + 0 * n/3
+    *    j=1:   4 = 0 * k/4 + 0 * k/2 + 1 * n/3
+    *    j=2:   8 = 0 * k/4 + 0 * k/2 + 2 * n/3
+    *    j=3:   2 = 0 * k/4 + 1 * k/2 + 0 * n/3
+    *    j=4:   6 = 0 * k/4 + 1 * k/2 + 1 * n/3
+    *    j=5:  10 = 0 * k/4 + 1 * k/2 + 2 * n/3
+    *    j=6:   1 = 1 * k/4 + 0 * k/2 + 0 * n/3
+    *    j=7:   5 = 1 * k/4 + 0 * k/2 + 1 * n/3
+    *    j=8:   9 = 1 * k/4 + 0 * k/2 + 2 * n/3
+    *    j=9:   3 = 1 * k/4 + 1 * k/2 + 0 * n/3
+    *    j=10:  7 = 1 * k/4 + 1 * k/2 + 1 * n/3
+    *    j=11: 11 = 1 * k/4 + 1 * k/2 + 2 * n/3
+    *
+    * In that, we see dot products generating the same sequence as the first example by plugging
+    * i=j/3, n=k into it and "(j % 3) * n/3" added.
+    */
+   assert(IS_POT(n) || IS_POT(n / 3));
+
+   DBG_PRINT("\n");
+
+   if (IS_POT(n)) {
+      unsigned log2n = logbase2(n);
+
+      for (unsigned i = 0; i < n; i++) {
+         unsigned sum = 0;
+
+         /* Calculate the dot product. */
+         for (int bit = log2n; bit >= 1; bit--)
+            sum += ((i >> (bit - 1)) & 0x1) * (n >> bit);
+
+         array[i] = base + sum;
+         DBG_PRINT("%2u, ", array[i]);
+      }
+   } else {
+      unsigned k = n / 3;
+      unsigned log2k = logbase2(k);
+
+      for (unsigned i = 0; i < k; i++) {
+         unsigned sum = 0;
+
+         /* Calculate the dot product. */
+         for (int bit = log2k; bit >= 1; bit--)
+            sum += ((i >> (bit - 1)) & 0x1) * (k >> bit);
+
+         for (unsigned c = 0; c < 3; c++) {
+            array[i * 3 + c] = sum + c * n / 3;
+            DBG_PRINT("%2u, ", array[i * 3 + c]);
+         }
+      }
+   }
+
+   DBG_PRINT("\n");
+}
+
+static void
+set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsigned size)
+{
+   unsigned spacing = ctx->options.spacing;
+   uint32_t *sequence = state->sequence_tmp;
+   uint32_t *mem = state->jump_buf_data;
+
+   assert(spacing % 4 == 0);
+   assert(size % spacing == 0);
+   unsigned n = size / spacing;
+
+   generate_sequence(sequence, 0, n);
+
+   memset(mem, 0, size);
+
+   for (unsigned i = 0; i < n - 1; i++)
+      mem[sequence[i] * spacing / 4] = sequence[i + 1] * spacing;
+
+   /* Close the circle. */
+   mem[(n - 1) * spacing / 4] = 0;
+
+   ctx->upload_buffer_data(ctx, buf, 0, size, mem);
 }
 
 static void
@@ -158,6 +249,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
       /* Initialize the rest. */
       state->num_tests = 0;
+      assert(ctx->options.spacing % 4 == 0);
+      state->sequence_tmp = (uint32_t*)malloc(ctx->options.max_size / (ctx->options.spacing / 4));
       state->jump_buf_data = (uint32_t*)malloc(ctx->options.max_size);
 
       state->jump_buf[api_heap_device] = ctx->create_buffer(ctx, ctx->options.max_size,
@@ -234,8 +327,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                break;
 
             case RUN:
-               set_jump_buffer_data(ctx, state->jump_buf[heap], ctx->options.spacing, size,
-                                    state->jump_buf_data);
+               set_jump_buffer_data(ctx, state, state->jump_buf[heap], size);
                ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0,
                                                   state->jump_buf[heap], 0, ctx->options.max_size);
 
@@ -249,21 +341,6 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
             case REPORT: {
                uint64_t clock_cycles = state->results[test_index * 2] / state->num_indirections;
-               uint64_t last_offset = state->results[test_index * 2 + 1];
-
-               /* We have an extra iteration before clockARB, and the non-uniform shader has
-                * InvocationID=1 ahead by one spacing.
-                */
-               uint64_t expected_last_offset =
-                  (ctx->options.spacing * (1 + !uniform + state->num_indirections)) % size;
-
-               assert(last_offset == expected_last_offset);
-
-               if (0) {
-                  printf("%*u,", max_digits, (unsigned)last_offset);
-                  //printf("%*u,", max_digits, (unsigned)expected_last_offset);
-                  break;
-               }
 
                if (clock_cycles >= pow(10, max_digits + 1))
                   printf("%*s,", max_digits, "n/a");
@@ -312,8 +389,16 @@ test_latency(api_context *ctx, const char *test_name)
             "                     slightly greater than the last level cache size.\n");
    }
 
+   if (ctx->options.spacing < 4 || !IS_POT(ctx->options.spacing))
+      error("Spacing must be >= 4 and a power of two.");
+
+   if (ctx->options.max_size < MIN_MEM_SIZE) {
+      error("The minimum allowed maxsize is %u, specified %"PRIu64".",
+            MIN_MEM_SIZE, ctx->options.max_size);
+   }
+
    if (ctx->options.max_size > ctx->max_storage_buffer_range) {
-      error("The maximum storage buffer range is %u MB, specified %"PRIu64" MB.\n",
+      error("The maximum storage buffer range is %u MB, need %"PRIu64" MB.",
             ctx->max_storage_buffer_range >> 20, ctx->options.max_size >> 20);
    }
 
@@ -332,6 +417,7 @@ test_latency(api_context *ctx, const char *test_name)
 
    run(ctx, test_name, REPORT, &state);
 
+   free(state.sequence_tmp);
    free(state.jump_buf_data);
    free(state.results);
 }
