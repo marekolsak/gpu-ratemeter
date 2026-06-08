@@ -112,13 +112,14 @@ The results are printed for each tested buffer size. Each printed latency should
 the buffer of that size.
 
 Required parameters:
-- `-maxsize=N`: The largest buffer size to test. This should be a power of two. It should also be > last level cache size to measure memory (cache miss) latency if needed.
+- `-maxsize=N`: The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
 Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
-- `-spacing=N`: The load addresses are multiples of this number. This should be a power of two and <= cache line size.
-This also affects the total number of load indirections per shader, which is `maxsize / spacing`.
+- `-spacing=N`: All load addresses are multiples of this number. This should be a power of two and <= cache line size. To make the test faster, it's recommended to set this exactly to the cache line size.
+`maxsize / spacing` is the number of executed load indirections of each subtest, so it affects test length, and it also implies that the shader visits every load
+address that's a multiple of `spacing` only once in the largest buffer.
 Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.
-If spacing > cache line size, the latency of tested buffer sizes will no longer be aligned with cache sizes because a subset of cache-line-sized buffer segments
-is never loaded, reducing cache utilization (this behavior can be exploited to find the exact cache line size for each cache level).
+If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
+is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
 
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
