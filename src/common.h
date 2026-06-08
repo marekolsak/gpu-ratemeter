@@ -48,7 +48,9 @@ typedef enum {
 
 typedef enum {
    api_heap_device,
+   api_heap_device_coherent_amd,
    api_heap_host_uncached,
+   api_heap_host_uncached_coherent_amd,
    api_heap_host_cached,
    api_num_heaps,
 } api_heap_type;
@@ -304,7 +306,6 @@ typedef struct {
    bool report_bandwidth;
 
    /* Bool options.*/
-   bool coherent;
    bool lean;
    bool no_validator;
    bool rdna4_timestamp_wa;
@@ -330,8 +331,7 @@ typedef struct api_context {
    program_options options;
 
    /* Properties. */
-   bool has_host_uncached_heap;
-   bool has_host_cached_heap;
+   bool has_heap[api_num_heaps];
    bool has_image_tiling_linear;
    double timestamp_period_in_seconds;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
@@ -529,6 +529,7 @@ unsigned get_next_power_of_two(unsigned x);
 uint16_t float_to_half(float val);
 unsigned bitcount(unsigned n);
 unsigned logbase2(unsigned n);
+const char *heap_to_string(api_heap_type heap);
 
 #ifdef __cplusplus
 }

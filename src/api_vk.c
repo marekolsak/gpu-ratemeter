@@ -76,10 +76,10 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
    VkMemoryPropertyFlags require_flags = 0, disallow_flags = 0;
    assert(supported_heap_mask);
 
-   if (heap == api_heap_host_uncached && !ctx->has_host_uncached_heap)
+   if (heap == api_heap_host_uncached && !ctx->has_heap[heap])
       heap = api_heap_host_cached;
 
-   if (heap == api_heap_host_cached && !ctx->has_host_cached_heap) {
+   if (heap == api_heap_host_cached && !ctx->has_heap[heap]) {
       require_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       heap = api_heap_device;
    }
@@ -87,16 +87,29 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
    switch (heap) {
    case api_heap_device:
       require_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD;
+      break;
+   case api_heap_device_coherent_amd:
+      require_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                       VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD;
       break;
    case api_heap_host_uncached:
       require_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                        VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
+                        VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD;
+      break;
+   case api_heap_host_uncached_coherent_amd:
+      require_flags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD;
       disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
                         VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       break;
    case api_heap_host_cached:
       require_flags |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT |
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      disallow_flags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                        VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD;
       break;
    default:
       error("invalid heap type");
@@ -1690,8 +1703,12 @@ vk_create_context(const program_options *options)
    VkPhysicalDevice physical_device = pd[0];
    printf("Physical devices: %u\n", count);
 
+   VkPhysicalDeviceCoherentMemoryFeaturesAMD coherent_memory_amd = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,
+   };
    VkPhysicalDeviceShaderClockFeaturesKHR shader_clock = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+      .pNext = &coherent_memory_amd,
    };
    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT ext_dyn3 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
@@ -1807,6 +1824,11 @@ vk_create_context(const program_options *options)
    if (shader_clock.shaderSubgroupClock) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
       enabled_extensions[num_enabled_extensions++] = "VK_KHR_shader_clock";
+   }
+
+   if (coherent_memory_amd.deviceCoherentMemory) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_AMD_device_coherent_memory";
    }
 
    if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
@@ -1966,10 +1988,15 @@ vk_create_context(const program_options *options)
    ctx->glsl_compiler = shaderc_compiler_initialize();
    ctx->glsl_compiler_options = shaderc_compile_options_initialize();
 
-   ctx->has_host_uncached_heap = true; /* so that vk_find_heap doesn't fall back and fails when it should */
-   ctx->has_host_cached_heap = true; /* so that vk_find_heap doesn't fall back and fails when it should */
-   ctx->has_host_uncached_heap = vk_find_heap(ctx, ~0, api_heap_host_uncached) != -1;
-   ctx->has_host_cached_heap = vk_find_heap(ctx, ~0, api_heap_host_cached) != -1;
+   for (unsigned i = 0; i < api_num_heaps; i++) {
+      if ((i == api_heap_device_coherent_amd || i == api_heap_host_uncached_coherent_amd) &&
+          !coherent_memory_amd.deviceCoherentMemory)
+         continue;
+
+      ctx->has_heap[i] = true; /* so that vk_find_heap doesn't fall back and fails when it should */
+      ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
+   }
+
    ctx->has_image_tiling_linear = true;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
    ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;

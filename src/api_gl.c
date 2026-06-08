@@ -1220,8 +1220,9 @@ gl_create_context(const program_options *options)
    glPrimitiveRestartIndex(UINT32_MAX);
 
    /* Set properties and callbacks. */
-   ctx->has_host_uncached_heap = true;
-   ctx->has_host_cached_heap = true;
+   ctx->has_heap[api_heap_device] = true;
+   ctx->has_heap[api_heap_host_uncached] = true;
+   ctx->has_heap[api_heap_host_cached] = true;
    ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
    ctx->timestamp_period_in_seconds = 0.000000001;
    ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;

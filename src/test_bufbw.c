@@ -148,7 +148,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
       assert(dst);
       assert(!src || src != dst);
 
-      if (!ctx->has_host_uncached_heap && (dst == hostmem || src == hostmem))
+      if (!ctx->has_heap[api_heap_host_uncached] && (dst == hostmem || src == hostmem))
          continue;
 
       for (unsigned cached = 0; cached < 2; cached ++) {

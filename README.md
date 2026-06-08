@@ -121,16 +121,17 @@ Thus, larger spacing reduces the number of loads needed to traverse the largest 
 If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
 is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
 
-Optional parameters:
-- `-coherent`: Use the `coherent` GLSL qualifier. (may affect latencies)
-
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
 Decoding subtest names:
-- `nonuniform`: the load address is non-uniform
-- `uniform`: the load address is uniform
+- `default`: no GLSL qualifier is added
+- `coherent`: the GLSL "coherent" qualifier is added
+- `nonuniform`: the load addresses are non-uniform
+- `uniform`: the load addresses are uniform
 - `devmem`: the traversed buffer is in device memory
-- `hostmem`: the traversed buffer is in host memory
+- `hostmem`: the traversed buffer is in host memory uncached by the CPU
+- `devmem_coherent`: the traversed buffer is in host-coherent device memory (VK_AMD_device_coherent_memory or equivalent is required)
+- `hostmem_coherent`: the traversed buffer is in host-coherent host memory uncached by the CPU (VK_AMD_device_coherent_memory or equivalent is required)
 
 Only Vulkan is supported.
 
