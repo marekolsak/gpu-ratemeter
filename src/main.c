@@ -133,9 +133,9 @@ static const option_desc option_list[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},
-   {OPTION_UINT, "-spacing=", offsetof(program_options, spacing)},
    {OPTION_STRING, "-filter=", offsetof(program_options, test_filter)},
    {OPTION_STRING, "-format=", offsetof(program_options, format_filter)},
+   {OPTION_MEMSIZE, "-spacing=", offsetof(program_options, spacing)},
    {OPTION_MEMSIZE, "-maxsize=", offsetof(program_options, max_size)},
 };
 

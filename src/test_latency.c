@@ -12,8 +12,6 @@
 
 #include "common.h"
 
-#define MIN_MEM_SIZE       1024
-
 typedef enum {
    INIT,
    RUN,
@@ -21,6 +19,7 @@ typedef enum {
 } test_stage;
 
 typedef struct {
+   unsigned min_size;
    unsigned num_indirections;
    unsigned num_tests;
 
@@ -50,7 +49,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
 
                       "#define UNIFORM %s \n"
                       "#define NUM_INDIRECTIONS %u \n"
-                      "#define MAX_SIZE %u \n"
+                      "#define MAX_UINTS %uu \n"
                       "#define SPACING %u \n"
                       "\n"
 
@@ -58,7 +57,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
                       "\n"
 
                       "layout(set = 0, binding = 0, std430) readonly restrict buffer B0 { \n"
-                      "   uint offsets[MAX_SIZE / 4]; \n"
+                      "   uint offsets[MAX_UINTS]; \n"
                       "} jumpbuf; \n"
                       "\n"
 
@@ -98,7 +97,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
                       /* Also store the offset to make the indirections not dead. */
                       "   result.last_offset = offset; \n"
                       "} \n",
-                      uniform ? "true" : "false", num_indirections, max_size, spacing);
+                      uniform ? "true" : "false", num_indirections, max_size / 4, spacing);
    assert(len < ARRAY_SIZE(source));
 
    return ctx->create_shader(ctx, source, api_shader_cs);
@@ -274,7 +273,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
       printf("%-*s,", name_indent, "Size");
 
-      for (unsigned size = MIN_MEM_SIZE; size <= ctx->options.max_size; size = get_next_size(size)) {
+      for (unsigned size = state->min_size; size <= ctx->options.max_size; size = get_next_size(size)) {
          unsigned number = 0;
          unsigned order;
 
@@ -312,7 +311,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
             printf("%-*s,", name_indent, name);
          }
 
-         for (unsigned size = MIN_MEM_SIZE; size <= ctx->options.max_size;
+         for (unsigned size = state->min_size; size <= ctx->options.max_size;
               size = get_next_size(size)) {
             switch (stage) {
             case INIT:
@@ -371,6 +370,11 @@ test_latency(api_context *ctx, const char *test_name)
     * - this can be used to find the true cache size and cache line size
     */
 
+   if (ctx->options.max_size > ctx->max_storage_buffer_range) {
+      error("The maximum storage buffer range is %u MB, need %"PRIu64" MB.",
+            ctx->max_storage_buffer_range >> 20, ctx->options.max_size >> 20);
+   }
+
    if (!ctx->options.spacing || !ctx->options.max_size) {
       error("Missing parameters.\n"
             "\n"
@@ -384,18 +388,16 @@ test_latency(api_context *ctx, const char *test_name)
    if (ctx->options.spacing < 4 || !IS_POT(ctx->options.spacing))
       error("Spacing must be >= 4 and a power of two.");
 
-   if (ctx->options.max_size < MIN_MEM_SIZE) {
-      error("The minimum allowed maxsize is %u, specified %"PRIu64".",
-            MIN_MEM_SIZE, ctx->options.max_size);
-   }
+   unsigned num_indirections = ctx->options.max_size / ctx->options.spacing;
 
-   if (ctx->options.max_size > ctx->max_storage_buffer_range) {
-      error("The maximum storage buffer range is %u MB, need %"PRIu64" MB.",
-            ctx->max_storage_buffer_range >> 20, ctx->options.max_size >> 20);
+   if (num_indirections < 1024) {
+      error("Not enough indirections (only %u, need 1024). Increase maxsize or decrease spacing.",
+            num_indirections);
    }
 
    test_state state = {0};
-   state.num_indirections = ctx->options.max_size / ctx->options.spacing;
+   state.min_size = MAX2(ctx->options.spacing * 4, 1024);
+   state.num_indirections = num_indirections;
 
    printf("Indirections per shader: %u\n", state.num_indirections);
    puts("Building compute pipelines...");
