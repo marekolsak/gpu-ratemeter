@@ -121,6 +121,9 @@ Thus, larger spacing reduces the number of loads needed to traverse the largest 
 If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
 is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
 
+Optional parameters:
+- `-coherent`: Use the `coherent` GLSL qualifier. (may affect latencies)
+
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
 Decoding subtest names:

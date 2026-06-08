@@ -36,10 +36,9 @@ typedef struct {
 } test_state;
 
 static api_shader *
-create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_indirections,
-                                unsigned spacing, unsigned max_size)
+create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_indirections)
 {
-   char source[1200];
+   char source[1300];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
@@ -51,12 +50,13 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
                       "#define NUM_INDIRECTIONS %u \n"
                       "#define MAX_UINTS %uu \n"
                       "#define SPACING %u \n"
+                      "#define QUALIFIER %s \n"
                       "\n"
 
                       "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
                       "\n"
 
-                      "layout(set = 0, binding = 0, std430) readonly restrict buffer B0 { \n"
+                      "layout(set = 0, binding = 0, std430) readonly restrict QUALIFIER buffer B0 { \n"
                       "   uint offsets[MAX_UINTS]; \n"
                       "} jumpbuf; \n"
                       "\n"
@@ -97,7 +97,9 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, unsigned num_ind
                       /* Also store the offset to make the indirections not dead. */
                       "   result.last_offset = offset; \n"
                       "} \n",
-                      uniform ? "true" : "false", num_indirections, max_size / 4, spacing);
+                      uniform ? "true" : "false", num_indirections,
+                      (unsigned)ctx->options.max_size / 4, ctx->options.spacing,
+                      ctx->options.coherent ? "coherent" : "");
    assert(len < ARRAY_SIZE(source));
 
    return ctx->create_shader(ctx, source, api_shader_cs);
@@ -232,9 +234,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                                            });
 
       for (int uniform = 0; uniform <= 1; uniform++) {
-         api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, state->num_indirections,
-                                                          ctx->options.spacing,
-                                                          ctx->options.max_size);
+         api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, state->num_indirections);
          state->pipelines[uniform] = ctx->create_compute_pipeline(ctx, cs, state->layout);
       }
 

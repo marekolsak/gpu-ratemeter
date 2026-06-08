@@ -128,6 +128,7 @@ typedef struct {
 } option_desc;
 
 static const option_desc option_list[] = {
+   {OPTION_BOOL, "-coherent", offsetof(program_options, coherent)},
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
