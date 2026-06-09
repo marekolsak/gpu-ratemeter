@@ -57,6 +57,7 @@ The following tests are available:
 > - The output is a table in CSV. Paste it into a spreadsheet to make easy comparisons of different runs.
 
 Optional parameters common to all tests:
+- `-device=N`: the device index of the device to use (default: 0), Vulkan only
 - `-no-validator: disable the Vulkan validation layer (enabled by default)
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)
@@ -120,6 +121,10 @@ address that's a multiple of `spacing` only once in the largest buffer.
 Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.
 If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
 is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
+
+Optional parameters:
+- `clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
+(it must be set to 20 for RDNA 2 and 3)
 
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 

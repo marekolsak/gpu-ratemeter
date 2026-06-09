@@ -38,7 +38,7 @@ typedef struct {
 static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections)
 {
-   char source[1300];
+   char source[1800];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
@@ -46,11 +46,23 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
                       "\n"
 
+                      "#define CLOCK_BITS %u \n"
+                      "#define SPACING %u \n"
+                      "#define MAX_UINTS %uu \n"
                       "#define UNIFORM %s \n"
                       "#define NUM_INDIRECTIONS %u \n"
-                      "#define MAX_UINTS %uu \n"
-                      "#define SPACING %u \n"
                       "#define QUALIFIER %s \n"
+                      "\n"
+
+                      /* If the clock doesn't have enough bits such that the clock wraps around and
+                       * reaches the start time before the test finishes, the results will be bogus.
+                       * To work around that, we need to read and accumulate the cycle count mid-test.
+                       *
+                       * This number determines how many indirections should execute before the clock
+                       * is read. Number 12 means that we don't get bogus results if latency < 2^12.
+                       */
+
+                      "#define NUM_INDIRECTIONS_PER_CLOCK_ACCUM (1 << (CLOCK_BITS - 12)) \n"
                       "\n"
 
                       "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
@@ -67,38 +79,57 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "} result; \n"
                       "\n"
 
+                      /* Subtract, but try to recover from a single clock overflow. */
+                      "uint64_t subtract(uint64_t a, uint64_t b) { \n"
+                      "#if CLOCK_BITS > 0 \n"
+                      "   if (a < b) \n"
+                      "      a += 1 << CLOCK_BITS; \n"
+                      "#endif \n"
+                      "   return a - b; \n"
+                      "} \n"
+                      "\n"
+
                       "void main() { \n"
                       "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * SPACING; \n"
+                      "\n"
+
+                      /* Warm up the caches by executing all indirections. */
                       "   uint offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                      "\n"
-
-                      /* Warm up the caches by executing all indirections or until the buffer wraps
-                       * around, whichever is less. This caches as much data as the caches can hold.
-                       */
-                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) { \n"
-                      "      uint prev_offset = offset; \n"
-                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
-                      "      if (offset < prev_offset) \n"
-                      "         break; \n"
-                      "   } \n"
-                      "\n"
-
-                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
-                      "   uint64_t start_cycles = clockARB(); \n"
-                      "\n"
-
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
                       "      offset = jumpbuf.offsets[offset / 4].x; \n"
                       "\n"
 
-                      "   result.clock_cycles = clockARB() - start_cycles; \n"
+                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   uint64_t accum = 0; \n"
+                      "   uint64_t start = clockARB(); \n"
+                      "\n"
+
+                      "#if CLOCK_BITS > 0 \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i += NUM_INDIRECTIONS_PER_CLOCK_ACCUM) { \n"
+                      "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
+                      "\n"
+                      "      for (int j = 0; j < num; j++) \n"
+                      "         offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "\n"
+                      "      uint64_t end = clockARB(); \n"
+                      "      accum += subtract(end, start); \n"
+                      "      start = end; \n"
+                      "   } \n"
+                      "#else \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
+                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "#endif \n"
+                      "\n"
+
+                      "   accum += subtract(clockARB(), start); \n"
+                      "   result.clock_cycles = accum; \n"
 
                       /* Also store the offset to make the indirections not dead. */
                       "   result.last_offset = offset; \n"
                       "} \n",
+                      ctx->options.clock_bits, ctx->options.spacing,
+                      (unsigned)ctx->options.max_size / 4,
                       uniform ? "true" : "false", num_indirections,
-                      (unsigned)ctx->options.max_size / 4, ctx->options.spacing,
                       coherent ? "coherent" : "");
    assert(len < ARRAY_SIZE(source));
 
@@ -402,11 +433,12 @@ test_latency(api_context *ctx, const char *test_name)
    if (ctx->options.spacing < 4 || !IS_POT(ctx->options.spacing))
       error("Spacing must be >= 4 and a power of two.");
 
+   const unsigned min_indirections = 1024;
    unsigned num_indirections = ctx->options.max_size / ctx->options.spacing;
 
-   if (num_indirections < 1024) {
-      error("Not enough indirections (only %u, need 1024). Increase maxsize or decrease spacing.",
-            num_indirections);
+   if (num_indirections < min_indirections) {
+      error("Not enough indirections for usable results (have %u, need %u). Increase maxsize or decrease spacing.",
+            num_indirections, min_indirections);
    }
 
    test_state state = {0};

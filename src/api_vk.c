@@ -1698,10 +1698,15 @@ vk_create_context(const program_options *options)
    vk_check(vkEnumeratePhysicalDevices(instance, &count, NULL));
    if (count == 0)
       error("No Vulkan devices found.");
-   VkPhysicalDevice *pd = alloca(sizeof(pd[0]) * count);
-   vk_check(vkEnumeratePhysicalDevices(instance, &count, pd));
-   VkPhysicalDevice physical_device = pd[0];
+
    printf("Physical devices: %u\n", count);
+   if (ctx->options.device >= count)
+      error("Device %u doesn't exist.", ctx->options.device);
+
+   VkPhysicalDevice *devices = alloca(sizeof(devices[0]) * count);
+   vk_check(vkEnumeratePhysicalDevices(instance, &count, devices));
+
+   VkPhysicalDevice physical_device = devices[ctx->options.device];
 
    VkPhysicalDeviceCoherentMemoryFeaturesAMD coherent_memory_amd = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,

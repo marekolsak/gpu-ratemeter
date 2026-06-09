@@ -311,6 +311,8 @@ typedef struct {
    bool rdna4_timestamp_wa;
 
    /* Uint options. */
+   unsigned clock_bits;
+   unsigned device; /* device index */
    unsigned freq_mhz;
    unsigned max_rate;
    unsigned spacing;
