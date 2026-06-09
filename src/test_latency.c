@@ -152,12 +152,13 @@ get_next_size(unsigned size)
 static void
 generate_sequence(uint32_t *array, unsigned base, unsigned n)
 {
-   /* With cache line size = 4 elements and sequence (0, 1, 2, 3, 4, 5, 6, 7), we would get cache
-    * hits at 0->1->2->3 and 4->5->6->7, skewing our results. To prevent that, the closer
-    * the indirections are in a sequence, the farther apart they should be in memory. In that
-    * example, an optimal sequence would be (0, 4, 2, 6, 1, 5, 3, 7).
+   /* With cache_line_size=16, uint elements, and indices (0, 1, 2, 3, 4, 5, 6, 7), we would get
+    * cache hits at 0->1->2->3 and 4->5->6->7, skewing our results. To prevent that, the closer
+    * the indirections are in a sequence, the farther apart they should be in memory. For the
+    * given example, an optimal sequence would be (0, 4, 2, 6, 1, 5, 3, 7).
     *
-    * Therefore, we need to generate a sequence of numbers minimizing address locality. For n=8,
+    * Therefore, we need to generate a sequence of numbers minimizing address locality. First,
+    * let's take apart the above optimal sequence (n=8):
     * the above sequence can be rewritten as:
     *    i=0: 0 = 0 * n/8 + 0 * n/4 + 0 * n/2
     *    i=1: 4 = 0 * n/8 + 0 * n/4 + 1 * n/2
@@ -171,8 +172,9 @@ generate_sequence(uint32_t *array, unsigned base, unsigned n)
     * In that, we see dot products of boolean vectors made of bits of "i" and constant vector
     * (n >> log2(n), n >> log2(n)-1, ..., n >> 1).
     *
-    * Similarly for k=2^x, n=3*k, for example k=4, n=12, i.e. n is half way between 2 powers of
-    * two, we need:
+    * If n is halfway between 2 powers of two, i.e. n=3*k, k=2^x, for example k=4, n=12,
+    * an optimal sequence is (0, 4, 8, 2, 6, 10, 1, 5, 9, 3, 7, 11). We can take it apart the same
+    * as above:
     *    j=0:   0 = 0 * k/4 + 0 * k/2 + 0 * n/3
     *    j=1:   4 = 0 * k/4 + 0 * k/2 + 1 * n/3
     *    j=2:   8 = 0 * k/4 + 0 * k/2 + 2 * n/3
@@ -187,7 +189,7 @@ generate_sequence(uint32_t *array, unsigned base, unsigned n)
     *    j=11: 11 = 1 * k/4 + 1 * k/2 + 2 * n/3
     *
     * In that, we see dot products generating the same sequence as the first example by plugging
-    * i=j/3, n=k into it and "(j % 3) * n/3" added.
+    * i=j/3, n=k into it and adding "(j % 3) * n/3" at the end.
     */
    assert(IS_POT(n) || IS_POT(n / 3));
 
@@ -293,10 +295,14 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
             continue;
          }
 
-         state->jump_buf[i] = ctx->create_buffer(ctx, ctx->options.max_size, i, 0);
+         state->jump_buf[i] =
+            ctx->create_buffer(ctx, ctx->options.max_size, i,
+                               ctx->options.sparse_bound ||
+                               ctx->options.sparse_unbound ? ctx->sparse_buffer_alignment : 0);
+         if (ctx->options.sparse_bound)
+            ctx->buffer_bind_sparse(ctx, state->jump_buf[i], 0, ctx->options.max_size, true, NULL);
       }
    }
-
 
    if (stage == RUN) {
       /* Now that we know the number of tests, finish the initialization. */

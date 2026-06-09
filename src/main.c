@@ -131,6 +131,8 @@ static const option_desc option_list[] = {
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
+   {OPTION_BOOL, "-sparse-bound", offsetof(program_options, sparse_bound)},
+   {OPTION_BOOL, "-sparse-unbound", offsetof(program_options, sparse_unbound)},
    {OPTION_UINT, "-clockbits=", offsetof(program_options, clock_bits)},
    {OPTION_UINT, "-device=", offsetof(program_options, device)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},

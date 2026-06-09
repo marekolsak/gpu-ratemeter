@@ -309,6 +309,8 @@ typedef struct {
    bool lean;
    bool no_validator;
    bool rdna4_timestamp_wa;
+   bool sparse_bound;
+   bool sparse_unbound;
 
    /* Uint options. */
    unsigned clock_bits;

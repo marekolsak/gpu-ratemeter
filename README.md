@@ -125,6 +125,8 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
 Optional parameters:
 - `clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
 (it must be set to 20 for RDNA 2 and 3)
+- `sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.
+- `sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
 
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
