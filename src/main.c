@@ -12,8 +12,7 @@
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
- * - latency: shared memory, uncached memory (GL2 bypass), 4K buffers mapped next to each other (pages),
- *            instruction fetch (jump chasing)
+ * - latency: instruction fetch (jump chasing)
  *
  * APIs:
  * - Vulkan modes: GPL, KSO

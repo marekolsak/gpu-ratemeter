@@ -24,7 +24,7 @@ typedef struct {
    unsigned num_tests;
 
    api_descriptor_set_layout *layout;
-   api_compute_pipeline *pipelines[2][2];
+   api_compute_pipeline *pipelines[2][2][2];
    api_descriptor_set **sets;
 
    uint32_t *sequence_tmp;
@@ -36,9 +36,10 @@ typedef struct {
 } test_state;
 
 static api_shader *
-create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections)
+create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections,
+                                bool shared_memory)
 {
-   char source[1800];
+   char source[2100];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
@@ -52,6 +53,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "#define UNIFORM %s \n"
                       "#define NUM_INDIRECTIONS %u \n"
                       "#define QUALIFIER %s \n"
+                      "#define SHARED_MEMORY %u \n"
                       "\n"
 
                       /* If the clock doesn't have enough bits such that the clock wraps around and
@@ -79,6 +81,10 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "} result; \n"
                       "\n"
 
+                      "#if SHARED_MEMORY \n"
+                      "shared uint shared_offsets[4096]; \n"
+                      "#endif \n"
+
                       /* Subtract, but try to recover from a single clock overflow. */
                       "uint64_t subtract(uint64_t a, uint64_t b) { \n"
                       "#if CLOCK_BITS > 0 \n"
@@ -93,13 +99,21 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * SPACING; \n"
                       "\n"
 
+                      "#if SHARED_MEMORY \n"
+                      /* Copy the offsets from memory to shared memory to initialize it. */
+                      "   for (int i = 0; i < shared_offsets.length(); i++) \n"
+                      "      shared_offsets[i] = jumpbuf.offsets[i]; \n"
+                      "#define OFFSETS shared_offsets \n"
+                      "#else \n"
                       /* Warm up the caches by executing all indirections. */
-                      "   uint offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   uint warmup_offset = jumpbuf.offsets[start_offset / 4].x; \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "      warmup_offset = jumpbuf.offsets[warmup_offset / 4].x; \n"
+                      "#define OFFSETS jumpbuf.offsets \n"
+                      "#endif \n"
                       "\n"
 
-                      "   offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   uint offset = OFFSETS[start_offset / 4].x; \n"
                       "   uint64_t accum = 0; \n"
                       "   uint64_t start = clockARB(); \n"
                       "\n"
@@ -109,7 +123,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
                       "\n"
                       "      for (int j = 0; j < num; j++) \n"
-                      "         offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "         offset = OFFSETS[offset / 4].x; \n"
                       "\n"
                       "      uint64_t end = clockARB(); \n"
                       "      accum += subtract(end, start); \n"
@@ -117,7 +131,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   } \n"
                       "#else \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      offset = jumpbuf.offsets[offset / 4].x; \n"
+                      "      offset = OFFSETS[offset / 4].x; \n"
                       "#endif \n"
                       "\n"
 
@@ -130,7 +144,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       ctx->options.clock_bits, ctx->options.spacing,
                       (unsigned)ctx->options.max_size / 4,
                       uniform ? "true" : "false", num_indirections,
-                      coherent ? "coherent" : "");
+                      coherent ? "coherent" : "", shared_memory);
    assert(len < ARRAY_SIZE(source));
 
    return ctx->create_shader(ctx, source, api_shader_cs);
@@ -266,12 +280,18 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                                               .storage_buffer[1].vk_binding = 1,
                                            });
 
-      for (unsigned uniform = 0; uniform <= 1; uniform++) {
-         for (unsigned coherent = 0; coherent <= 1; coherent++) {
-            api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, coherent,
-                                                             state->num_indirections);
-            state->pipelines[uniform][coherent] =
-               ctx->create_compute_pipeline(ctx, cs, state->layout);
+      for (unsigned shared_memory = 0; shared_memory <= 1; shared_memory++) {
+         for (unsigned uniform = 0; uniform <= 1; uniform++) {
+            for (unsigned coherent = 0; coherent <= 1; coherent++) {
+               if (shared_memory && coherent)
+                  continue;
+
+               api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, coherent,
+                                                                state->num_indirections,
+                                                                shared_memory);
+               state->pipelines[shared_memory][uniform][coherent] =
+                  ctx->create_compute_pipeline(ctx, cs, state->layout);
+            }
          }
       }
 
@@ -346,59 +366,68 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
    unsigned test_index = 0;
 
-   for (unsigned coherent = 0; coherent <= 1; coherent++) {
-      for (int uniform = 0; uniform <= 1; uniform++) {
-         for (api_heap_type heap = api_heap_device; heap < api_num_heaps; heap++) {
-            if (!state->jump_buf[heap])
-               continue;
+   for (unsigned shared_memory = 0; shared_memory <= 1; shared_memory++) {
+      for (unsigned coherent = 0; coherent <= 1; coherent++) {
+         for (int uniform = 0; uniform <= 1; uniform++) {
+            unsigned num_heaps = shared_memory ? 1 : api_num_heaps;
 
-            if (stage == REPORT) {
-               char name[1024];
+            for (api_heap_type heap = api_heap_device; heap < num_heaps; heap++) {
+               api_buffer *jump_buf = state->jump_buf[heap];
 
-               snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
-                        coherent ? "coherent" : "default", uniform ? "uniform" : "nonuniform",
-                        heap_to_string(heap));
-               printf("%-*s,", name_indent, name);
-            }
+               if ((shared_memory && coherent) || !jump_buf)
+                  continue;
 
-            for (unsigned size = state->min_size; size <= ctx->options.max_size;
-                 size = get_next_size(size)) {
-               switch (stage) {
-               case INIT:
-                  break;
+               if (stage == REPORT) {
+                  char name[1024];
 
-               case RUN:
-                  set_jump_buffer_data(ctx, state, state->jump_buf[heap], size);
-                  ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0,
-                                                     state->jump_buf[heap], 0, ctx->options.max_size);
+                  snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
+                           coherent ? "coherent" : "default", uniform ? "uniform" : "nonuniform",
+                           shared_memory ? "shared" : heap_to_string(heap));
+                  printf("%-*s,", name_indent, name);
+               }
 
-                  ctx->begin_cmdbuf(ctx);
-                  ctx->bind_descriptor_set(ctx, state->sets[test_index]);
-                  ctx->bind_compute_pipeline(ctx, state->pipelines[uniform][coherent]);
-                  ctx->dispatch(ctx, 1, 1, 1);
-                  ctx->pipeline_barrier_buffer(ctx, state->result_buf);
-                  ctx->end_cmdbuf_and_submit(ctx, NULL);
-                  break;
+               unsigned max_size = shared_memory ? 16 * 1024 : ctx->options.max_size;
 
-               case REPORT: {
-                  uint64_t clock_cycles = state->results[test_index * 2] / state->num_indirections;
+               for (unsigned size = state->min_size; size <= max_size;
+                    size = get_next_size(size)) {
+                  switch (stage) {
+                  case INIT:
+                     break;
 
-                  if (clock_cycles >= pow(10, max_digits + 1))
-                     printf("%*s,", max_digits, "n/a");
+                  case RUN:
+                     set_jump_buffer_data(ctx, state, jump_buf, size);
+                     ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0, jump_buf,
+                                                        0, size);
+
+                     ctx->begin_cmdbuf(ctx);
+                     ctx->bind_descriptor_set(ctx, state->sets[test_index]);
+                     assert(state->pipelines[shared_memory][uniform][coherent]);
+                     ctx->bind_compute_pipeline(ctx, state->pipelines[shared_memory][uniform][coherent]);
+                     ctx->dispatch(ctx, 1, 1, 1);
+                     ctx->pipeline_barrier_buffer(ctx, state->result_buf);
+                     ctx->end_cmdbuf_and_submit(ctx, NULL);
+                     break;
+
+                  case REPORT: {
+                     uint64_t clock_cycles = state->results[test_index * 2] / state->num_indirections;
+
+                     if (clock_cycles >= pow(10, max_digits + 1))
+                        printf("%*s,", max_digits, "n/a");
+                     else
+                        printf("%*u,", max_digits, (unsigned)clock_cycles);
+                     break;
+                  }
+                  }
+
+                  if (stage == RUN)
+                     print_progress(state->num_tests, &test_index, 20);
                   else
-                     printf("%*u,", max_digits, (unsigned)clock_cycles);
-                  break;
-               }
+                     test_index++;
                }
 
-               if (stage == RUN)
-                  print_progress(state->num_tests, &test_index, 20);
-               else
-                  test_index++;
+               if (stage == REPORT)
+                  puts("");
             }
-
-            if (stage == REPORT)
-               puts("");
          }
       }
    }
@@ -451,7 +480,7 @@ test_latency(api_context *ctx, const char *test_name)
    state.min_size = MAX2(ctx->options.spacing * 4, 1024);
    state.num_indirections = num_indirections;
 
-   printf("Indirections per shader: %u\n", state.num_indirections);
+   printf("The number of indirections averaged per subtest: %u\n", state.num_indirections);
    puts("Building compute pipelines...");
 
    run(ctx, test_name, INIT, &state);

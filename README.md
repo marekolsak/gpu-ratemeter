@@ -139,6 +139,7 @@ Decoding subtest names:
 - `hostmem`: the traversed buffer is in host memory uncached by the CPU
 - `devmem_coherent`: the traversed buffer is in host-coherent device memory (VK_AMD_device_coherent_memory or equivalent is required)
 - `hostmem_coherent`: the traversed buffer is in host-coherent host memory uncached by the CPU (VK_AMD_device_coherent_memory or equivalent is required)
+- `shared`: the traversed buffer is in shared memory
 
 Only Vulkan is supported.
 
