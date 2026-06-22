@@ -33,6 +33,8 @@ gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
    buf->size = size;
    buf->heap = heap;
 
+   assert(!sparse_block_size && "not implemented");
+
    unsigned flags = GL_DYNAMIC_STORAGE_BIT; /* needed by glBufferSubData */
 
    switch (heap) {
@@ -1219,32 +1221,37 @@ gl_create_context(const program_options *options)
    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
    glPrimitiveRestartIndex(UINT32_MAX);
 
-   /* Set properties and callbacks. */
+   /* Set properties. */
    ctx->has_heap[api_heap_device] = true;
    ctx->has_heap[api_heap_host_uncached] = true;
    ctx->has_heap[api_heap_host_cached] = true;
-   ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
    ctx->timestamp_period_in_seconds = 0.000000001;
-   ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
-   ctx->has_xfb = true;
-   ctx->has_clear_image_region = true;
+
+   ctx->has_async_sparse_queue = false;
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
+   ctx->has_buffer_device_address = false;
+   ctx->has_clear_image_region = true;
+   ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
    ctx->has_resolve_image_yflip = true;
-
-   glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, (GLint*)&ctx->max_uniform_buffer_range);
-   glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, (GLint*)&ctx->max_storage_buffer_range);
-
-#if 0 /* not implemented for now */
+   ctx->has_shader_int8 = false;
+   ctx->has_shader_int64 = GLAD_GL_ARB_gpu_shader_int64;
+   ctx->has_shader_subgroup_clock = GLAD_GL_ARB_shader_clock;
    ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
-
-   if (GLAD_GL_ARB_sparse_buffer)
-      glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
-#endif
+   ctx->has_vrs = false;
+   ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
+   ctx->has_xfb = true;
 
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
 
+   glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, (GLint*)&ctx->max_storage_buffer_range);
+   glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, (GLint*)&ctx->max_uniform_buffer_range);
+
+   if (GLAD_GL_ARB_sparse_buffer)
+      glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
+
+   /* Get color sample counts. */
    int num_sample_counts;
    int sample_counts[16];
 
@@ -1261,8 +1268,7 @@ gl_create_context(const program_options *options)
          ctx->supported_color_sample_counts |= sample_counts[i];
    }
 
-   ctx->device_mem_usage = 0;
-
+   /* Set callbacks. */
    ctx->destroy_context = NULL;
 
    ctx->create_buffer = gl_create_buffer;

@@ -1890,6 +1890,9 @@ vk_create_context(const program_options *options)
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
       .pNext = &vulkan11,
    };
+
+   void **pNext = &vulkan10.pNext;
+
    vkGetPhysicalDeviceFeatures2(physical_device, &vulkan10);
    vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
 
@@ -1932,27 +1935,27 @@ vk_create_context(const program_options *options)
       error("VK_QUEUE_GRAPHICS_BIT not supported");
 
    unsigned num_enabled_extensions = 0;
-   const char *enabled_extensions[9];
+   const char *enabled_extensions[20];
 
    if (vi_dyn.vertexInputDynamicState) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_EXT_vertex_input_dynamic_state";
+      enabled_extensions[num_enabled_extensions++] = VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME;
    }
 
    if (vrs.pipelineFragmentShadingRate) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_KHR_fragment_shading_rate";
+      enabled_extensions[num_enabled_extensions++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
       vrs.attachmentFragmentShadingRate = false;
    }
 
    if (mesh.meshShader) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_EXT_mesh_shader";
+      enabled_extensions[num_enabled_extensions++] = VK_EXT_MESH_SHADER_EXTENSION_NAME;
    }
 
    if (xfb.transformFeedback) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_EXT_transform_feedback";
+      enabled_extensions[num_enabled_extensions++] = VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME;
    }
 
    if (ext_dyn3.extendedDynamicState3RasterizationSamples ||
@@ -1962,24 +1965,24 @@ vk_create_context(const program_options *options)
        ext_dyn3.extendedDynamicState3ColorBlendEquation ||
        ext_dyn3.extendedDynamicState3ColorWriteMask) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_EXT_extended_dynamic_state3";
+      enabled_extensions[num_enabled_extensions++] = VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME;
    }
 
    if (shader_clock.shaderSubgroupClock) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_KHR_shader_clock";
+      enabled_extensions[num_enabled_extensions++] = VK_KHR_SHADER_CLOCK_EXTENSION_NAME;
    }
 
    if (coherent_memory_amd.deviceCoherentMemory) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_AMD_device_coherent_memory";
+      enabled_extensions[num_enabled_extensions++] = VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME;
    }
 
    if (gpl.graphicsPipelineLibrary) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_KHR_pipeline_library";
+      enabled_extensions[num_enabled_extensions++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = "VK_EXT_graphics_pipeline_library";
+      enabled_extensions[num_enabled_extensions++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
    }
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
@@ -2151,27 +2154,31 @@ vk_create_context(const program_options *options)
       ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
    }
 
-   ctx->has_image_tiling_linear = true;
    ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
-   ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
-   ctx->has_vs_tes_layer_output = vulkan12.shaderOutputLayer;
-   ctx->has_vrs = vrs.pipelineFragmentShadingRate;
-   ctx->has_xfb = xfb.transformFeedback;
-   ctx->has_clear_image_region = false;
-   ctx->has_blit_image_3d = true;
-   ctx->has_blit_image_msaa = false;
-   ctx->has_resolve_image_yflip = false;
-   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer &&
-                            queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+
    ctx->has_async_sparse_queue = compute_queue_family_index != -1 &&
                                  queue_props[compute_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+   ctx->has_blit_image_3d = true;
+   ctx->has_blit_image_msaa = false;
+   ctx->has_buffer_device_address = vulkan12.bufferDeviceAddress;
+   ctx->has_clear_image_region = false;
+   ctx->has_image_tiling_linear = true;
+   ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = vulkan12.shaderInt8;
    ctx->has_shader_int64 = vulkan10.features.shaderInt64;
    ctx->has_shader_subgroup_clock = shader_clock.shaderSubgroupClock;
-   ctx->max_uniform_buffer_range = device_properties.properties.limits.maxUniformBufferRange;
+   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer &&
+                            queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+   ctx->has_vs_tes_layer_output = vulkan12.shaderOutputLayer;
+   ctx->has_vrs = vrs.pipelineFragmentShadingRate;
+   ctx->has_xfb = xfb.transformFeedback;
+
+   ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
    ctx->max_storage_buffer_range = device_properties.properties.limits.maxStorageBufferRange;
+   ctx->max_uniform_buffer_range = device_properties.properties.limits.maxUniformBufferRange;
    ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
 
+   /* Get sparse buffer alignment. */
    if (ctx->has_sparse_buffer) {
       VkMemoryRequirements2 sparse_buf_mem_req = {
           .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
@@ -2191,9 +2198,9 @@ vk_create_context(const program_options *options)
       ctx->sparse_buffer_alignment = sparse_buf_mem_req.memoryRequirements.alignment;
    }
 
-   ctx->device_mem_usage = 0;
-
-   /* Needed by mesh shaders. */
+   /* Set up the GLSL compiler. */
+   shaderc_compile_options_set_target_env(ctx->glsl_compiler_options, shaderc_target_env_vulkan,
+                                          shaderc_env_version_vulkan_1_3);
    shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);
    shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
                                      shaderc_limit_max_mesh_work_group_size_x_ext,

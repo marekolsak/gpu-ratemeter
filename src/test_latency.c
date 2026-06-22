@@ -476,6 +476,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 void
 test_latency(api_context *ctx, const char *test_name)
 {
+   if (ctx->options.bda && !ctx->has_buffer_device_address)
+      error("Buffer device address support is required.");
+
    if (ctx->options.int8 && !ctx->has_shader_int8)
       error("Shader int8 support is required.");
 

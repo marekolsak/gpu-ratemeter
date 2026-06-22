@@ -1,4 +1,5 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  * SPDX-License-Identifier: MIT
  */
 
@@ -6,20 +7,16 @@
  *
  * Tests:
  * - iobw: shader input and output throughput in GB/s, including transform feedback (port shader-io-rate)
- * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
+ * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword, clocks/command
  * - rt: ray tracing performance in rays/clock
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
- * - latency: instruction fetch (jump chasing); to remove LSB masking, add -bda as alternative to SSBOs
  *
  * APIs:
- * - Vulkan modes: GPL, KSO
  * - DX12
  * - DX11
- * - CUDA? (for ML)
- * - OpenCL?
  *
  * bufbw:
  * - VK_KHR_copy_memory_indirect
@@ -37,6 +34,10 @@
  * - Z/S?
  * - VK_KHR_copy_memory_indirect
  * - transfer queue
+ *
+ * latency:
+ * - instruction fetch (jump chasing)
+ * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
  * - 2x MSAA
@@ -142,6 +143,7 @@ typedef struct {
 } option_desc;
 
 static const option_desc option_list[] = {
+   {OPTION_BOOL, "-bda", offsetof(program_options, bda)},
    {OPTION_BOOL, "-int8", offsetof(program_options, int8)},
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},

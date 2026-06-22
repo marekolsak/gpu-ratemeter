@@ -309,6 +309,7 @@ typedef struct {
    bool report_bandwidth;
 
    /* Bool options.*/
+   bool bda;
    bool int8;
    bool lean;
    bool no_validator;
@@ -338,25 +339,28 @@ typedef enum {
 typedef struct api_context {
    program_options options;
 
-   /* Properties. */
+   /* Core properties. */
    bool has_heap[api_num_heaps];
-   bool has_image_tiling_linear;
    double timestamp_period_in_seconds;
-   unsigned max_mesh_workgroup_size; /* 0 = unsupported */
-   bool has_vs_tes_layer_output;
-   bool has_vrs;
-   bool has_xfb;
-   bool has_clear_image_region;
+
+   /* Feature properties. */
+   bool has_async_sparse_queue;
    bool has_blit_image_3d;
    bool has_blit_image_msaa;
+   bool has_buffer_device_address;
+   bool has_clear_image_region;
+   bool has_image_tiling_linear;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
-   bool has_async_sparse_queue;
    bool has_shader_int8;
    bool has_shader_int64;
    bool has_shader_subgroup_clock;
-   unsigned max_uniform_buffer_range;
+   bool has_vrs;
+   bool has_vs_tes_layer_output;
+   bool has_xfb;
+   unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    unsigned max_storage_buffer_range;
+   unsigned max_uniform_buffer_range;
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
 
