@@ -778,10 +778,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3 / 4,
                                          .instance_count = 1});
          ctx->end_render_pass(ctx);
-
-         /* Unfortunately needed. */
-         if (ctx->options.rdna4_timestamp_wa)
-            ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
+         ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
 
          ctx->write_next_timestamp(ctx, timestamps);
          /* Render pass for the measurement. */

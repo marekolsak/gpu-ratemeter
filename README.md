@@ -47,10 +47,9 @@ The following APIs are supported:
 
 Optional parameters common to all tests:
 - `-device=N`: the device index of the device to use (default: 0), Vulkan only
-- `-no-validator: disable the Vulkan validation layer (enabled by default)
-- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
-- `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting memory bandwidth)
-- `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting memory bandwidth)
+- `-no-validator`: disable the Vulkan validation layer (enabled by default)
+- `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting bandwidth or latency)
+- `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting bandwidth or latency)
 
 Examples:
 
@@ -116,6 +115,7 @@ Optional parameters:
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
+- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
@@ -207,6 +207,9 @@ Decoding subtest names:
 ### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
 WIP (functionally mostly finished, try it)
+
+Optional parameters:
+- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 
 
 ## Miscellaneous Tests

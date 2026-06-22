@@ -309,6 +309,7 @@ typedef struct {
    bool report_bandwidth;
 
    /* Bool options.*/
+   bool int8;
    bool lean;
    bool no_validator;
    bool rdna4_timestamp_wa;
