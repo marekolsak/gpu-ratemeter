@@ -5,9 +5,9 @@
 /* TODO:
  *
  * Tests:
- * - iobw (port shader-io-rate)
+ * - iobw: shader input and output throughput in GB/s, including transform feedback (port shader-io-rate)
  * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
- * - rt
+ * - rt: ray tracing performance in rays/clock
  * - mma
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
@@ -28,6 +28,7 @@
  * - compute queue (its CP DMA is slower according to https://gitlab.freedesktop.org/mesa/mesa/-/work_items/15633)
  *
  * imgbw:
+ * - write README
  * - clears:
  *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearDepthStencilImage
  *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer

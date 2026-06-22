@@ -35,24 +35,11 @@ The following APIs are supported:
 - ⏳*(not implemented yet)* `d11`: Direct3D 11
 - ⏳*(not implemented yet)* `d12`: Direct3D 12
 - `gl`: OpenGL (linked shaders only)
-- `vk`: Vulkan (with graphics pipeline objects + static state)
-- `vkd`: Vulkan (with graphics pipeline objects + dynamic state)
-- `vkl`: Vulkan (with graphics pipeline libraries + static state)
-- `vkld`: Vulkan (with graphics pipeline libraries + dynamic state)
-- ⏳*(not implemented yet)* `vkeso`: Vulkan with VK_EXT_shader_object
-
-The following tests are available:
-- `bufbw`: buffer fills and copies in GB/s
-- ⏳*(not implemented yet)* `draw`: clocks/draw (less is better)
-- ⏳*(mostly finished)* `imgbw`: image clears, image copies, blits, and MSAA resolve in GB/s
-- ⏳*(not implemented yet)* `iobw`: shader input and output throughput in GB/s, including transform feedback
-- `latency`: memory load latency in clock cycles
-- `pix`: pixel throughput in samples/clock, all subtests are run with 1x MSAA and 8x MSAA
-- `pixbw`: color buffer write throughput in GB/s, same subtests as `pix`
-- `prim`: primitive throughput in primitives/clock
-- ⏳*(not implemented yet)* `rt`: ray tracing performance in rays/clock
-- `sanity`: verify that the API works by drawing an object and saving the result into a PNG file
-- `sparsebind`: sparse bind throughput in API calls/s
+- `vk`: Vulkan (graphics pipeline objects + static state)
+- `vkd`: Vulkan (graphics pipeline objects + dynamic state)
+- `vkl`: Vulkan (graphics pipeline libraries + static state)
+- `vkld`: Vulkan (graphics pipeline libraries + dynamic state)
+- ⏳*(not implemented yet)* `vkeso`: Vulkan (using VK_EXT_shader_object)
 
 > [!tip]
 > - Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
