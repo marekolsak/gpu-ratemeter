@@ -41,6 +41,7 @@
  * pix:
  * - 2x MSAA
  * - ztest.pass + discard (RB+)
+ * - ztest.pass + empty FS
  * - VRS rates with helper invocations
  * - multiview + viewindex FS sysval
  * - layer FS sysval

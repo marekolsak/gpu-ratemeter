@@ -26,6 +26,7 @@ Examples:
 - If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the driver's blit path may be suboptimal.
 - If pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the driver’s dynamic-state handling may be suboptimal.
 
+
 # How to Run
 
 `gpu-ratemeter [optional parameters] [api].[test]`
@@ -34,10 +35,10 @@ The following APIs are supported:
 - ⏳*(not implemented yet)* `d11`: Direct3D 11
 - ⏳*(not implemented yet)* `d12`: Direct3D 12
 - `gl`: OpenGL (linked shaders only)
-- `vk`: Vulkan with graphics pipeline objects and static state
-- `vkd`: Vulkan with graphics pipeline objects and dynamic state
-- `vkl`: Vulkan with graphics pipeline libraries and static state
-- `vkld`: Vulkan with graphics pipeline libraries and dynamic state
+- `vk`: Vulkan (with graphics pipeline objects + static state)
+- `vkd`: Vulkan (with graphics pipeline objects + dynamic state)
+- `vkl`: Vulkan (with graphics pipeline libraries + static state)
+- `vkld`: Vulkan (with graphics pipeline libraries + dynamic state)
 - ⏳*(not implemented yet)* `vkeso`: Vulkan with VK_EXT_shader_object
 
 The following tests are available:
@@ -76,6 +77,7 @@ gpu-ratemeter -lean vk.pix
 > [!warning]
 > The app currently expects that most features supported by desktop GPUs are supported.
 
+
 # How It Works
 
 - Results are calculated from GPU timestamps.
@@ -85,25 +87,81 @@ gpu-ratemeter -lean vk.pix
 - The app is windowless and doesn't even register with the window system where that's possible.
 - If needed for debugging or developing new tests/subtests, it can save any rendered image to a PNG and open it in an image viewer.
 
+
 # Tests
 
-## `bufbw`: Buffer Fill and Copy Bandwidth (GB/s)
+## Graphics Pipeline Tests
 
-Each column is the size passed to the fill or copy buffer call.
+### `pix`: Pixel Throughput (samples/clock)
+
+Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
 Decoding subtest names:
-- `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
-- `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
-- `miss`, `hit`: whether cache miss or cache hit bandwidth is being tested (cache misses are guaranteed only if the last level cache is <= 256 MB)
-- `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
-- `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
-- `both=N`: both offsets are aligned to N (N=1 means unaligned)
+- `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
+- `fs_empty`: empty fragment shader
+- `fs_discard`: the fragment shader only contains `discard;`
+- `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
+- `zbuf`: the framebuffer contains a Z buffer
+- `z_tess_*.fail`, `z_tess_*.pass`: the subtest uses the given Z compare op to pass or fail the Z test
+- `colormask=0`, `colormask=x`: the color mask is set to 0 or only the X component
+- `blend_src_color0`, `blend_src_color1`, `blend_src_alpha0`, `blend_src_alpha1`: the subtest uses blending with color or alpha blend factors and color values such that 0 means that blending fully discards the pixels, while 1 means that blending fully overwrites the pixels
+- `blend_src_color_other`, `blend_src_alpha_other`: the subtest uses blending with color or alpha blend factors and color values such that no pixels are completely discarded or completely overwritten and actual blending must take place
+- `output.color`, `output.z`, `output.samplemask`: the fragment shader contains color, Z, or samplemask outputs (all other subtests also write a color output unless 1) the name contains `output` without `color`, or 2) it's the `imgStore` column)
+- `z_disabled`: the Z test is disabled
+- `a2c`: alpha-to-coverage is enabled
+- `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS coarse shading
+- `const_fill`: the color output is a constant color
+- `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
+- Used system values are indicated as follows:
+  - `face`: `gl_FrontFacing`
+  - `samplemask`: `gl_SampleMaskIn`
+  - `fragpos_*`: `gl_FragCoord.*` using only the listed components
+  - `sampleid`: `gl_SampleID` (this forces sample shading if framebuffer samples > 1)
+  - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
+- Used inputs are indicated as follows:
+  - `Nflat`: N flat inputs
+  - `Npersp`: N inputs with perspective interpolation at center
+  - `Npersp_sample`: N inputs with perspective interpolation at sample (this forces sample shading if framebuffer samples > 1)
+  - `Ncentroid`: N inputs with perspective interpolation at centroid
+  - `Nlinear`: N inputs with linear (`noperspective`) interpolation at center
 
-## `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
+Optional parameters:
+- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
+- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
+- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
 
-WIP (functionally mostly finished, try it)
+### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
-## `latency`: Memory Load Latency in Clock Cycles
+Same as `pix`, but print the memory bandwidth in GB/s instead of samples/clock. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
+
+### `prim`: Primitive Throughput (primitives/clock)
+
+Each column is a different number of vec4 inputs received by the fragment shader.
+
+Decoding subtest names:
+- `cull_100%`, `cull_75%`, `cull_50%`, `cull_0%`: the test culls this % of primitives using one of the culling methods below
+- `trilist`, `tristrip`: draw as triangle list or triangle strip
+- `mesh32`, `mesh64`, `mesh128`, `mesh192`, `mesh256`: draw with a mesh shader, the number indicates the mesh shader workgroup size
+- `reuse0`, `reuse1`, `reuse2`: how many vertices each primitive reuses from 2 previous primitives using an index buffer (triangle strips always reuse 2 vertices)
+- `cull_back`: primitives are culled by back face culling
+- `cull_xy`: primitives are culled by setting their (x,y) vertex positions such that the primitive is entirely outside the viewport
+- `degenerate`: triangles are culled by being degenerate, i.e. 0 area (2 out of 3 vertex positions are equal)
+- `rasterizer_discard`: all primitives are culled by "rasterizer discard"
+- `N_small_tris_pp`: exactly N tiny triangles are drawn to fill 1 pixel, i.e. N small triangles per pixel (these are subpixel triangles that are culled due to not intersecting the pixel center, so only the single triangle intersecting the pixel center is drawn)
+- `clipdist4`, `culldist4`: culled by clip/cull distance outputs, 4 clip/cull distances are written
+- `clipdist8`, `culldist8`: culled by clip/cull distance outputs, 8 clip/cull distances are written
+- `clipdist1357`, `culldist1357`: culled by clip/cull distance outputs where only clip/cull distance outputs 1, 3, 5, 7 do the culling; clip/cull distance outputs 0, 2, 4, 6 are set to constant 1
+- `output_pointsize`: additionally write the point size output (with no effect on behavior)
+- `output_layer`: additionally write the layer output (with no effect on behavior)
+- `output_vrs1x1`: additionally write the primitive shading rate output (with no effect on behavior)
+
+Optional parameters:
+- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
+
+
+## Shader Tests
+
+### `latency`: Memory Load Latency in Clock Cycles
 
 The test measures memory load latency as observed by shaders. Besides measuring latencies of all cache levels and memory, it can also be used to infer cache sizes and cache line sizes of all cache levels.
 
@@ -144,73 +202,29 @@ Decoding subtest names:
 
 Only Vulkan is supported.
 
-## `pix`: Pixel Throughput (samples/clock)
 
-Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
+## Resource Operation Tests
 
-Decoding subtest names:
-- `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
-- `fs_empty`: empty fragment shader
-- `fs_discard`: the fragment shader only contains `discard;`
-- `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
-- `zbuf`: the framebuffer contains a Z buffer
-- `z_tess_*.fail`, `z_tess_*.pass`: the subtest uses the given Z compare op to pass or fail the Z test
-- `colormask=0`, `colormask=x`: the color mask is set to 0 or only the X component
-- `blend_src_color0`, `blend_src_color1`, `blend_src_alpha0`, `blend_src_alpha1`: the subtest uses blending with color or alpha blend factors and color values such that 0 means that blending fully discards the pixels, while 1 means that blending fully overwrites the pixels
-- `blend_src_color_other`, `blend_src_alpha_other`: the subtest uses blending with color or alpha blend factors and color values such that no pixels are completely discarded or completely overwritten and actual blending must take place
-- `output.color`, `output.z`, `output.samplemask`: the fragment shader contains color, Z, or samplemask outputs (all other subtests also write a color output unless 1) the name contains `output` without `color`, or 2) it's the `imgStore` column)
-- `z_disabled`: the Z test is disabled
-- `a2c`: alpha-to-coverage is enabled
-- `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS coarse shading
-- `const_fill`: the color output is a constant color
-- `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
-- Used system values are indicated as follows:
-  - `face`: `gl_FrontFacing`
-  - `samplemask`: `gl_SampleMaskIn`
-  - `fragpos_*`: `gl_FragCoord.*` using only the listed components
-  - `sampleid`: `gl_SampleID` (this forces sample shading if framebuffer samples > 1)
-  - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
-- Used inputs are indicated as follows:
-  - `Nflat`: N flat inputs
-  - `Npersp`: N inputs with perspective interpolation at center
-  - `Npersp_sample`: N inputs with perspective interpolation at sample (this forces sample shading if framebuffer samples > 1)
-  - `Ncentroid`: N inputs with perspective interpolation at centroid
-  - `Nlinear`: N inputs with linear (`noperspective`) interpolation at center
+### `bufbw`: Buffer Fill and Copy Bandwidth (GB/s)
 
-Optional parameters:
-- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
-- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
-
-## `pixbw`: Color Buffer Write Bandwidth (GB/s)
-
-Same as `pix`, but print the memory bandwidth in GB/s instead of samples/clock. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
-
-## `prim`: Primitive Throughput (primitives/clock)
-
-Each column is a different number of vec4 inputs received by the fragment shader.
+Each column is the size passed to the fill or copy buffer call.
 
 Decoding subtest names:
-- `cull_100%`, `cull_75%`, `cull_50%`, `cull_0%`: the test culls this % of primitives using one of the culling methods below
-- `trilist`, `tristrip`: draw as triangle list or triangle strip
-- `mesh32`, `mesh64`, `mesh128`, `mesh192`, `mesh256`: draw with a mesh shader, the number indicates the mesh shader workgroup size
-- `reuse0`, `reuse1`, `reuse2`: how many vertices each primitive reuses from 2 previous primitives using an index buffer (triangle strips always reuse 2 vertices)
-- `cull_back`: primitives are culled by back face culling
-- `cull_xy`: primitives are culled by setting their (x,y) vertex positions such that the primitive is entirely outside the viewport
-- `degenerate`: triangles are culled by being degenerate, i.e. 0 area (2 out of 3 vertex positions are equal)
-- `rasterizer_discard`: all primitives are culled by "rasterizer discard"
-- `N_small_tris_pp`: exactly N tiny triangles are drawn to fill 1 pixel, i.e. N small triangles per pixel (these are subpixel triangles that are culled due to not intersecting the pixel center, so only the single triangle intersecting the pixel center is drawn)
-- `clipdist4`, `culldist4`: culled by clip/cull distance outputs, 4 clip/cull distances are written
-- `clipdist8`, `culldist8`: culled by clip/cull distance outputs, 8 clip/cull distances are written
-- `clipdist1357`, `culldist1357`: culled by clip/cull distance outputs where only clip/cull distance outputs 1, 3, 5, 7 do the culling; clip/cull distance outputs 0, 2, 4, 6 are set to constant 1
-- `output_pointsize`: additionally write the point size output (with no effect on behavior)
-- `output_layer`: additionally write the layer output (with no effect on behavior)
-- `output_vrs1x1`: additionally write the primitive shading rate output (with no effect on behavior)
+- `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
+- `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
+- `miss`, `hit`: whether cache miss or cache hit bandwidth is being tested (cache misses are guaranteed only if the last level cache is <= 256 MB)
+- `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
+- `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
+- `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
-Optional parameters:
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
+### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
-## `sparsebind`: Sparse Bind Throughput (API calls/s)
+WIP (functionally mostly finished, try it)
+
+
+## Miscellaneous Tests
+
+### `sparsebind`: Sparse Bind Throughput (API calls/s)
 
 This measures the throughput of sparse bind/unbind operations in API calls/s.
 
@@ -231,6 +245,7 @@ Decoding subtest names:
 
 Only Vulkan is supported.
 
+
 # How to Build
 
 ## Linux
@@ -244,9 +259,11 @@ meson setup ..
 ninja
 ```
 
+
 ## Windows
 
 TBD
+
 
 # How to Get Stable Results
 
