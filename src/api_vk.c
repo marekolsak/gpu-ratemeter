@@ -70,6 +70,11 @@ vk_find_heap_with_flags(api_context *ctx, unsigned supported_heap_mask,
    return -1;
 }
 
+#define chain_next(next, ptr) do { \
+      *(next) = (ptr); \
+      (next) = &(ptr)->pNext; \
+   } while (0) \
+
 static int
 vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
 {
@@ -712,31 +717,40 @@ static api_shader *
 vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
 {
    shaderc_shader_kind shaderc_type;
+   VkShaderStageFlagBits stage_bit;
 
    switch (type) {
    case api_shader_vs:
       shaderc_type = shaderc_glsl_vertex_shader;
+      stage_bit = VK_SHADER_STAGE_VERTEX_BIT;
       break;
    case api_shader_tcs:
       shaderc_type = shaderc_glsl_tess_control_shader;
+      stage_bit = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
       break;
    case api_shader_tes:
       shaderc_type = shaderc_glsl_tess_evaluation_shader;
+      stage_bit = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
       break;
    case api_shader_gs:
       shaderc_type = shaderc_glsl_geometry_shader;
+      stage_bit = VK_SHADER_STAGE_GEOMETRY_BIT;
       break;
    case api_shader_fs:
       shaderc_type = shaderc_glsl_fragment_shader;
+      stage_bit = VK_SHADER_STAGE_FRAGMENT_BIT;
       break;
    case api_shader_cs:
       shaderc_type = shaderc_glsl_compute_shader;
+      stage_bit = VK_SHADER_STAGE_COMPUTE_BIT;
       break;
    case api_shader_ts:
       shaderc_type = shaderc_glsl_task_shader;
+      stage_bit = VK_SHADER_STAGE_TASK_BIT_EXT;
       break;
    case api_shader_ms:
       shaderc_type = shaderc_glsl_mesh_shader;
+      stage_bit = VK_SHADER_STAGE_MESH_BIT_EXT;
       break;
    default:
       error("invalid shader type");
@@ -755,10 +769,17 @@ vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
             shaderc_result_get_error_message(shader->spirv));
    }
 
-   shader->info = (VkShaderModuleCreateInfo){
+   shader->module_info = (VkShaderModuleCreateInfo){
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
       .codeSize = shaderc_result_get_length(shader->spirv),
       .pCode = (uint32_t*)shaderc_result_get_bytes(shader->spirv),
+   };
+
+   shader->stage_info = (VkPipelineShaderStageCreateInfo){
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .pNext = &shader->module_info,
+      .stage = stage_bit,
+      .pName = "main",
    };
 
    return shader;
@@ -1035,70 +1056,68 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    };
 
    /* Shaders. */
-   VkPipelineShaderStageCreateInfo stages[5];
-   unsigned num_stages = 0;
+   VkPipelineShaderStageCreateInfo stages[5], prerast_stages[4], fs_stages[1];
+   unsigned num_stages = 0, num_prerast_stages = 0, num_fs_stages = 0;
 
-   if (desc->ms) {
-      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
-         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .pNext = &desc->ms->info,
-         .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-         .pName = "main",
-      };
-   }
+   if (desc->ms)
+      stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->ms->stage_info;
+   if (desc->vs)
+      stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->vs->stage_info;
 
-   if (desc->vs) {
-      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
-         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .pNext = &desc->vs->info,
-         .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .pName = "main",
-      };
-   }
-
-   if (desc->fs && !desc->rasterizer_discard) {
-      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
-         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .pNext = &desc->fs->info,
-         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .pName = "main",
-      };
-   }
+   if (desc->fs && !desc->rasterizer_discard)
+      stages[num_stages++] = fs_stages[num_fs_stages++] = desc->fs->stage_info;
 
    bool uses_dynamic_state = ctx->options.api_flags & API_VK_DYNAMIC_STATE;
-   VkDynamicState dynamic_states[20] = {
-      VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT,
-      VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT,
-   };
-   unsigned num_always_dynamic_states = 2;
-   unsigned num_dynamic_states = 2;
+   VkDynamicState dyn_states_vi[10], dyn_states_prerast[10], dyn_states_fs[10], dyn_states_out[10];
+   unsigned num_dyn_states_vi = 0, num_dyn_states_prerast = 0, num_dyn_states_fs = 0;
+   unsigned num_dyn_states_out = 0;
+
+#define check_incr(array) ((void)assert(num_##array < ARRAY_SIZE(array)), num_##array++)
+
+   dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT;
+   dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT;
 
    if (uses_dynamic_state) {
-#define check_incr_num(array) \
-   ((void)assert(num_##array < ARRAY_SIZE(array)), num_##array++)
-
       if (!desc->ms) {
-         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
-         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
-         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
+         dyn_states_vi[check_incr(dyn_states_vi)] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
+         dyn_states_vi[check_incr(dyn_states_vi)] = VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE;
+         dyn_states_vi[check_incr(dyn_states_vi)] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
       }
 
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_CULL_MODE;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_FRONT_FACE;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
-      dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+      dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
+      dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_CULL_MODE;
+      dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_FRONT_FACE;
       if (ctx->has_vrs)
-         dynamic_states[check_incr_num(dynamic_states)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
-#undef check_incr_num
+         dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
+
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
+      if (ctx->has_vrs && ctx->options.api_flags & API_VK_GPL)
+         dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
+
+      dyn_states_out[check_incr(dyn_states_out)] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
+      dyn_states_out[check_incr(dyn_states_out)] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
+      dyn_states_out[check_incr(dyn_states_out)] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+
    }
+
+   VkDynamicState dyn_states[20];
+   unsigned num_dyn_states = 0;
+
+   for (unsigned i = 0; i < num_dyn_states_vi; i++)
+      dyn_states[check_incr(dyn_states)] = dyn_states_vi[i];
+   for (unsigned i = 0; i < num_dyn_states_prerast; i++)
+      dyn_states[check_incr(dyn_states)] = dyn_states_prerast[i];
+   for (unsigned i = 0; i < num_dyn_states_fs; i++)
+      dyn_states[check_incr(dyn_states)] = dyn_states_fs[i];
+   for (unsigned i = 0; i < num_dyn_states_out; i++)
+      dyn_states[check_incr(dyn_states)] = dyn_states_out[i];
+
+#undef check_incr
 
    pipeline->blend_state = (VkPipelineColorBlendAttachmentState) {
       .blendEnable = desc->blend_src_color || desc->blend_src_alpha,
@@ -1114,7 +1133,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    };
 
    /* Create the graphics pipeline. */
-   VkGraphicsPipelineCreateInfo pipeline_info = {
+   VkGraphicsPipelineCreateInfo info = {
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
       .stageCount = num_stages,
       .pStages = stages,
@@ -1153,8 +1172,8 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
       .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-         .dynamicStateCount = uses_dynamic_state ? num_dynamic_states : num_always_dynamic_states,
-         .pDynamicStates = dynamic_states,
+         .dynamicStateCount = num_dyn_states,
+         .pDynamicStates = dyn_states,
       },
       .layout = desc->desc_set_layout ? desc->desc_set_layout->pipeline_layout :
                                         ctx->empty_pipeline_layout,
@@ -1181,27 +1200,144 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       },
    };
 
-   /* Chain structures. */
-   const void **pNext = &pipeline_info.pNext;
+   if (ctx->options.api_flags & API_VK_GPL) {
+      VkGraphicsPipelineCreateInfo info_vi = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .pNext = &(VkGraphicsPipelineLibraryCreateInfoEXT){
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT,
+         },
+         .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+         .pVertexInputState = info.pVertexInputState,
+         .pInputAssemblyState = info.pInputAssemblyState,
+         .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = num_dyn_states_vi,
+            .pDynamicStates = dyn_states_vi,
+         },
+      };
 
-   if (uses_dynamic_state) {
-      *pNext = &dyn_rendering_pipeline_info;
-      pNext = &dyn_rendering_pipeline_info.pNext;
+      VkGraphicsPipelineCreateInfo info_prerast = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .pNext = &(VkGraphicsPipelineLibraryCreateInfoEXT){
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT,
+         },
+         .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+         .stageCount = num_prerast_stages,
+         .pStages = prerast_stages,
+         .pRasterizationState = info.pRasterizationState,
+         .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = num_dyn_states_prerast,
+            .pDynamicStates = dyn_states_prerast,
+         },
+         .layout = info.layout,
+         .renderPass = info.renderPass,
+      };
+      const void **pNext_prerast = &((VkGraphicsPipelineLibraryCreateInfoEXT*)info_prerast.pNext)->pNext;
+
+      if (uses_dynamic_state)
+         chain_next(pNext_prerast, &dyn_rendering_pipeline_info);
+
+      if (!uses_dynamic_state && ctx->has_vrs)
+         chain_next(pNext_prerast, &pipeline->vrs);
+
+      VkGraphicsPipelineCreateInfo info_fs = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .pNext = &(VkGraphicsPipelineLibraryCreateInfoEXT){
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT,
+         },
+         .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+         .stageCount = num_fs_stages,
+         .pStages = fs_stages,
+         .pMultisampleState = info.pMultisampleState,
+         .pDepthStencilState = info.pDepthStencilState,
+         .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = num_dyn_states_fs,
+            .pDynamicStates = dyn_states_fs,
+         },
+         .layout = info.layout,
+         .renderPass = info.renderPass,
+      };
+      const void **pNext_fs = &((VkGraphicsPipelineLibraryCreateInfoEXT*)info_fs.pNext)->pNext;
+
+      if (uses_dynamic_state)
+         chain_next(pNext_fs, &dyn_rendering_pipeline_info);
+
+      if (!uses_dynamic_state && ctx->has_vrs)
+         chain_next(pNext_fs, &pipeline->vrs);
+
+      VkGraphicsPipelineCreateInfo info_out = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .pNext = &(VkGraphicsPipelineLibraryCreateInfoEXT){
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT,
+            .flags = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT,
+         },
+         .flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR,
+         .pColorBlendState = info.pColorBlendState,
+         .pMultisampleState = info.pMultisampleState,
+         .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = num_dyn_states_out,
+            .pDynamicStates = dyn_states_out,
+         },
+         .renderPass = info.renderPass,
+      };
+
+      const void **pNext_out = &((VkGraphicsPipelineLibraryCreateInfoEXT*)info_out.pNext)->pNext;
+
+      if (uses_dynamic_state)
+         chain_next(pNext_out, &dyn_rendering_pipeline_info);
+
+      if (!desc->ms)
+         vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &info_vi, NULL, &pipeline->lib_vi));
+      vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &info_prerast, NULL, &pipeline->lib_prerast));
+      vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &info_fs, NULL, &pipeline->lib_fs));
+      vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &info_out, NULL, &pipeline->lib_out));
+
+      VkGraphicsPipelineCreateInfo linked = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .pNext = &(VkPipelineLibraryCreateInfoKHR){
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR,
+            .libraryCount = desc->ms ? 3 : 4,
+            .pLibraries = (VkPipeline[]){pipeline->lib_prerast, pipeline->lib_fs, pipeline->lib_out,
+                                         pipeline->lib_vi},
+         },
+         .layout = info.layout,
+      };
+
+      vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &linked, NULL, &pipeline->pipeline));
    } else {
-      if (ctx->has_vrs) {
-         *pNext = &pipeline->vrs;
-         pNext = &pipeline->vrs.pNext;
-      }
+      /* Chain structures. */
+      const void **pNext = &info.pNext;
+
+      if (uses_dynamic_state)
+         chain_next(pNext, &dyn_rendering_pipeline_info);
+
+      if (!uses_dynamic_state && ctx->has_vrs)
+         chain_next(pNext, &pipeline->vrs);
+
+      vk_check(vkCreateGraphicsPipelines(ctx->device, NULL, 1, &info, NULL,
+                                         &pipeline->pipeline));
    }
 
-   vk_check(vkCreateGraphicsPipelines(ctx->device, (VkPipelineCache){ VK_NULL_HANDLE },
-                                      1, &pipeline_info, NULL, &pipeline->pipeline));
    return pipeline;
 }
 
 static void
 vk_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
 {
+   if (ctx->options.api_flags & API_VK_GPL) {
+      if (pipeline->lib_vi)
+         vkDestroyPipeline(ctx->device, pipeline->lib_vi, NULL);
+      vkDestroyPipeline(ctx->device, pipeline->lib_prerast, NULL);
+      vkDestroyPipeline(ctx->device, pipeline->lib_fs, NULL);
+      vkDestroyPipeline(ctx->device, pipeline->lib_out, NULL);
+   }
+
    vkDestroyPipeline(ctx->device, pipeline->pipeline, NULL);
    free(pipeline);
 }
@@ -1266,12 +1402,7 @@ vk_create_compute_pipeline(api_context *ctx, api_shader *shader,
    vk_check(vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1,
                                      &(VkComputePipelineCreateInfo){
                                         .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-                                        .stage  = (VkPipelineShaderStageCreateInfo){
-                                           .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                                           .pNext  = &shader->info,
-                                           .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                                           .pName  = "main",
-                                        },
+                                        .stage  = shader->stage_info,
                                         .layout = layout->pipeline_layout,
                                      },
                                      NULL, &pipeline->pipeline));

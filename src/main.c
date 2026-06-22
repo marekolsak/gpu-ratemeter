@@ -47,9 +47,10 @@
  * - VRS rate FS sysval
  * - FullyCoveredEXT with and without VRS
  * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
- * - render to 3D texture
+ * - render to 3D texture?
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
  * - create pipelines in parallel using OpenMP
+ * - stencil/HiS?
  *
  * prim:
  * - VS + transform feedback
@@ -107,10 +108,8 @@ static const struct {
    {"gl", gl_create_context},
    {"vk", vk_create_context, 0},
    {"vkd", vk_create_context, API_VK_DYNAMIC_STATE},
-   #if 0
    {"vkl", vk_create_context, API_VK_GPL},
    {"vkld", vk_create_context, API_VK_GPL | API_VK_DYNAMIC_STATE},
-   #endif
 };
 
 static const struct {

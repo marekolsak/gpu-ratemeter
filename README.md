@@ -31,13 +31,13 @@ Examples:
 `gpu-ratemeter [optional parameters] [api].[test]`
 
 The following APIs are supported:
-- ⏳*(not implemented yet)* `d3d11`: Direct3D 11
-- ⏳*(not implemented yet)* `d3d12`: Direct3D 12
+- ⏳*(not implemented yet)* `d11`: Direct3D 11
+- ⏳*(not implemented yet)* `d12`: Direct3D 12
 - `gl`: OpenGL (linked shaders only)
 - `vk`: Vulkan with graphics pipeline objects and static state
 - `vkd`: Vulkan with graphics pipeline objects and dynamic state
-- ⏳*(not implemented yet)* `vkl`: Vulkan with graphics pipeline libraries and static state
-- ⏳*(not implemented yet)* `vkld`: Vulkan with graphics pipeline libraries and dynamic state
+- `vkl`: Vulkan with graphics pipeline libraries and static state
+- `vkld`: Vulkan with graphics pipeline libraries and dynamic state
 - ⏳*(not implemented yet)* `vkeso`: Vulkan with VK_EXT_shader_object
 
 The following tests are available:

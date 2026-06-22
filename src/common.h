@@ -194,7 +194,8 @@ typedef struct {
 
 #ifdef VK_PRIVATE
    shaderc_compilation_result_t spirv;
-   VkShaderModuleCreateInfo info;
+   VkShaderModuleCreateInfo module_info;
+   VkPipelineShaderStageCreateInfo stage_info;
 #endif
 } api_shader;
 
@@ -239,6 +240,7 @@ typedef struct {
 
 #ifdef VK_PRIVATE
    unsigned num_vb_desc;
+   VkPipeline lib_vi, lib_prerast, lib_fs, lib_out;
    VkPipeline pipeline;
    VkVertexInputBindingDescription2EXT dyn_vi_bindings[MAX_VERTEX_BUFFERS];
    VkVertexInputAttributeDescription2EXT dyn_vi_attribs[MAX_VERTEX_BUFFERS];
