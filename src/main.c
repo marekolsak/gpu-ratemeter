@@ -138,7 +138,7 @@ typedef enum {
 typedef struct {
    option_type type;
    const char *name;
-   unsigned offset;
+   size_t offset;
 } option_desc;
 
 static const option_desc option_list[] = {

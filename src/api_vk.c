@@ -1708,8 +1708,12 @@ vk_create_context(const program_options *options)
 
    VkPhysicalDevice physical_device = devices[ctx->options.device];
 
+   VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,
+   };
    VkPhysicalDeviceCoherentMemoryFeaturesAMD coherent_memory_amd = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,
+      .pNext = &gpl,
    };
    VkPhysicalDeviceShaderClockFeaturesKHR shader_clock = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
@@ -1793,7 +1797,7 @@ vk_create_context(const program_options *options)
       error("VK_QUEUE_GRAPHICS_BIT not supported");
 
    unsigned num_enabled_extensions = 0;
-   const char *enabled_extensions[7];
+   const char *enabled_extensions[9];
 
    if (vi_dyn.vertexInputDynamicState) {
       assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
@@ -1836,6 +1840,13 @@ vk_create_context(const program_options *options)
       enabled_extensions[num_enabled_extensions++] = "VK_AMD_device_coherent_memory";
    }
 
+   if (gpl.graphicsPipelineLibrary) {
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_KHR_pipeline_library";
+      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
+      enabled_extensions[num_enabled_extensions++] = "VK_EXT_graphics_pipeline_library";
+   }
+
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       if (!vulkan13.dynamicRendering)
          error("dynamicRendering is required.");
@@ -1854,6 +1865,9 @@ vk_create_context(const program_options *options)
       if (!ext_dyn3.extendedDynamicState3ColorWriteMask)
          error("extendedDynamicState3ColorWriteMask is required.");
    }
+
+   if (ctx->options.api_flags & API_VK_GPL && !gpl.graphicsPipelineLibrary)
+      error("VK_EXT_graphics_pipeline_library is required.");
 
    /* Open the device. */
    vk_check(vkCreateDevice(physical_device,
