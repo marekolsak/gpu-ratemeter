@@ -742,29 +742,33 @@ vk_create_shader(api_context *ctx, const char *source, api_shader_type type)
       error("invalid shader type");
    }
 
-   shaderc_compilation_result_t result =
-       shaderc_compile_into_spv(ctx->glsl_compiler, source, strlen(source),
-                                shaderc_type, "file", "main", ctx->glsl_compiler_options);
-   if (!result)
-      error("shaderc_compile_into_spv returned NULL");
-
-   if (shaderc_result_get_compilation_status(result) != shaderc_compilation_status_success) {
-      error("failed to compile shader to SPIR-V:\n%s\n\n%s", source,
-            shaderc_result_get_error_message(result));
-   }
-
-
    api_shader *shader = calloc(1, sizeof(api_shader));
 
-   vk_check(vkCreateShaderModule(ctx->device,
-                                 &(VkShaderModuleCreateInfo) {
-                                    .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                    .codeSize = shaderc_result_get_length(result),
-                                    .pCode = (uint32_t*)shaderc_result_get_bytes(result),
-                                 },
-                                 NULL, &shader->module));
-   shaderc_result_release(result);
+   shader->spirv =
+       shaderc_compile_into_spv(ctx->glsl_compiler, source, strlen(source),
+                                shaderc_type, "file", "main", ctx->glsl_compiler_options);
+   if (!shader->spirv)
+      error("shaderc_compile_into_spv returned NULL");
+
+   if (shaderc_result_get_compilation_status(shader->spirv) != shaderc_compilation_status_success) {
+      error("failed to compile shader to SPIR-V:\n%s\n\n%s", source,
+            shaderc_result_get_error_message(shader->spirv));
+   }
+
+   shader->info = (VkShaderModuleCreateInfo){
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = shaderc_result_get_length(shader->spirv),
+      .pCode = (uint32_t*)shaderc_result_get_bytes(shader->spirv),
+   };
+
    return shader;
+}
+
+static void
+vk_destroy_shader(api_context *ctx, api_shader *shader)
+{
+   shaderc_result_release(shader->spirv);
+   free(shader);
 }
 
 static api_descriptor_set_layout *
@@ -1031,32 +1035,32 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    };
 
    /* Shaders. */
-   VkPipelineShaderStageCreateInfo shaders[5];
-   unsigned num_shaders = 0;
+   VkPipelineShaderStageCreateInfo stages[5];
+   unsigned num_stages = 0;
 
    if (desc->ms) {
-      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = &desc->ms->info,
          .stage = VK_SHADER_STAGE_MESH_BIT_EXT,
-         .module = desc->ms->module,
          .pName = "main",
       };
    }
 
    if (desc->vs) {
-      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = &desc->vs->info,
          .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = desc->vs->module,
          .pName = "main",
       };
    }
 
    if (desc->fs && !desc->rasterizer_discard) {
-      shaders[num_shaders++] = (VkPipelineShaderStageCreateInfo){
+      stages[num_stages++] = (VkPipelineShaderStageCreateInfo){
          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .pNext = &desc->fs->info,
          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = desc->fs->module,
          .pName = "main",
       };
    }
@@ -1112,8 +1116,8 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
    /* Create the graphics pipeline. */
    VkGraphicsPipelineCreateInfo pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-      .stageCount = num_shaders,
-      .pStages = shaders,
+      .stageCount = num_stages,
+      .pStages = stages,
       .pVertexInputState = uses_dynamic_state ? NULL : &vertex_input_state,
       .pInputAssemblyState = &(VkPipelineInputAssemblyStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -1264,8 +1268,8 @@ vk_create_compute_pipeline(api_context *ctx, api_shader *shader,
                                         .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                                         .stage  = (VkPipelineShaderStageCreateInfo){
                                            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                                           .pNext  = &shader->info,
                                            .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                                           .module = shader->module,
                                            .pName  = "main",
                                         },
                                         .layout = layout->pipeline_layout,
@@ -2088,7 +2092,7 @@ vk_create_context(const program_options *options)
    ctx->destroy_framebuffer = vk_destroy_framebuffer;
 
    ctx->create_shader = vk_create_shader;
-   ctx->destroy_shader = NULL;
+   ctx->destroy_shader = vk_destroy_shader;
 
    ctx->create_descriptor_set_layout = vk_create_descriptor_set_layout;
    ctx->destroy_descriptor_set_layout = NULL;

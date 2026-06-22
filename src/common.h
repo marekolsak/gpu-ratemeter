@@ -193,7 +193,8 @@ typedef struct {
 #endif
 
 #ifdef VK_PRIVATE
-   VkShaderModule module;
+   shaderc_compilation_result_t spirv;
+   VkShaderModuleCreateInfo info;
 #endif
 } api_shader;
 
