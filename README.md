@@ -169,6 +169,7 @@ If spacing > cache line size, the latency of tested buffer sizes will no longer 
 is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
 
 Optional parameters:
+- `int8`: Use 8-bit addresses for shared memory tests. (this may report more accurate latency on some drivers)
 - `clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
 (it must be set to 20 for RDNA 2 and 3)
 - `sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.

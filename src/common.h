@@ -352,6 +352,8 @@ typedef struct api_context {
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
    bool has_async_sparse_queue;
+   bool has_shader_int8;
+   bool has_shader_int64;
    bool has_shader_subgroup_clock;
    unsigned max_uniform_buffer_range;
    unsigned max_storage_buffer_range;

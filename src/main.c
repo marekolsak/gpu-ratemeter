@@ -8,12 +8,11 @@
  * - iobw: shader input and output throughput in GB/s, including transform feedback (port shader-io-rate)
  * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword
  * - rt: ray tracing performance in rays/clock
- * - mma
+ * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
  * - latency: instruction fetch (jump chasing); to remove LSB masking, add -bda as alternative to SSBOs
- *   and -int8 to load uint as 4x int8 for shared memory
  *
  * APIs:
  * - Vulkan modes: GPL, KSO

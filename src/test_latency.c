@@ -35,17 +35,23 @@ typedef struct {
    uint64_t *results;
 } test_state;
 
+static unsigned
+get_spacing(api_context *ctx, bool shared_memory)
+{
+   const unsigned shared_mem_spacing = 4;
+   assert(shared_mem_spacing <= ctx->options.spacing);
+
+   return shared_memory ? shared_mem_spacing : ctx->options.spacing;
+}
+
 static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections,
                                 bool shared_memory)
 {
-   char source[2100];
+   char source[3200];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
-                      "#extension GL_ARB_shader_clock : require \n"
-                      "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
-                      "\n"
 
                       "#define CLOCK_BITS %u \n"
                       "#define SPACING %u \n"
@@ -54,6 +60,32 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "#define NUM_INDIRECTIONS %u \n"
                       "#define QUALIFIER %s \n"
                       "#define SHARED_MEMORY %u \n"
+                      "#define SHARED_MEMORY_INT8 (%u != 0) \n"
+                      "\n"
+
+                      "#if SHARED_MEMORY_INT8 \n"
+                      "   #define OFFSET_TYPE               uint8_t \n"
+                      "   #define OFFSET_INIT_DIVISOR       4 \n"
+                      "   #define OFFSET_TO_ELEMENT_DIVISOR 1 \n"
+                      "#else \n"
+                      "   #define OFFSET_TYPE               uint \n"
+                      "   #define OFFSET_INIT_DIVISOR       1 \n"
+                      "   #define OFFSET_TO_ELEMENT_DIVISOR 4 \n"
+                      "#endif \n"
+                      "\n"
+
+                      "#if SHARED_MEMORY \n"
+                      "   #define OFFSETS shared_offsets \n"
+                      "#else \n"
+                      "   #define OFFSETS jumpbuf.offsets \n"
+                      "#endif \n"
+                      "\n"
+
+                      "#extension GL_ARB_shader_clock : require \n"
+                      "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
+                      "#if SHARED_MEMORY_INT8 \n"
+                      "#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require \n"
+                      "#endif \n"
                       "\n"
 
                       /* If the clock doesn't have enough bits such that the clock wraps around and
@@ -71,7 +103,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "\n"
 
                       "layout(set = 0, binding = 0, std430) readonly restrict QUALIFIER buffer B0 { \n"
-                      "   uint offsets[MAX_UINTS]; \n"
+                      "   OFFSET_TYPE offsets[MAX_UINTS]; \n"
                       "} jumpbuf; \n"
                       "\n"
 
@@ -82,8 +114,9 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "\n"
 
                       "#if SHARED_MEMORY \n"
-                      "shared uint shared_offsets[4096]; \n"
+                      "shared OFFSET_TYPE shared_offsets[SHARED_MEMORY_INT8 ? 256 : 4096]; \n"
                       "#endif \n"
+                      "\n"
 
                       /* Subtract, but try to recover from a single clock overflow. */
                       "uint64_t subtract(uint64_t a, uint64_t b) { \n"
@@ -96,24 +129,22 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "\n"
 
                       "void main() { \n"
-                      "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * SPACING; \n"
+                      "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * (SHARED_MEMORY_INT8 ? 1 : SPACING); \n"
                       "\n"
 
                       "#if SHARED_MEMORY \n"
                       /* Copy the offsets from memory to shared memory to initialize it. */
                       "   for (int i = 0; i < shared_offsets.length(); i++) \n"
-                      "      shared_offsets[i] = jumpbuf.offsets[i]; \n"
-                      "#define OFFSETS shared_offsets \n"
+                      "      shared_offsets[i] = OFFSET_TYPE(jumpbuf.offsets[i] / OFFSET_INIT_DIVISOR); \n"
                       "#else \n"
                       /* Warm up the caches by executing all indirections. */
-                      "   uint warmup_offset = jumpbuf.offsets[start_offset / 4].x; \n"
+                      "   uint warmup_offset = jumpbuf.offsets[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      warmup_offset = jumpbuf.offsets[warmup_offset / 4].x; \n"
-                      "#define OFFSETS jumpbuf.offsets \n"
+                      "      warmup_offset = jumpbuf.offsets[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
                       "#endif \n"
                       "\n"
 
-                      "   uint offset = OFFSETS[start_offset / 4].x; \n"
+                      "   OFFSET_TYPE offset = OFFSETS[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
                       "   uint64_t accum = 0; \n"
                       "   uint64_t start = clockARB(); \n"
                       "\n"
@@ -123,7 +154,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
                       "\n"
                       "      for (int j = 0; j < num; j++) \n"
-                      "         offset = OFFSETS[offset / 4]; \n"
+                      "         offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
                       "\n"
                       "      uint64_t end = clockARB(); \n"
                       "      accum += subtract(end, start); \n"
@@ -131,7 +162,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   } \n"
                       "#else \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      offset = OFFSETS[offset / 4]; \n"
+                      "      offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
                       "#endif \n"
                       "\n"
 
@@ -141,10 +172,10 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       /* Also store the offset to make the indirections not dead. */
                       "   result.last_offset = offset; \n"
                       "} \n",
-                      ctx->options.clock_bits, ctx->options.spacing,
-                      (unsigned)ctx->options.max_size / 4,
-                      uniform ? "true" : "false", num_indirections,
-                      coherent ? "coherent" : "", shared_memory);
+                      ctx->options.clock_bits, get_spacing(ctx, shared_memory),
+                      (unsigned)ctx->options.max_size / 4, uniform ? "true" : "false",
+                      num_indirections, coherent ? "coherent" : "", shared_memory,
+                      shared_memory && ctx->options.int8);
    assert(len < ARRAY_SIZE(source));
 
    return ctx->create_shader(ctx, source, api_shader_cs);
@@ -244,9 +275,10 @@ generate_sequence(uint32_t *array, unsigned base, unsigned n)
 }
 
 static void
-set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsigned size)
+set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsigned size,
+                     bool shared_memory)
 {
-   unsigned spacing = ctx->options.spacing;
+   unsigned spacing = get_spacing(ctx, shared_memory);
    uint32_t *sequence = state->sequence_tmp;
    uint32_t *mem = state->jump_buf_data;
 
@@ -386,7 +418,12 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                   printf("%-*s,", name_indent, name);
                }
 
-               unsigned max_size = shared_memory ? 16 * 1024 : ctx->options.max_size;
+               /* Int8 uses 8-bit shared memory addresses, but the jump buffer is initialized
+                * with 256 dword addresses, which are downconverted to 8 bits in the shader.
+                */
+               unsigned max_size = shared_memory ? (ctx->options.int8 ? 1024 : 16 * 1024)
+                                                 : ctx->options.max_size;
+               assert(state->min_size <= max_size);
 
                for (unsigned size = state->min_size; size <= max_size;
                     size = get_next_size(size)) {
@@ -395,7 +432,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                      break;
 
                   case RUN:
-                     set_jump_buffer_data(ctx, state, jump_buf, size);
+                     set_jump_buffer_data(ctx, state, jump_buf, size, shared_memory);
                      ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0, jump_buf,
                                                         0, size);
 
@@ -439,8 +476,14 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 void
 test_latency(api_context *ctx, const char *test_name)
 {
+   if (ctx->options.int8 && !ctx->has_shader_int8)
+      error("Shader int8 support is required.");
+
+   if (!ctx->has_shader_int64)
+      error("Shader int64 support is required.");
+
    if (!ctx->has_shader_subgroup_clock)
-      error("Shader subgroup clock support required.");
+      error("Shader subgroup clock support is required.");
 
    /* Notes:
     * - ideally set spacing = cache_line

@@ -2165,6 +2165,8 @@ vk_create_context(const program_options *options)
                             queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
    ctx->has_async_sparse_queue = compute_queue_family_index != -1 &&
                                  queue_props[compute_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
+   ctx->has_shader_int8 = vulkan12.shaderInt8;
+   ctx->has_shader_int64 = vulkan10.features.shaderInt64;
    ctx->has_shader_subgroup_clock = shader_clock.shaderSubgroupClock;
    ctx->max_uniform_buffer_range = device_properties.properties.limits.maxUniformBufferRange;
    ctx->max_storage_buffer_range = device_properties.properties.limits.maxStorageBufferRange;
