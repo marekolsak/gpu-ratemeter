@@ -31,24 +31,25 @@ Examples:
 `gpu-ratemeter [optional parameters] [api].[test]`
 
 The following APIs are supported:
-- `d3d11`: Direct3D 11 **{- (not implemented yet) -}**
-- `d3d12`: Direct3D 12 **{- (not implemented yet) -}**
+- ⏳*(not implemented yet)* `d3d11`: Direct3D 11
+- ⏳*(not implemented yet)* `d3d12`: Direct3D 12
 - `gl`: OpenGL (linked shaders only)
-- `vk`: Vulkan with regular graphics pipeline objects
-- `vkdyn`: Vulkan with all dynamic state
-- `vkgpl`: Vulkan with graphics pipeline libraries **{- (not implemented yet) -}**
+- `vk`: Vulkan with graphics pipeline objects and static state
+- `vkd`: Vulkan with graphics pipeline objects and dynamic state
+- ⏳*(not implemented yet)* `vkl`: Vulkan with graphics pipeline libraries and static state
+- ⏳*(not implemented yet)* `vkld`: Vulkan with graphics pipeline libraries and dynamic state
+- ⏳*(not implemented yet)* `vkeso`: Vulkan with VK_EXT_shader_object
 
 The following tests are available:
 - `bufbw`: buffer fills and copies in GB/s
-- `draw`: clocks/draw (less is better) **{- (not implemented yet) -}**
-- `mma`: matrix multiply accumulate in TBD units **{- (not implemented yet) -}**
-- `imgbw`: image clears, image copies, blits, and MSAA resolve in GB/s **{- (not finished yet) -}**
-- `iobw`: shader input and output throughput in GB/s, including transform feedback **{- (not implemented yet, port from piglit) -}**
+- ⏳*(not implemented yet)* `draw`: clocks/draw (less is better)
+- ⏳*(mostly finished)* `imgbw`: image clears, image copies, blits, and MSAA resolve in GB/s
+- ⏳*(not implemented yet)* `iobw`: shader input and output throughput in GB/s, including transform feedback
 - `latency`: memory load latency in clock cycles
 - `pix`: pixel throughput in samples/clock, all subtests are run with 1x MSAA and 8x MSAA
 - `pixbw`: color buffer write throughput in GB/s, same subtests as `pix`
 - `prim`: primitive throughput in primitives/clock
-- `rt`: ray tracing performance in rays/clock **{- (not implemented yet) -}**
+- ⏳*(not implemented yet)* `rt`: ray tracing performance in rays/clock
 - `sanity`: verify that the API works by drawing an object and saving the result into a PNG file
 - `sparsebind`: sparse bind throughput in API calls/s
 

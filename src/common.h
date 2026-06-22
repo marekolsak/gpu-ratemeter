@@ -295,14 +295,14 @@ typedef struct {
 
 #define MAX_COMMAND_BUFFERS   1024
 
-enum {
-   API_VK_CORE,
-   API_VK_DYNAMIC_STATE,
-};
+typedef enum {
+   API_VK_DYNAMIC_STATE = 1 << 0,
+   API_VK_GPL = 1 << 1,
+} api_flags;
 
 typedef struct {
    /* API and test options. */
-   unsigned api_flavor;
+   api_flags api_flags;
    bool report_bandwidth;
 
    /* Bool options.*/

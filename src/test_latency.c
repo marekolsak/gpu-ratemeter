@@ -123,7 +123,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
                       "\n"
                       "      for (int j = 0; j < num; j++) \n"
-                      "         offset = OFFSETS[offset / 4].x; \n"
+                      "         offset = OFFSETS[offset / 4]; \n"
                       "\n"
                       "      uint64_t end = clockARB(); \n"
                       "      accum += subtract(end, start); \n"
@@ -131,7 +131,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   } \n"
                       "#else \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      offset = OFFSETS[offset / 4].x; \n"
+                      "      offset = OFFSETS[offset / 4]; \n"
                       "#endif \n"
                       "\n"
 

@@ -12,7 +12,8 @@
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
- * - latency: instruction fetch (jump chasing)
+ * - latency: instruction fetch (jump chasing); to remove LSB masking, add -bda as alternative to SSBOs
+ *   and -int8 to load uint as 4x int8 for shared memory
  *
  * APIs:
  * - Vulkan modes: GPL, KSO
@@ -24,6 +25,7 @@
  * bufbw:
  * - VK_KHR_copy_memory_indirect
  * - transfer queue
+ * - compute queue (its CP DMA is slower according to https://gitlab.freedesktop.org/mesa/mesa/-/work_items/15633)
  *
  * imgbw:
  * - clears:
@@ -37,10 +39,17 @@
  * - transfer queue
  *
  * pix:
+ * - 2x MSAA
  * - ztest.pass + discard (RB+)
- * - multiview (also viewindex FS sysval overhead)
- * - render to 3D texture?
+ * - VRS rates with helper invocations
+ * - multiview + viewindex FS sysval
+ * - layer FS sysval
+ * - VRS rate FS sysval
+ * - FullyCoveredEXT with and without VRS
+ * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
+ * - render to 3D texture
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
+ * - create pipelines in parallel using OpenMP
  *
  * prim:
  * - VS + transform feedback
@@ -53,6 +62,8 @@
  * - multiview
  * - task shader
  * - fill the screen in the Morton order instead of linearly
+ * - 1-primitive instances/clock
+ * - 1-primitive draws in a multidraw, prims/clock == draws/clock
  */
 
 #include <inttypes.h>
@@ -89,13 +100,17 @@ get_substring_before_dot(const char *input, char *output, unsigned output_max_si
 static const struct {
    const char *name;
    api_context *(*create_context)(const program_options *options);
-   unsigned api_flavor;
+   api_flags api_flags;
 } apis[] = {
    {"d3d11", d3d11_create_context},
    {"d3d12", d3d12_create_context},
    {"gl", gl_create_context},
-   {"vk", vk_create_context, API_VK_CORE},
-   {"vkdyn", vk_create_context, API_VK_DYNAMIC_STATE},
+   {"vk", vk_create_context, 0},
+   {"vkd", vk_create_context, API_VK_DYNAMIC_STATE},
+   #if 0
+   {"vkl", vk_create_context, API_VK_GPL},
+   {"vkld", vk_create_context, API_VK_GPL | API_VK_DYNAMIC_STATE},
+   #endif
 };
 
 static const struct {
@@ -213,7 +228,7 @@ main(int argc, char **argv)
 
    for (unsigned i = 0; i < ARRAY_SIZE(apis); i++) {
       if (!strcmp(api, apis[i].name)) {
-         options.api_flavor = apis[i].api_flavor;
+         options.api_flags = apis[i].api_flags;
          ctx = apis[i].create_context(&options);
          break;
       }

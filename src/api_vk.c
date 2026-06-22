@@ -599,7 +599,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->colorbuf = colorbuf;
    fb->zbuf = zbuf;
 
-   if (ctx->options.api_flavor == API_VK_CORE) {
+   if (!(ctx->options.api_flags & API_VK_DYNAMIC_STATE)) {
       fb->colorbuf_att_index = 0;
       fb->zbuf_att_index = 0;
       fb->num_attachments = 0;
@@ -699,7 +699,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
 static void
 vk_destroy_framebuffer(api_context *ctx, api_framebuffer *fb)
 {
-   if (ctx->options.api_flavor == API_VK_CORE) {
+   if (!(ctx->options.api_flags & API_VK_DYNAMIC_STATE)) {
       for (unsigned clear = 0; clear < 2; clear++) {
          vkDestroyFramebuffer(ctx->device, fb->fb[clear], NULL);
          vkDestroyRenderPass(ctx->device, fb->render_pass[clear], NULL);
@@ -1061,7 +1061,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       };
    }
 
-   bool uses_dynamic_state = ctx->options.api_flavor >= API_VK_DYNAMIC_STATE;
+   bool uses_dynamic_state = ctx->options.api_flags & API_VK_DYNAMIC_STATE;
    VkDynamicState dynamic_states[20] = {
       VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT,
       VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT,
@@ -1209,7 +1209,7 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
    ctx->current_pipeline = pipeline;
    vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 
-   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+   if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       if (!pipeline->desc.ms) {
          ctx->vkCmdSetVertexInputEXT(ctx->current_cmd_buffer,
                                      pipeline->num_vb_desc, pipeline->dyn_vi_bindings,
@@ -1371,7 +1371,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
    }
 
-   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+   if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       vkCmdBeginRendering(ctx->current_cmd_buffer,
                           &(VkRenderingInfo){
                              .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -1452,7 +1452,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 static void
 vk_end_render_pass(api_context *ctx)
 {
-   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE)
+   if (ctx->options.api_flags & API_VK_DYNAMIC_STATE)
       vkCmdEndRendering(ctx->current_cmd_buffer);
    else
       vkCmdEndRenderPass(ctx->current_cmd_buffer);
@@ -1836,7 +1836,7 @@ vk_create_context(const program_options *options)
       enabled_extensions[num_enabled_extensions++] = "VK_AMD_device_coherent_memory";
    }
 
-   if (ctx->options.api_flavor >= API_VK_DYNAMIC_STATE) {
+   if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       if (!vulkan13.dynamicRendering)
          error("dynamicRendering is required.");
       if (!vi_dyn.vertexInputDynamicState)
