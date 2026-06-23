@@ -336,15 +336,29 @@ typedef enum {
    WA_RDNA4_TIMESTAMP_BUG,
 } driver_wa;
 
+typedef enum {
+   api_queue_gfx,
+   api_queue_compute,
+   api_queue_transfer,
+   api_queue_sparse,
+   api_num_queues,
+} api_queue_type;
+
+#define api_wait_gfx          (1 << api_queue_gfx)
+#define api_wait_compute      (1 << api_queue_compute)
+#define api_wait_transfer     (1 << api_queue_transfer)
+#define api_wait_sparse       (1 << api_queue_sparse)
+#define api_wait_all_queues   ((1 << api_num_queues) - 1)
+
 typedef struct api_context {
    program_options options;
 
    /* Core properties. */
    bool has_heap[api_num_heaps];
+   bool has_queue[api_num_queues];
    double timestamp_period_in_seconds;
 
    /* Feature properties. */
-   bool has_async_sparse_queue;
    bool has_blit_image_3d;
    bool has_blit_image_msaa;
    bool has_buffer_device_address;
@@ -382,7 +396,8 @@ typedef struct api_context {
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
    void (*buffer_bind_sparse)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
-                              uint64_t size, bool bind, api_fence **signal_fence);
+                              uint64_t size, bool bind, api_queue_type queue,
+                              api_fence *wait_fence, api_fence **signal_fence);
 
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
@@ -438,8 +453,9 @@ typedef struct api_context {
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
    void (*pipeline_barrier_buffer)(struct api_context *ctx, api_buffer *buf);
 
-   void (*begin_cmdbuf)(struct api_context *ctx);
-   void (*end_cmdbuf_and_submit)(struct api_context *ctx, api_fence *wait_fence);
+   void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);
+   void (*end_cmdbuf_and_submit)(struct api_context *ctx, unsigned wait_queue_mask,
+                                 api_fence *wait_fence, api_fence **signal_fence);
    void (*wait_idle_before_deallocation)(struct api_context *ctx);
 
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
@@ -466,11 +482,12 @@ typedef struct api_context {
    api_pipeline *current_pipeline;
 
    /* Device. */
+   unsigned num_extensions;
+   VkExtensionProperties *extensions;
    VkPhysicalDeviceMemoryProperties memory_properties;
    VkDevice device;
-   VkQueue gfx_queue;
-   VkQueue compute_queue;
-   VkQueue sparse_queue;
+   VkQueue queue[api_num_queues];
+   VkCommandPool cmd_pool[api_num_queues];
 
    /* Extension functions. */
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
@@ -484,12 +501,10 @@ typedef struct api_context {
    PFN_vkCmdSetFragmentShadingRateKHR vkCmdSetFragmentShadingRateKHR;
 
    /* Command buffers. */
-   VkCommandPool cmd_buffer_pool;
-   VkCommandBuffer cmd_buffers[MAX_COMMAND_BUFFERS];
-   VkSemaphore gfx_semaphore;
-   uint64_t gfx_timeline_point;
-   VkSemaphore sparse_semaphore;
-   uint64_t sparse_timeline_point;
+   VkCommandBuffer cmd_buffers[api_num_queues][MAX_COMMAND_BUFFERS];
+   VkSemaphore semaphore[api_num_queues];
+   uint64_t timeline_point[api_num_queues];
+   api_queue_type current_queue;
    VkCommandBuffer current_cmd_buffer;
 
    /* Descriptor pool. */
@@ -497,7 +512,7 @@ typedef struct api_context {
    unsigned num_allocated_desc_sets;
    VkPipelineLayout empty_pipeline_layout;
 
-   /* Compiler. */
+   /* The GLSL compiler. */
    shaderc_compiler_t glsl_compiler;
    shaderc_compile_options_t glsl_compiler_options;
 #endif

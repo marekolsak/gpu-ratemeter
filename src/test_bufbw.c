@@ -189,7 +189,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                   (*num_tests)++;
 
                if (stage == RUN) {
-                  ctx->begin_cmdbuf(ctx);
+                  ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
                   for (unsigned iter = 0; iter < NUM_WARMUP_RUNS + NUM_RUNS; iter++) {
                      if (iter == NUM_WARMUP_RUNS)
@@ -222,7 +222,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                   }
 
                   ctx->write_next_timestamp(ctx, timestamps);
-                  ctx->end_cmdbuf_and_submit(ctx, NULL);
+                  ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                }
 
                if (stage == REPORT) {

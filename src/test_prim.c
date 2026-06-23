@@ -1306,7 +1306,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
 
    assert(state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
-   ctx->begin_cmdbuf(ctx);
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->bind_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
    unsigned count = 0;
@@ -1346,7 +1346,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    ctx->end_render_pass(ctx);
    ctx->write_next_timestamp(ctx, state->timestamps);
 
-   ctx->end_cmdbuf_and_submit(ctx, NULL);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 }
 
 static void

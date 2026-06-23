@@ -53,6 +53,17 @@ vk_has_validation_layer(api_context *ctx)
    return false;
 }
 
+static bool
+has_extension(api_context *ctx, const char *name)
+{
+   for (unsigned i = 0; i < ctx->num_extensions; i++) {
+      if (!strcmp(ctx->extensions[i].extensionName, name))
+         return true;
+   }
+
+   return false;
+}
+
 static int
 vk_find_heap_with_flags(api_context *ctx, unsigned supported_heap_mask,
                         VkMemoryPropertyFlags require_flags, VkMemoryPropertyFlags disallow_flags)
@@ -148,13 +159,18 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
 static void
 vk_wait_for_idle(api_context *ctx)
 {
-   vk_check(vkWaitSemaphores(ctx->device,
-                             &(VkSemaphoreWaitInfo){
-                                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-                                .semaphoreCount = 1,
-                                .pSemaphores = &ctx->gfx_semaphore,
-                                .pValues = &ctx->gfx_timeline_point,
-                             }, UINT64_MAX));
+   for (unsigned i = 0; i < api_num_queues; i++) {
+      if (!ctx->has_queue[i])
+         continue;
+
+      vk_check(vkWaitSemaphores(ctx->device,
+                                &(VkSemaphoreWaitInfo){
+                                   .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                   .semaphoreCount = 1,
+                                   .pSemaphores = &ctx->semaphore[i],
+                                   .pValues = &ctx->timeline_point[i],
+                                }, UINT64_MAX));
+   }
 }
 
 static api_buffer *
@@ -302,45 +318,56 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                                (uint64_t[2]){src_offset, dst_offset}, (uint64_t[2]){size, size});
 }
 
+static api_fence *
+get_latest_fence(api_context *ctx, api_queue_type queue)
+{
+   api_fence *fence = calloc(1, sizeof(api_fence));
+
+   fence->semaphore = ctx->semaphore[queue];
+   fence->timeline_point = ctx->timeline_point[queue];
+   return fence;
+}
+
 static void
 vk_buffer_bind_sparse(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
-                      bool bind, api_fence **signal_fence)
+                      bool bind, api_queue_type queue, api_fence *wait_fence,
+                      api_fence **signal_fence)
 {
+   assert(ctx->has_queue[queue]);
    assert(offset % buf->sparse_block_size == 0);
    assert(size % buf->sparse_block_size == 0);
 
    uint64_t first_block = offset / buf->sparse_block_size;
    uint64_t num_blocks = size / buf->sparse_block_size;
 
-   if (signal_fence) {
-      assert(ctx->has_async_sparse_queue);
-      assert(ctx->sparse_timeline_point != UINT64_MAX);
-      ctx->sparse_timeline_point++;
+   assert(ctx->timeline_point[queue] != UINT64_MAX);
+   ctx->timeline_point[queue]++;
 
-      *signal_fence = calloc(1, sizeof(api_fence));
-      (*signal_fence)->semaphore = ctx->sparse_semaphore;
-      (*signal_fence)->timeline_point = ctx->sparse_timeline_point;
-   }
-
-   /* If signal_fence != NULL, use the async sparse queue. */
-   vk_check(vkQueueBindSparse(signal_fence ? ctx->sparse_queue : ctx->gfx_queue, 1,
+   vk_check(vkQueueBindSparse(ctx->queue[queue], 1,
                               &(VkBindSparseInfo){
                                  .sType = VK_STRUCTURE_TYPE_BIND_SPARSE_INFO,
+                                 .waitSemaphoreCount = !!wait_fence,
+                                 .pWaitSemaphores = wait_fence ? &wait_fence->semaphore : NULL,
                                  .bufferBindCount = 1,
                                  .pBufferBinds = &(VkSparseBufferMemoryBindInfo){
                                     .buffer = buf->buffer,
                                     .bindCount = num_blocks,
-                                    .pBinds = bind ? &buf->sparse_binds[first_block] :
-                                    &buf->sparse_unbinds[first_block],
+                                    .pBinds = bind ? &buf->sparse_binds[first_block]
+                                                   : &buf->sparse_unbinds[first_block],
                                  },
-                                 .signalSemaphoreCount = signal_fence ? 1 : 0,
-                                 .pSignalSemaphores = &ctx->sparse_semaphore,
+                                 .signalSemaphoreCount = 1,
+                                 .pSignalSemaphores = &ctx->semaphore[queue],
                                  .pNext = &(VkTimelineSemaphoreSubmitInfo){
                                     .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-                                    .signalSemaphoreValueCount = signal_fence ? 1 : 0,
-                                    .pSignalSemaphoreValues = &ctx->sparse_timeline_point,
+                                    .waitSemaphoreValueCount = !!wait_fence,
+                                    .pWaitSemaphoreValues = wait_fence ? &wait_fence->timeline_point : NULL,
+                                    .signalSemaphoreValueCount = 1,
+                                    .pSignalSemaphoreValues = &ctx->timeline_point[queue],
                                  },
                               }, NULL));
+
+   if (signal_fence)
+      *signal_fence = get_latest_fence(ctx, queue);
 }
 
 static void
@@ -988,9 +1015,9 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
 
    for (unsigned i = 0; i < num_images; i++) {
       if (images[i]->layout != VK_IMAGE_LAYOUT_GENERAL) {
-         ctx->begin_cmdbuf(ctx);
+         ctx->begin_cmdbuf(ctx, api_queue_gfx);
          vk_image_layout_transition(ctx, images[i], VK_IMAGE_LAYOUT_GENERAL);
-         ctx->end_cmdbuf_and_submit(ctx, NULL);
+         ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
       }
 
       image_infos[i].sampler = NULL;
@@ -1435,23 +1462,24 @@ vk_pipeline_barrier_buffer(struct api_context *ctx, api_buffer *buf)
 }
 
 static void
-vk_begin_cmdbuf(api_context *ctx)
+vk_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(ctx->current_cmd_buffer == NULL);
 
-   if (ctx->gfx_timeline_point >= MAX_COMMAND_BUFFERS - 1) {
-      uint64_t wait_point = ctx->gfx_timeline_point - 511;
+   if (ctx->timeline_point[queue] >= MAX_COMMAND_BUFFERS - 1) {
+      uint64_t wait_point = ctx->timeline_point[queue] - 511;
 
       vk_check(vkWaitSemaphores(ctx->device,
                                 &(VkSemaphoreWaitInfo){
                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                    .semaphoreCount = 1,
-                                   .pSemaphores = &ctx->gfx_semaphore,
+                                   .pSemaphores = &ctx->semaphore[queue],
                                    .pValues = &wait_point,
                                 }, UINT64_MAX));
    }
 
-   ctx->current_cmd_buffer = ctx->cmd_buffers[ctx->gfx_timeline_point % MAX_COMMAND_BUFFERS];
+   ctx->current_queue = queue;
+   ctx->current_cmd_buffer = ctx->cmd_buffers[queue][ctx->timeline_point[queue] % MAX_COMMAND_BUFFERS];
    vk_check(vkBeginCommandBuffer(ctx->current_cmd_buffer,
                                  &(VkCommandBufferBeginInfo) {
                                     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -1459,23 +1487,46 @@ vk_begin_cmdbuf(api_context *ctx)
 }
 
 static void
-vk_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
+vk_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *wait_fence,
+                         api_fence **signal_fence)
 {
+   api_queue_type queue = ctx->current_queue;
+
    vk_check(vkEndCommandBuffer(ctx->current_cmd_buffer));
 
-   assert(ctx->gfx_timeline_point != UINT64_MAX);
-   ctx->gfx_timeline_point++;
+   /* Gather wait semaphores. */
+   unsigned num_wait_semaphores = 0;
+   VkSemaphoreSubmitInfo wait_semaphores[api_num_queues + 1];
 
-   vk_check(vkQueueSubmit2(ctx->gfx_queue, 1,
+   for (unsigned i = 0; i < api_num_queues; i++) {
+      if (ctx->has_queue[i] && i != queue && (wait_queue_mask & (1 << i))) {
+         wait_semaphores[num_wait_semaphores++] = (VkSemaphoreSubmitInfo){
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = ctx->semaphore[i],
+            .value = ctx->timeline_point[i],
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+         };
+      }
+   }
+
+   if (wait_fence) {
+      wait_semaphores[num_wait_semaphores++] = (VkSemaphoreSubmitInfo){
+         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+         .semaphore = wait_fence ? wait_fence->semaphore : NULL,
+         .value = wait_fence ? wait_fence->timeline_point : 0,
+         .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+      };
+   }
+
+   /* Submit. */
+   assert(ctx->timeline_point[queue] != UINT64_MAX);
+   ctx->timeline_point[queue]++;
+
+   vk_check(vkQueueSubmit2(ctx->queue[queue], 1,
       &(VkSubmitInfo2) {
          .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-         .waitSemaphoreInfoCount = wait_fence ? 1 : 0,
-         .pWaitSemaphoreInfos = &(VkSemaphoreSubmitInfo){
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = wait_fence ? wait_fence->semaphore : NULL,
-            .value = wait_fence ? wait_fence->timeline_point : 0,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-         },
+         .waitSemaphoreInfoCount = num_wait_semaphores,
+         .pWaitSemaphoreInfos = wait_semaphores,
          .commandBufferInfoCount = 1,
          .pCommandBufferInfos = &(VkCommandBufferSubmitInfo){
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
@@ -1484,14 +1535,17 @@ vk_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
          .signalSemaphoreInfoCount = 1,
          .pSignalSemaphoreInfos = &(VkSemaphoreSubmitInfo){
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = ctx->gfx_semaphore,
-            .value = ctx->gfx_timeline_point,
+            .semaphore = ctx->semaphore[queue],
+            .value = ctx->timeline_point[queue],
             .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
          },
       }, NULL));
 
    ctx->current_cmd_buffer = NULL;
    ctx->current_pipeline = NULL;
+
+   if (signal_fence)
+      *signal_fence = get_latest_fence(ctx, queue);
 }
 
 static void
@@ -1670,9 +1724,9 @@ vk_create_timestamp_pool(api_context *ctx, unsigned num_queries)
                                  .queryCount = num_queries,
                               }, NULL, &pool->pool));
 
-   vk_begin_cmdbuf(ctx);
+   vk_begin_cmdbuf(ctx, api_queue_gfx);
    vkCmdResetQueryPool(ctx->current_cmd_buffer, pool->pool, 0, pool->num_queries);
-   vk_end_cmdbuf_and_submit(ctx, NULL);
+   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
    return pool;
 }
@@ -1711,7 +1765,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
    memcpy(map, data, size);
    vkUnmapMemory(ctx->device, *staging->mem);
 
-   vk_begin_cmdbuf(ctx);
+   vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
                     &(VkCopyBufferInfo2) {
@@ -1727,7 +1781,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
                        },
                     });
    vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
-   vk_end_cmdbuf_and_submit(ctx, NULL);
+   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
 static void
@@ -1736,7 +1790,7 @@ vk_get_buffer_data(struct api_context *ctx, api_buffer *buf, uint64_t offset, ui
 {
    api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_cached, 0);
 
-   vk_begin_cmdbuf(ctx);
+   vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
                     &(VkCopyBufferInfo2) {
@@ -1751,7 +1805,7 @@ vk_get_buffer_data(struct api_context *ctx, api_buffer *buf, uint64_t offset, ui
                           .size = size,
                        },
                     });
-   vk_end_cmdbuf_and_submit(ctx, NULL);
+   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
    void *map;
@@ -1769,7 +1823,7 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
                                         api_heap_host_cached);
 
-   vk_begin_cmdbuf(ctx);
+   vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
    vk_image_layout_transition(ctx, staging, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -1797,7 +1851,7 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                          .dstOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
                       },
                   });
-   vk_end_cmdbuf_and_submit(ctx, NULL);
+   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
    void *map;
@@ -1843,273 +1897,511 @@ vk_create_context(const program_options *options)
 
    VkPhysicalDevice physical_device = devices[ctx->options.device];
 
-   VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl = {
+   /* Get the extension list. */
+   vk_check(vkEnumerateDeviceExtensionProperties(physical_device, NULL, &ctx->num_extensions, NULL));
+   ctx->extensions = calloc(ctx->num_extensions, sizeof(VkExtensionProperties));
+   vk_check(vkEnumerateDeviceExtensionProperties(physical_device, NULL, &ctx->num_extensions,
+                                                 ctx->extensions));
+
+   /* Get properties. */
+   VkPhysicalDeviceProperties2 device_props = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+   };
+   VkPhysicalDeviceMeshShaderPropertiesEXT EXT_mesh_shader_props = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT,
+   };
+
+   void **pNext = &device_props.pNext;
+
+   if (has_extension(ctx, VK_EXT_MESH_SHADER_EXTENSION_NAME))
+      chain_next(pNext, &EXT_mesh_shader_props);
+
+   vkGetPhysicalDeviceProperties2(physical_device, &device_props);
+   printf("Selected device: %s\n", device_props.properties.deviceName);
+
+   /* Core features. */
+   VkPhysicalDeviceFeatures2 Vulkan10 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+   };
+   VkPhysicalDeviceFeatures2 enabled_Vulkan10 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+   };
+
+   VkPhysicalDeviceVulkan11Features Vulkan11 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+   };
+   VkPhysicalDeviceVulkan11Features enabled_Vulkan11 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+   };
+
+   VkPhysicalDeviceVulkan12Features Vulkan12 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+   };
+   VkPhysicalDeviceVulkan12Features enabled_Vulkan12 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+   };
+
+   VkPhysicalDeviceVulkan13Features Vulkan13 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+   };
+   VkPhysicalDeviceVulkan13Features enabled_Vulkan13 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+   };
+
+   /* KHR extensions. */
+   VkPhysicalDeviceFragmentShadingRateFeaturesKHR KHR_fragment_shading_rate = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
+   };
+   VkPhysicalDeviceFragmentShadingRateFeaturesKHR enabled_KHR_fragment_shading_rate = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
+   };
+
+   VkPhysicalDeviceMaintenance5FeaturesKHR KHR_maintenance5 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
+   };
+   VkPhysicalDeviceMaintenance5FeaturesKHR enabled_KHR_maintenance5 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
+   };
+
+   VkPhysicalDeviceShaderClockFeaturesKHR KHR_shader_clock = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+   };
+   VkPhysicalDeviceShaderClockFeaturesKHR enabled_KHR_shader_clock = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+   };
+
+   /* EXT extensions. */
+   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT EXT_extended_dynamic_state3 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+   };
+   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT enabled_EXT_extended_dynamic_state3 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
+   };
+
+   VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT EXT_graphics_pipeline_library = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,
    };
-   VkPhysicalDeviceCoherentMemoryFeaturesAMD coherent_memory_amd = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,
-      .pNext = &gpl,
+   VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT enabled_EXT_graphics_pipeline_library = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT,
    };
-   VkPhysicalDeviceShaderClockFeaturesKHR shader_clock = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
-      .pNext = &coherent_memory_amd,
-   };
-   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT ext_dyn3 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
-      .pNext = &shader_clock,
-   };
-   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT vi_dyn = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
-      .pNext = &ext_dyn3,
-   };
-   VkPhysicalDeviceFragmentShadingRateFeaturesKHR vrs = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
-      .pNext = &vi_dyn,
-   };
-   VkPhysicalDeviceMeshShaderFeaturesEXT mesh = {
+
+   VkPhysicalDeviceMeshShaderFeaturesEXT EXT_mesh_shader = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
-      .pNext = &vrs,
    };
-   VkPhysicalDeviceTransformFeedbackFeaturesEXT xfb = {
+   VkPhysicalDeviceMeshShaderFeaturesEXT enabled_EXT_mesh_shader = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
+   };
+
+   VkPhysicalDeviceTransformFeedbackFeaturesEXT EXT_transform_feedback = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT,
-      .pNext = &mesh,
    };
-   VkPhysicalDeviceVulkan13Features vulkan13 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-      .pNext = &xfb,
-   };
-   VkPhysicalDeviceVulkan12Features vulkan12 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .pNext = &vulkan13,
-   };
-   VkPhysicalDeviceVulkan11Features vulkan11 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-      .pNext = &vulkan12,
-   };
-   VkPhysicalDeviceFeatures2 vulkan10 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-      .pNext = &vulkan11,
+   VkPhysicalDeviceTransformFeedbackFeaturesEXT enabled_EXT_transform_feedback = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT,
    };
 
-   void **pNext = &vulkan10.pNext;
+   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT EXT_vertex_input_dynamic_state = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
+   };
+   VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT enabled_EXT_vertex_input_dynamic_state = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT,
+   };
 
-   vkGetPhysicalDeviceFeatures2(physical_device, &vulkan10);
+   /* AMD extensions. */
+   VkPhysicalDeviceCoherentMemoryFeaturesAMD AMD_device_coherent_memory = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,
+   };
+   VkPhysicalDeviceCoherentMemoryFeaturesAMD enabled_AMD_device_coherent_memory = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD,
+   };
+
+   /* Chain the feature structures and build the enabled extension list. */
+   unsigned num_enabled_extensions = 0;
+   const char *enabled_extensions[20];
+
+   void **supported_pNext = &Vulkan10.pNext;
+   void **enabled_pNext = &enabled_Vulkan10.pNext;
+
+#define chain_features(features) do { \
+      chain_next(supported_pNext, &(features)); \
+      chain_next(enabled_pNext, &(enabled_##features)); \
+   } while (0)
+
+#define check_add_ext_no_features(name) do { \
+      if (has_extension(ctx, (name))) { \
+         assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions)); \
+         enabled_extensions[num_enabled_extensions++] = (name); \
+      } \
+   } while (0)
+
+#define check_add_ext(name, features) do { \
+      if (has_extension(ctx, (name))) { \
+         assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions)); \
+         enabled_extensions[num_enabled_extensions++] = (name); \
+         chain_features(features); \
+      } \
+   } while (0)
+
+   chain_features(Vulkan11);
+   chain_features(Vulkan12);
+   chain_features(Vulkan13);
+
+   check_add_ext(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, KHR_fragment_shading_rate);
+   check_add_ext(VK_KHR_MAINTENANCE_5_EXTENSION_NAME, KHR_maintenance5);
+   check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+   check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
+
+   check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, EXT_extended_dynamic_state3);
+   check_add_ext(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, EXT_graphics_pipeline_library);
+   check_add_ext(VK_EXT_MESH_SHADER_EXTENSION_NAME, EXT_mesh_shader);
+   check_add_ext(VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME, EXT_transform_feedback);
+   check_add_ext(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, EXT_vertex_input_dynamic_state);
+
+   check_add_ext(VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME, AMD_device_coherent_memory);
+
+   vkGetPhysicalDeviceFeatures2(physical_device, &Vulkan10);
    vkGetPhysicalDeviceMemoryProperties(physical_device, &ctx->memory_properties);
 
-   VkPhysicalDeviceExtendedDynamicState3PropertiesEXT ext_dyn3_properties = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT,
-   };
-   VkPhysicalDeviceMeshShaderPropertiesEXT mesh_properties = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT,
-      .pNext = &ext_dyn3_properties,
-   };
-   VkPhysicalDeviceProperties2 device_properties = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-      .pNext = &mesh_properties,
-   };
-   vkGetPhysicalDeviceProperties2(physical_device, &device_properties);
-   printf("Selected device: %s\n", device_properties.properties.deviceName);
-
-   /* Check that the first queue support graphics. */
+   /* Get queue support. */
    unsigned num_queue_families;
    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, NULL);
+
    if (!num_queue_families)
-      error("vkGetPhysicalDeviceQueueFamilyProperties returned num_queue_families=0");
+      error("vkGetPhysicalDeviceQueueFamilyProperties returned num_queue_families=0.");
 
    VkQueueFamilyProperties *queue_props = alloca(sizeof(queue_props[0]) * num_queue_families);
    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_props);
 
-   int gfx_queue_family_index = -1;
-   int compute_queue_family_index = -1;
+   const unsigned queue_require_flags[api_num_queues] = {
+      [api_queue_gfx] = VK_QUEUE_GRAPHICS_BIT,
+      [api_queue_compute] = VK_QUEUE_COMPUTE_BIT,
+      [api_queue_transfer] = VK_QUEUE_TRANSFER_BIT,
+      [api_queue_sparse] = VK_QUEUE_SPARSE_BINDING_BIT,
+   };
+   const unsigned queue_disallow_flags[api_num_queues] = {
+      [api_queue_gfx] = 0,
+      [api_queue_compute] = VK_QUEUE_GRAPHICS_BIT,
+      [api_queue_transfer] = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
+      [api_queue_sparse] = VK_QUEUE_GRAPHICS_BIT,
+   };
+   float default_queue_priorities[api_num_queues];
 
-   for (unsigned i = 0; i < num_queue_families; i++) {
-      if (gfx_queue_family_index == -1 && queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-         gfx_queue_family_index = i;
+   for (unsigned i = 0; i < api_num_queues; i++)
+      default_queue_priorities[i] = 1;
 
-      if (compute_queue_family_index == -1 && !(queue_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-          queue_props[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
-         compute_queue_family_index = i;
+   unsigned queue_type_to_family[api_num_queues] = {0};
+   unsigned queue_type_to_index[api_num_queues] = {0};
+   unsigned num_queue_infos = 0;
+   VkDeviceQueueCreateInfo *queue_infos = calloc(num_queue_families, sizeof(*queue_infos));
+
+   for (unsigned family = 0; family < num_queue_families; family++) {
+      for (unsigned type = 0; type < api_num_queues; type++) {
+         if (!ctx->has_queue[type] && queue_props[family].queueFlags & queue_require_flags[type] &&
+             !(queue_props[family].queueFlags & queue_disallow_flags[type])) {
+
+            /* Find the family in the infos. */
+            int info_index;
+            for (info_index = 0; info_index < num_queue_infos; info_index++) {
+               if (queue_infos[info_index].queueFamilyIndex == family)
+                  break;
+            }
+
+            if (info_index == num_queue_infos) {
+               /* Add a new info structure. */
+               queue_infos[info_index].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+               queue_infos[info_index].queueFamilyIndex = family;
+               queue_infos[info_index].pQueuePriorities = default_queue_priorities;
+               num_queue_infos++;
+            }
+
+            ctx->has_queue[type] = true;
+            queue_type_to_family[type] = family;
+            queue_type_to_index[type] = queue_infos[info_index].queueCount++;
+         }
+      }
    }
 
-   if (gfx_queue_family_index == -1)
-      error("VK_QUEUE_GRAPHICS_BIT not supported");
+   if (!ctx->has_queue[api_queue_gfx])
+      error("VK_QUEUE_GRAPHICS_BIT support is required.");
 
-   unsigned num_enabled_extensions = 0;
-   const char *enabled_extensions[20];
+#define require(field) do { \
+      if (!field) \
+         error(#field " is required."); \
+      enabled_##field = field; \
+   } while (0)
 
-   if (vi_dyn.vertexInputDynamicState) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME;
-   }
+#define optional(field) enabled_##field = field
 
-   if (vrs.pipelineFragmentShadingRate) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
-      vrs.attachmentFragmentShadingRate = false;
-   }
+   //require(Vulkan10.features.robustBufferAccess);
+   require(Vulkan10.features.fullDrawIndexUint32);
+   //require(Vulkan10.features.imageCubeArray);
+   //require(Vulkan10.features.independentBlend);
+   require(Vulkan10.features.geometryShader);
+   //require(Vulkan10.features.tessellationShader);
+   require(Vulkan10.features.sampleRateShading);
+   //require(Vulkan10.features.dualSrcBlend);
+   //require(Vulkan10.features.logicOp);
+   //require(Vulkan10.features.multiDrawIndirect);
+   //require(Vulkan10.features.drawIndirectFirstInstance);
+   //require(Vulkan10.features.depthClamp);
+   //require(Vulkan10.features.depthBiasClamp);
+   //require(Vulkan10.features.fillModeNonSolid);
+   //require(Vulkan10.features.depthBounds);
+   //require(Vulkan10.features.wideLines);
+   //require(Vulkan10.features.largePoints);
+   //require(Vulkan10.features.alphaToOne);
+   //require(Vulkan10.features.multiViewport);
+   //require(Vulkan10.features.samplerAnisotropy);
+   //require(Vulkan10.features.textureCompressionETC2);
+   //require(Vulkan10.features.textureCompressionASTC_LDR);
+   //require(Vulkan10.features.textureCompressionBC);
+   //require(Vulkan10.features.occlusionQueryPrecise);
+   require(Vulkan10.features.pipelineStatisticsQuery);
+   require(Vulkan10.features.vertexPipelineStoresAndAtomics);
+   require(Vulkan10.features.fragmentStoresAndAtomics);
+   //require(Vulkan10.features.shaderTessellationAndGeometryPointSize);
+   //require(Vulkan10.features.shaderImageGatherExtended);
+   require(Vulkan10.features.shaderStorageImageExtendedFormats);
+   //require(Vulkan10.features.shaderStorageImageMultisample);
+   require(Vulkan10.features.shaderStorageImageReadWithoutFormat);
+   require(Vulkan10.features.shaderStorageImageWriteWithoutFormat);
+   //require(Vulkan10.features.shaderUniformBufferArrayDynamicIndexing);
+   //require(Vulkan10.features.shaderSampledImageArrayDynamicIndexing);
+   //require(Vulkan10.features.shaderStorageBufferArrayDynamicIndexing);
+   //require(Vulkan10.features.shaderStorageImageArrayDynamicIndexing);
+   require(Vulkan10.features.shaderClipDistance);
+   require(Vulkan10.features.shaderCullDistance);
+   //require(Vulkan10.features.shaderFloat64);
+   optional(Vulkan10.features.shaderInt64);
+   //require(Vulkan10.features.shaderInt16);
+   //require(Vulkan10.features.shaderResourceResidency);
+   //require(Vulkan10.features.shaderResourceMinLod);
+   optional(Vulkan10.features.sparseBinding);
+   optional(Vulkan10.features.sparseResidencyBuffer);
+   //require(Vulkan10.features.sparseResidencyImage2D);
+   //require(Vulkan10.features.sparseResidencyImage3D);
+   //require(Vulkan10.features.sparseResidency2Samples);
+   //require(Vulkan10.features.sparseResidency4Samples);
+   //require(Vulkan10.features.sparseResidency8Samples);
+   //require(Vulkan10.features.sparseResidency16Samples);
+   //require(Vulkan10.features.sparseResidencyAliased);
+   //require(Vulkan10.features.variableMultisampleRate);
+   //require(Vulkan10.features.inheritedQueries);
 
-   if (mesh.meshShader) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_EXT_MESH_SHADER_EXTENSION_NAME;
-   }
+   //require(Vulkan11.storageBuffer16BitAccess);
+   //require(Vulkan11.uniformAndStorageBuffer16BitAccess);
+   //require(Vulkan11.storagePushConstant16);
+   //require(Vulkan11.storageInputOutput16);
+   //require(Vulkan11.multiview);
+   //require(Vulkan11.multiviewGeometryShader);
+   //require(Vulkan11.multiviewTessellationShader);
+   //require(Vulkan11.variablePointersStorageBuffer);
+   //require(Vulkan11.variablePointers);
+   //require(Vulkan11.protectedMemory);
+   //require(Vulkan11.samplerYcbcrConversion);
+   //require(Vulkan11.shaderDrawParameters);
 
-   if (xfb.transformFeedback) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME;
-   }
+   //require(Vulkan12.samplerMirrorClampToEdge);
+   //require(Vulkan12.drawIndirectCount);
+   optional(Vulkan12.storageBuffer8BitAccess);
+   //require(Vulkan12.uniformAndStorageBuffer8BitAccess);
+   //require(Vulkan12.storagePushConstant8);
+   //require(Vulkan12.shaderBufferInt64Atomics);
+   //require(Vulkan12.shaderSharedInt64Atomics);
+   //require(Vulkan12.shaderFloat16);
+   optional(Vulkan12.shaderInt8);
+   //require(Vulkan12.descriptorIndexing);
+   //require(Vulkan12.shaderInputAttachmentArrayDynamicIndexing);
+   require(Vulkan12.shaderUniformTexelBufferArrayDynamicIndexing);
+   //require(Vulkan12.shaderStorageTexelBufferArrayDynamicIndexing);
+   //require(Vulkan12.shaderUniformBufferArrayNonUniformIndexing);
+   //require(Vulkan12.shaderSampledImageArrayNonUniformIndexing);
+   //require(Vulkan12.shaderStorageBufferArrayNonUniformIndexing);
+   //require(Vulkan12.shaderStorageImageArrayNonUniformIndexing);
+   //require(Vulkan12.shaderInputAttachmentArrayNonUniformIndexing);
+   //require(Vulkan12.shaderUniformTexelBufferArrayNonUniformIndexing);
+   //require(Vulkan12.shaderStorageTexelBufferArrayNonUniformIndexing);
+   //require(Vulkan12.descriptorBindingUniformBufferUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingSampledImageUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingStorageImageUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingStorageBufferUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingUniformTexelBufferUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingStorageTexelBufferUpdateAfterBind);
+   //require(Vulkan12.descriptorBindingUpdateUnusedWhilePending);
+   //require(Vulkan12.descriptorBindingPartiallyBound);
+   //require(Vulkan12.descriptorBindingVariableDescriptorCount);
+   //require(Vulkan12.runtimeDescriptorArray);
+   //require(Vulkan12.samplerFilterMinmax);
+   //require(Vulkan12.scalarBlockLayout);
+   //require(Vulkan12.imagelessFramebuffer);
+   //require(Vulkan12.uniformBufferStandardLayout);
+   //require(Vulkan12.shaderSubgroupExtendedTypes);
+   require(Vulkan12.separateDepthStencilLayouts);
+   //require(Vulkan12.hostQueryReset);
+   require(Vulkan12.timelineSemaphore);
+   optional(Vulkan12.bufferDeviceAddress);
+   //require(Vulkan12.bufferDeviceAddressCaptureReplay);
+   //require(Vulkan12.bufferDeviceAddressMultiDevice);
+   //require(Vulkan12.vulkanMemoryModel);
+   //require(Vulkan12.vulkanMemoryModelDeviceScope);
+   //require(Vulkan12.vulkanMemoryModelAvailabilityVisibilityChains);
+   //require(Vulkan12.shaderOutputViewportIndex);
+   optional(Vulkan12.shaderOutputLayer);
+   //require(Vulkan12.subgroupBroadcastDynamicId);
 
-   if (ext_dyn3.extendedDynamicState3RasterizationSamples ||
-       ext_dyn3.extendedDynamicState3SampleMask ||
-       ext_dyn3.extendedDynamicState3AlphaToCoverageEnable ||
-       ext_dyn3.extendedDynamicState3ColorBlendEnable ||
-       ext_dyn3.extendedDynamicState3ColorBlendEquation ||
-       ext_dyn3.extendedDynamicState3ColorWriteMask) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME;
-   }
+   //require(Vulkan13.robustImageAccess);
+   //require(Vulkan13.inlineUniformBlock);
+   //require(Vulkan13.descriptorBindingInlineUniformBlockUpdateAfterBind);
+   //require(Vulkan13.pipelineCreationCacheControl);
+   //require(Vulkan13.privateData);
+   require(Vulkan13.shaderDemoteToHelperInvocation);
+   //require(Vulkan13.shaderTerminateInvocation);
+   //require(Vulkan13.subgroupSizeControl);
+   //require(Vulkan13.computeFullSubgroups);
+   require(Vulkan13.synchronization2);
+   //require(Vulkan13.textureCompressionASTC_HDR);
+   //require(Vulkan13.shaderZeroInitializeWorkgroupMemory);
+   //require(Vulkan13.shaderIntegerDotProduct);
+   //require(Vulkan13.maintenance4);
 
-   if (shader_clock.shaderSubgroupClock) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_KHR_SHADER_CLOCK_EXTENSION_NAME;
-   }
+   optional(KHR_fragment_shading_rate.pipelineFragmentShadingRate);
+   optional(KHR_fragment_shading_rate.primitiveFragmentShadingRate);
+   //optional(KHR_fragment_shading_rate.attachmentFragmentShadingRate);
 
-   if (coherent_memory_amd.deviceCoherentMemory) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME;
-   }
+   require(KHR_maintenance5.maintenance5);
 
-   if (gpl.graphicsPipelineLibrary) {
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
-      assert(num_enabled_extensions < ARRAY_SIZE(enabled_extensions));
-      enabled_extensions[num_enabled_extensions++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
-   }
+   optional(KHR_shader_clock.shaderSubgroupClock);
+   //optional(KHR_shader_clock.shaderDeviceClock);
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
-      if (!vulkan13.dynamicRendering)
-         error("dynamicRendering is required.");
-      if (!vi_dyn.vertexInputDynamicState)
-         error("VK_EXT_vertex_input_dynamic_state is required.");
-      if (!ext_dyn3.extendedDynamicState3RasterizationSamples)
-         error("extendedDynamicState3RasterizationSamples is required.");
-      if (!ext_dyn3.extendedDynamicState3SampleMask)
-         error("extendedDynamicState3SampleMask is required.");
-      if (!ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
-         error("extendedDynamicState3AlphaToCoverageEnable is required.");
-      if (!ext_dyn3.extendedDynamicState3ColorBlendEnable)
-         error("extendedDynamicState3ColorBlendEnable is required.");
-      if (!ext_dyn3.extendedDynamicState3ColorBlendEquation)
-         error("extendedDynamicState3ColorBlendEquation is required.");
-      if (!ext_dyn3.extendedDynamicState3ColorWriteMask)
-         error("extendedDynamicState3ColorWriteMask is required.");
+      require(Vulkan13.dynamicRendering);
+
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3TessellationDomainOrigin);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3DepthClampEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3SampleMask);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3AlphaToCoverageEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3AlphaToOneEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3LogicOpEnable);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEnable);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEquation);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3ColorWriteMask);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3RasterizationStream);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ConservativeRasterizationMode);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ExtraPrimitiveOverestimationSize);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3DepthClipEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3SampleLocationsEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendAdvanced);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ProvokingVertexMode);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3LineRasterizationMode);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3LineStippleEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3DepthClipNegativeOneToOne);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ViewportWScalingEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ViewportSwizzle);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageToColorEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageToColorLocation);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageModulationMode);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageModulationTableEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageModulationTable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3CoverageReductionMode);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3RepresentativeFragmentTestEnable);
+      //require(EXT_extended_dynamic_state3.extendedDynamicState3ShadingRateImageEnable);
+
+      require(EXT_vertex_input_dynamic_state.vertexInputDynamicState);
    }
 
-   if (ctx->options.api_flags & API_VK_GPL && !gpl.graphicsPipelineLibrary)
-      error("VK_EXT_graphics_pipeline_library is required.");
+   if (ctx->options.api_flags & API_VK_GPL)
+      require(EXT_graphics_pipeline_library.graphicsPipelineLibrary);
+
+   //optional(EXT_mesh_shader.taskShader);
+   optional(EXT_mesh_shader.meshShader);
+   //optional(EXT_mesh_shader.multiviewMeshShader);
+   optional(EXT_mesh_shader.primitiveFragmentShadingRateMeshShader);
+   //optional(EXT_mesh_shader.meshShaderQueries);
+
+   optional(EXT_transform_feedback.transformFeedback);
+   //optional(EXT_transform_feedback.geometryStreams);
+
+   optional(AMD_device_coherent_memory.deviceCoherentMemory);
 
    /* Open the device. */
    vk_check(vkCreateDevice(physical_device,
                            &(VkDeviceCreateInfo) {
                               .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                              .pNext = &vulkan10,
-                              .queueCreateInfoCount = compute_queue_family_index != -1 ? 2 : 1,
-                              .pQueueCreateInfos = (VkDeviceQueueCreateInfo[]) {
-                                 {
-                                    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                    .queueFamilyIndex = gfx_queue_family_index,
-                                    .queueCount = 1,
-                                    .pQueuePriorities = (float[]) {1},
-                                 },
-                                 {
-                                    .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                                    .queueFamilyIndex = compute_queue_family_index,
-                                    .queueCount = 2,
-                                    .pQueuePriorities = (float[]) {1, 1},
-                                 },
-                              },
+                              .pNext = &enabled_Vulkan10,
+                              .queueCreateInfoCount = num_queue_infos,
+                              .pQueueCreateInfos = queue_infos,
                               .enabledExtensionCount = num_enabled_extensions,
                               .ppEnabledExtensionNames = enabled_extensions,
                            },
                            NULL, &ctx->device));
+   free(queue_infos);
 
    /* Get extension functions. */
 #define GET_PROC_ADDR(name) ctx->name = (PFN_##name)vkGetDeviceProcAddr(ctx->device, #name)
 
-   if (vi_dyn.vertexInputDynamicState)
+   if (EXT_vertex_input_dynamic_state.vertexInputDynamicState)
       GET_PROC_ADDR(vkCmdSetVertexInputEXT);
-   if (mesh.meshShader)
+   if (EXT_mesh_shader.meshShader)
       GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
-   if (ext_dyn3.extendedDynamicState3RasterizationSamples)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples)
       GET_PROC_ADDR(vkCmdSetRasterizationSamplesEXT);
-   if (ext_dyn3.extendedDynamicState3SampleMask)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3SampleMask)
       GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
-   if (ext_dyn3.extendedDynamicState3AlphaToCoverageEnable)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3AlphaToCoverageEnable)
       GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
-   if (ext_dyn3.extendedDynamicState3ColorBlendEnable)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEnable)
       GET_PROC_ADDR(vkCmdSetColorBlendEnableEXT);
-   if (ext_dyn3.extendedDynamicState3ColorBlendEquation)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEquation)
       GET_PROC_ADDR(vkCmdSetColorBlendEquationEXT);
-   if (ext_dyn3.extendedDynamicState3ColorWriteMask)
+   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorWriteMask)
       GET_PROC_ADDR(vkCmdSetColorWriteMaskEXT);
-   if (vrs.pipelineFragmentShadingRate)
+   if (KHR_fragment_shading_rate.pipelineFragmentShadingRate)
       GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
 #undef GET_PROC_ADDR
 
    /* Get the queues. */
-   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
-                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-                        .queueFamilyIndex = gfx_queue_family_index,
-                        .queueIndex = 0,
-                     }, &ctx->gfx_queue);
+   for (unsigned i = 0; i < api_num_queues; i++) {
+      if (!ctx->has_queue[i])
+         continue;
 
-   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
-                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-                        .queueFamilyIndex = compute_queue_family_index,
-                        .queueIndex = 0,
-                     }, &ctx->compute_queue);
+      vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
+                           .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
+                           .queueFamilyIndex = queue_type_to_family[i],
+                           .queueIndex = queue_type_to_index[i],
+                        }, &ctx->queue[i]);
 
-   vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
-                        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-                        .queueFamilyIndex = compute_queue_family_index,
-                        .queueIndex = 1,
-                     }, &ctx->sparse_queue);
+      if (i != api_queue_sparse) {
+         vk_check(vkCreateCommandPool(ctx->device,
+                                      &(const VkCommandPoolCreateInfo) {
+                                         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                                         .queueFamilyIndex = queue_type_to_family[i],
+                                         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+                                      },
+                                      NULL, &ctx->cmd_pool[i]));
 
-   vk_check(vkCreateCommandPool(ctx->device,
-                                &(const VkCommandPoolCreateInfo) {
-                                   .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-                                   .queueFamilyIndex = 0,
-                                   .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-                                },
-                                NULL, &ctx->cmd_buffer_pool));
+         vk_check(vkAllocateCommandBuffers(ctx->device,
+                                           &(VkCommandBufferAllocateInfo) {
+                                              .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                                              .commandPool = ctx->cmd_pool[i],
+                                              .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                              .commandBufferCount = MAX_COMMAND_BUFFERS,
+                                           },
+                                           ctx->cmd_buffers[i]));
+      }
 
-   vk_check(vkAllocateCommandBuffers(ctx->device,
-      &(VkCommandBufferAllocateInfo) {
-         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-         .commandPool = ctx->cmd_buffer_pool,
-         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-         .commandBufferCount = MAX_COMMAND_BUFFERS,
-      },
-      ctx->cmd_buffers));
+      vk_check(vkCreateSemaphore(ctx->device,
+                                 &(VkSemaphoreCreateInfo){
+                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                                    .pNext = &(VkSemaphoreTypeCreateInfo){
+                                       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                       .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+                                   },
+                                 },
+                                 NULL, &ctx->semaphore[i]));
+   }
 
-   vk_check(vkCreateSemaphore(ctx->device,
-                              &(VkSemaphoreCreateInfo){
-                                 .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                                 .pNext = &(VkSemaphoreTypeCreateInfo){
-                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-                                    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-                                },
-                              },
-                              NULL, &ctx->gfx_semaphore));
-   vk_check(vkCreateSemaphore(ctx->device,
-                              &(VkSemaphoreCreateInfo){
-                                 .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                                 .pNext = &(VkSemaphoreTypeCreateInfo){
-                                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-                                    .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-                                },
-                              },
-                              NULL, &ctx->sparse_semaphore));
-
+   /* Create misc stuff. */
    vk_check(vkCreateDescriptorPool(ctx->device,
                                    &(VkDescriptorPoolCreateInfo){
                                       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -2147,36 +2439,35 @@ vk_create_context(const program_options *options)
 
    for (unsigned i = 0; i < api_num_heaps; i++) {
       if ((i == api_heap_device_coherent_amd || i == api_heap_host_uncached_coherent_amd) &&
-          !coherent_memory_amd.deviceCoherentMemory)
+          !AMD_device_coherent_memory.deviceCoherentMemory)
          continue;
 
       ctx->has_heap[i] = true; /* so that vk_find_heap doesn't fall back and fails when it should */
       ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
    }
 
-   ctx->timestamp_period_in_seconds = device_properties.properties.limits.timestampPeriod * 0.000000001;
+   ctx->timestamp_period_in_seconds = device_props.properties.limits.timestampPeriod * 0.000000001;
 
-   ctx->has_async_sparse_queue = compute_queue_family_index != -1 &&
-                                 queue_props[compute_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
-   ctx->has_buffer_device_address = vulkan12.bufferDeviceAddress;
+   ctx->has_buffer_device_address = Vulkan12.bufferDeviceAddress;
    ctx->has_clear_image_region = false;
    ctx->has_image_tiling_linear = true;
    ctx->has_resolve_image_yflip = false;
-   ctx->has_shader_int8 = vulkan12.shaderInt8;
-   ctx->has_shader_int64 = vulkan10.features.shaderInt64;
-   ctx->has_shader_subgroup_clock = shader_clock.shaderSubgroupClock;
-   ctx->has_sparse_buffer = vulkan10.features.sparseBinding && vulkan10.features.sparseResidencyBuffer &&
-                            queue_props[gfx_queue_family_index].queueFlags & VK_QUEUE_SPARSE_BINDING_BIT;
-   ctx->has_vs_tes_layer_output = vulkan12.shaderOutputLayer;
-   ctx->has_vrs = vrs.pipelineFragmentShadingRate;
-   ctx->has_xfb = xfb.transformFeedback;
+   ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
+   ctx->has_shader_int64 = Vulkan10.features.shaderInt64;
+   ctx->has_shader_subgroup_clock = KHR_shader_clock.shaderSubgroupClock;
+   ctx->has_sparse_buffer = ctx->has_queue[api_queue_sparse] && Vulkan10.features.sparseBinding &&
+                            Vulkan10.features.sparseResidencyBuffer;
+   ctx->has_vs_tes_layer_output = Vulkan12.shaderOutputLayer;
+   ctx->has_vrs = KHR_fragment_shading_rate.pipelineFragmentShadingRate && KHR_fragment_shading_rate.primitiveFragmentShadingRate &&
+                  (EXT_mesh_shader.meshShader ? EXT_mesh_shader.primitiveFragmentShadingRateMeshShader : true);
+   ctx->has_xfb = EXT_transform_feedback.transformFeedback;
 
-   ctx->max_mesh_workgroup_size = mesh.meshShader ? mesh_properties.maxMeshWorkGroupInvocations : 0;
-   ctx->max_storage_buffer_range = device_properties.properties.limits.maxStorageBufferRange;
-   ctx->max_uniform_buffer_range = device_properties.properties.limits.maxUniformBufferRange;
-   ctx->supported_color_sample_counts = device_properties.properties.limits.framebufferColorSampleCounts;
+   ctx->max_mesh_workgroup_size = EXT_mesh_shader.meshShader ? EXT_mesh_shader_props.maxMeshWorkGroupInvocations : 0;
+   ctx->max_storage_buffer_range = device_props.properties.limits.maxStorageBufferRange;
+   ctx->max_uniform_buffer_range = device_props.properties.limits.maxUniformBufferRange;
+   ctx->supported_color_sample_counts = device_props.properties.limits.framebufferColorSampleCounts;
 
    /* Get sparse buffer alignment. */
    if (ctx->has_sparse_buffer) {
@@ -2189,7 +2480,7 @@ vk_create_context(const program_options *options)
                                              .pCreateInfo = &(VkBufferCreateInfo){
                                                 .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
                                                 .flags = VK_BUFFER_CREATE_SPARSE_BINDING_BIT |
-                                                VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT,
+                                                         VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT,
                                                 .size = 512 << 20,
                                                 .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                 .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -2201,7 +2492,7 @@ vk_create_context(const program_options *options)
    /* Set up the GLSL compiler. */
    shaderc_compile_options_set_target_env(ctx->glsl_compiler_options, shaderc_target_env_vulkan,
                                           shaderc_env_version_vulkan_1_3);
-   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_4);
+   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_5);
    shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
                                      shaderc_limit_max_mesh_work_group_size_x_ext,
                                      ctx->max_mesh_workgroup_size);

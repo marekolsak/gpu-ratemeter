@@ -761,7 +761,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          if (!fbs[f].pipelines[p])
             continue;
 
-         ctx->begin_cmdbuf(ctx);
+         ctx->begin_cmdbuf(ctx, api_queue_gfx);
          if (!formats[f].format)
             ctx->bind_descriptor_set(ctx, desc_set);
 
@@ -789,7 +789,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                          .instance_count = 1});
          ctx->end_render_pass(ctx);
          ctx->write_next_timestamp(ctx, timestamps);
-         ctx->end_cmdbuf_and_submit(ctx, NULL);
+         ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
       }

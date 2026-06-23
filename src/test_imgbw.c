@@ -245,14 +245,14 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                               .fb = fb,
                            });
 
-   ctx->begin_cmdbuf(ctx);
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb, .clear = true});
 
    ctx->bind_pipeline(ctx, pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
 
    ctx->end_render_pass(ctx);
-   ctx->end_cmdbuf_and_submit(ctx, NULL);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_fbs));
@@ -550,9 +550,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               switch (fill_flavor) {
                               case FILL_BLACK:
                               case FILL_SOLID: {
-                                 ctx->begin_cmdbuf(ctx);
+                                 ctx->begin_cmdbuf(ctx, api_queue_gfx);
                                  ctx->clear_image(ctx, state[size_index].src, NULL, clear_color);
-                                 ctx->end_cmdbuf_and_submit(ctx, NULL);
+                                 ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                                  break;
                               }
 
@@ -747,7 +747,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            }
 
                            if (stage == RUN) {
-                              ctx->begin_cmdbuf(ctx);
+                              ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
                               /* Run tests. */
                               for (unsigned i = 0; i < NUM_WARMUP_RUNS + NUM_RUNS; i++) {
@@ -794,7 +794,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               }
 
                               ctx->write_next_timestamp(ctx, timestamps);
-                              ctx->end_cmdbuf_and_submit(ctx, NULL);
+                              ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                            }
 
                            /* Get results. */

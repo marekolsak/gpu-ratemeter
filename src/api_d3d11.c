@@ -73,12 +73,13 @@ d3d11_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 }
 
 static void
-d3d11_begin_cmdbuf(api_context *ctx)
+d3d11_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
 }
 
 static void
-d3d11_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
+d3d11_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *wait_fence,
+                            api_fence **signal_fence)
 {
 }
 

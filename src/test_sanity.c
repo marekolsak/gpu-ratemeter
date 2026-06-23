@@ -211,7 +211,7 @@ test_sanity(api_context *ctx, const char *test_name)
    };
    api_pipeline *pipeline = ctx->create_pipeline(ctx, &pipeline_desc);
 
-   ctx->begin_cmdbuf(ctx);
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = fb,
                              .clear = true,
@@ -228,7 +228,7 @@ test_sanity(api_context *ctx, const char *test_name)
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 20});
 
    ctx->end_render_pass(ctx);
-   ctx->end_cmdbuf_and_submit(ctx, NULL);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    ctx->image_write_png(ctx, fb->colorbuf, 0, "output.png");
    run_image_viewer("output.png");

@@ -351,8 +351,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
             ctx->create_buffer(ctx, ctx->options.max_size, i,
                                ctx->options.sparse_bound ||
                                ctx->options.sparse_unbound ? ctx->sparse_buffer_alignment : 0);
-         if (ctx->options.sparse_bound)
-            ctx->buffer_bind_sparse(ctx, state->jump_buf[i], 0, ctx->options.max_size, true, NULL);
+         if (ctx->options.sparse_bound) {
+            ctx->buffer_bind_sparse(ctx, state->jump_buf[i], 0, ctx->options.max_size, true,
+                                    api_queue_gfx, NULL, NULL);
+         }
       }
    }
 
@@ -436,13 +438,13 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                      ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0, jump_buf,
                                                         0, size);
 
-                     ctx->begin_cmdbuf(ctx);
+                     ctx->begin_cmdbuf(ctx, api_queue_gfx);
                      ctx->bind_descriptor_set(ctx, state->sets[test_index]);
                      assert(state->pipelines[shared_memory][uniform][coherent]);
                      ctx->bind_compute_pipeline(ctx, state->pipelines[shared_memory][uniform][coherent]);
                      ctx->dispatch(ctx, 1, 1, 1);
                      ctx->pipeline_barrier_buffer(ctx, state->result_buf);
-                     ctx->end_cmdbuf_and_submit(ctx, NULL);
+                     ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                      break;
 
                   case REPORT: {

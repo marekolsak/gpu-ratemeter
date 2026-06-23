@@ -100,12 +100,12 @@ run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags
                                         sparse_block_size);
 
    if (flags & START_BOUND)
-      ctx->buffer_bind_sparse(ctx, buf, 0, buf->size, true, NULL);
+      ctx->buffer_bind_sparse(ctx, buf, 0, buf->size, true, api_queue_gfx, NULL, NULL);
 
    /* Execution. */
-   ctx->begin_cmdbuf(ctx);
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->write_next_timestamp(ctx, timestamps);
-   ctx->end_cmdbuf_and_submit(ctx, NULL);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    unsigned num_iterations = get_num_iterations(ctx, flags);
 
@@ -115,17 +115,19 @@ run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags
       switch (flags & (BIND_ONE | UNBIND_ONE | BIND_UNBIND_SAME_ONE | BIND_UNBIND_ALL)) {
       case BIND_ONE:
          ctx->buffer_bind_sparse(ctx, buf, i * sparse_block_size, sparse_block_size, true,
-                                 async ? &fence : NULL);
+                                 async ? api_queue_sparse : api_queue_gfx, NULL, async ? &fence : NULL);
          break;
       case UNBIND_ONE:
          ctx->buffer_bind_sparse(ctx, buf, i * sparse_block_size, sparse_block_size, false,
-                                 async ? &fence : NULL);
+                                 async ? api_queue_sparse : api_queue_gfx, NULL, async ? &fence : NULL);
          break;
       case BIND_UNBIND_SAME_ONE:
-         ctx->buffer_bind_sparse(ctx, buf, 0, sparse_block_size, i % 2 == 0, async ? &fence : NULL);
+         ctx->buffer_bind_sparse(ctx, buf, 0, sparse_block_size, i % 2 == 0,
+                                 async ? api_queue_sparse : api_queue_gfx, NULL, async ? &fence : NULL);
          break;
       case BIND_UNBIND_ALL:
-         ctx->buffer_bind_sparse(ctx, buf, 0, buf->size, i % 2 == 0, async ? &fence : NULL);
+         ctx->buffer_bind_sparse(ctx, buf, 0, buf->size, i % 2 == 0,
+                                 async ? api_queue_sparse : api_queue_gfx, NULL, async ? &fence : NULL);
          break;
       case 0:
          break;
@@ -134,18 +136,18 @@ run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags
       }
 
       if (cmdbuf_option != CMDBUF_NONE) {
-         ctx->begin_cmdbuf(ctx);
+         ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
          if (cmdbuf_option == CMDBUF_SIMPLE)
             ctx->clear_buffer(ctx, buf, 0, 64, 0);
 
-         ctx->end_cmdbuf_and_submit(ctx, fence);
+         ctx->end_cmdbuf_and_submit(ctx, 0, fence, NULL);
       }
    }
 
-   ctx->begin_cmdbuf(ctx);
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->write_next_timestamp(ctx, timestamps);
-   ctx->end_cmdbuf_and_submit(ctx, NULL);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 }
 
 enum {
@@ -193,7 +195,7 @@ generate_tests(unsigned *tests, unsigned max_tests, unsigned *num_tests)
 static bool
 print_na(api_context *ctx, test_flags flags, cmdbuf_option cmdbuf_option, bool async)
 {
-   if (async && (!ctx->has_async_sparse_queue || flags & NO_BIND))
+   if (async && (!ctx->has_queue[api_queue_sparse] || flags & NO_BIND))
       return true;
 
    return !(flags & ~(NO_BIND | SIZE_REGULAR | BLOCK_REGULAR)) && cmdbuf_option == CMDBUF_NONE;

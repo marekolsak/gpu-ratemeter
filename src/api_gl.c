@@ -1043,12 +1043,14 @@ gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 }
 
 static void
-gl_begin_cmdbuf(api_context *ctx)
+gl_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
+   assert(queue == api_queue_gfx);
 }
 
 static void
-gl_end_cmdbuf_and_submit(api_context *ctx, api_fence *wait_fence)
+gl_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *wait_fence,
+                         api_fence **signal_fence)
 {
    gl_bind_unbind_pipeline(ctx, NULL);
    glFlush();
@@ -1225,9 +1227,9 @@ gl_create_context(const program_options *options)
    ctx->has_heap[api_heap_device] = true;
    ctx->has_heap[api_heap_host_uncached] = true;
    ctx->has_heap[api_heap_host_cached] = true;
+   ctx->has_queue[api_queue_gfx] = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
 
-   ctx->has_async_sparse_queue = false;
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
    ctx->has_buffer_device_address = false;
