@@ -43,13 +43,13 @@
  * - ztest.* + zwrite + discard
  * - ztest.* + zwrite + discard + no color output (RB+)
  * - ztest.* + zwrite + empty FS
+ * - layer FS sysval (with 2D array and 3D image)
+ * - render to 3D image
  * - multiview + viewindex FS sysval
- * - layer FS sysval
- * - FullyCoveredEXT with and without VRS
- * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
- * - render to 3D texture?
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
- * - stencil/HiS?
+ * pix - later maybe:
+ * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
+ * - stencil/HiS
  *
  * prim:
  * - VS + transform feedback

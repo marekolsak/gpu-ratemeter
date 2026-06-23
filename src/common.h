@@ -366,6 +366,7 @@ typedef struct api_context {
    bool has_blit_image_msaa;
    bool has_buffer_device_address;
    bool has_clear_image_region;
+   bool has_fully_covered;
    bool has_image_tiling_linear;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;

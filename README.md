@@ -101,6 +101,7 @@ Decoding subtest names:
 - Used system values are indicated as follows:
   - `face`: `gl_FrontFacing`
   - `fragpos_*`: `gl_FragCoord.*` using only the listed components
+  - `fully_covered`: `gl_FullyCoveredEXT` (also known as `gl_FragFullyCoveredNV`)
   - `sampleid`: `gl_SampleID` (this forces sample shading if framebuffer samples > 1)
   - `samplemask`: `gl_SampleMaskIn`
   - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)

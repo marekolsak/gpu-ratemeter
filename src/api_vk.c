@@ -1907,12 +1907,17 @@ vk_create_context(const program_options *options)
    VkPhysicalDeviceProperties2 device_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
    };
+   VkPhysicalDeviceConservativeRasterizationPropertiesEXT EXT_conservative_rasterization_props = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT,
+   };
    VkPhysicalDeviceMeshShaderPropertiesEXT EXT_mesh_shader_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT,
    };
 
    void **pNext = &device_props.pNext;
 
+   if (has_extension(ctx, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME))
+      chain_next(pNext, &EXT_conservative_rasterization_props);
    if (has_extension(ctx, VK_EXT_MESH_SHADER_EXTENSION_NAME))
       chain_next(pNext, &EXT_mesh_shader_props);
 
@@ -2050,6 +2055,7 @@ vk_create_context(const program_options *options)
    check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
    check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
 
+   check_add_ext_no_features(VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME);
    check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, EXT_extended_dynamic_state3);
    check_add_ext(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, EXT_graphics_pipeline_library);
    check_add_ext(VK_EXT_MESH_SHADER_EXTENSION_NAME, EXT_mesh_shader);
@@ -2454,6 +2460,7 @@ vk_create_context(const program_options *options)
    ctx->has_blit_image_msaa = false;
    ctx->has_buffer_device_address = Vulkan12.bufferDeviceAddress;
    ctx->has_clear_image_region = false;
+   ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
    ctx->has_image_tiling_linear = true;
    ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
