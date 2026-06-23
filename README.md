@@ -100,10 +100,11 @@ Decoding subtest names:
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:
   - `face`: `gl_FrontFacing`
-  - `samplemask`: `gl_SampleMaskIn`
   - `fragpos_*`: `gl_FragCoord.*` using only the listed components
   - `sampleid`: `gl_SampleID` (this forces sample shading if framebuffer samples > 1)
+  - `samplemask`: `gl_SampleMaskIn`
   - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
+  - `shading_rate`: `gl_ShadingRateEXT`
 - Used inputs are indicated as follows:
   - `Nflat`: N flat inputs
   - `Npersp`: N inputs with perspective interpolation at center

@@ -45,7 +45,6 @@
  * - ztest.* + zwrite + empty FS
  * - multiview + viewindex FS sysval
  * - layer FS sysval
- * - VRS rate FS sysval
  * - FullyCoveredEXT with and without VRS
  * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - render to 3D texture?

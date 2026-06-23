@@ -36,6 +36,11 @@ typedef struct {
    SHADER_HEADER \
    "#define IMAGE_STORE 0 \n" /* 0 is replaced by 1 during compilation */ \
    "#define FS_OUTPUT_TYPE 0 \n" /* 0=float, 1=int, 2=uint, replaced during compilation */ \
+   "#define HAS_VRS 0 \n" \
+   \
+   "#if HAS_VRS \n" \
+   "#extension GL_EXT_fragment_shading_rate : require \n" \
+   "#endif \n" \
    \
    "#if FS_OUTPUT_TYPE == 0 \n" \
    "#define FS_OUTPUT_TYPE_NAME vec4 \n" \
@@ -162,6 +167,7 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.cull_back", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".shading_rate", "vec4(gl_ShadingRateEXT)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid", "vec4(gl_SampleID)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplemask", "vec4(float(gl_SampleID) + float(gl_SampleMaskIn[0]))"), \
@@ -610,8 +616,6 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          continue;
       }
 
-      assert(compiled_shaders[p].vs);
-
       pipeline_descs[p] = (api_pipeline_desc){
          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
          .cull_mode = cull_back ? VK_CULL_MODE_BACK_BIT : 0,
@@ -736,6 +740,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          bool colormask0 = strstr(pipeline_name, ".colormask=0");
          bool colormask_x = strstr(pipeline_name, ".colormask=x");
          bool blend = strstr(pipeline_name, "blend");
+         bool shading_rate = strstr(pipeline_name, "shading_rate");
 
          if (!format && (helper_invoc || a2c || colormask0 || colormask_x || blend))
             continue;
@@ -752,7 +757,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          if (!ctx->has_vrs &&
              (pipeline_descs[p].vrs_fragment_size[0] > 1 ||
-              pipeline_descs[p].vrs_fragment_size[1] > 1))
+              pipeline_descs[p].vrs_fragment_size[1] > 1 || shading_rate))
             continue;
 
          bool require_zbuf = strstr(pipeline_name, "zbuf");
@@ -928,15 +933,23 @@ test_pix(api_context *ctx, const char *test_name)
          }
       }
 
-      if (!match || !pipelines[p].fs_source)
+      if (!match || !pipelines[p].fs_source ||
+          (!ctx->has_vrs && strstr(pipelines[p].fs_source, "gl_ShadingRateEXT")))
          continue;
 
       compiled_shaders[p].vs = ctx->create_shader(ctx, pipelines[p].vs_source, api_shader_vs);
-      compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, pipelines[p].fs_source, api_shader_fs);
 
-      char *fs_image_store = strdup(pipelines[p].fs_source);
-      char *fs_out_int = strdup(pipelines[p].fs_source);
-      char *fs_out_uint = strdup(pipelines[p].fs_source);
+      char *fs_source = strdup(pipelines[p].fs_source);
+      char *fs_has_vrs_define = strstr(fs_source, "#define HAS_VRS 0");
+
+      assert(fs_has_vrs_define);
+      fs_has_vrs_define[16] = ctx->has_vrs ? '1' : '0';
+
+      compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, fs_source, api_shader_fs);
+
+      char *fs_image_store = strdup(fs_source);
+      char *fs_out_int = strdup(fs_source);
+      char *fs_out_uint = strdup(fs_source);
       char *fs_image_store_define = strstr(fs_image_store, "#define IMAGE_STORE 0");
       char *fs_out_int_define =     strstr(fs_out_int,     "#define FS_OUTPUT_TYPE 0");
       char *fs_out_uint_define =    strstr(fs_out_uint,    "#define FS_OUTPUT_TYPE 0");
@@ -956,6 +969,7 @@ test_pix(api_context *ctx, const char *test_name)
       free(fs_image_store);
       free(fs_out_int);
       free(fs_out_uint);
+      free(fs_source);
    }
 
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
