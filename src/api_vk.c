@@ -2446,6 +2446,8 @@ vk_create_context(const program_options *options)
       ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
    }
 
+   ctx->allow_parallel_create_shader = true;
+   ctx->allow_parallel_create_pipeline = true;
    ctx->timestamp_period_in_seconds = device_props.properties.limits.timestampPeriod * 0.000000001;
 
    ctx->has_blit_image_3d = true;

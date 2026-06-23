@@ -357,6 +357,8 @@ typedef struct api_context {
    /* Core properties. */
    bool has_heap[api_num_heaps];
    bool has_queue[api_num_queues];
+   bool allow_parallel_create_shader;
+   bool allow_parallel_create_pipeline;
    double timestamp_period_in_seconds;
 
    /* Feature properties. */

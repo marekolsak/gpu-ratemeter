@@ -49,7 +49,6 @@
  * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - render to 3D texture?
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
- * - create pipelines in parallel using OpenMP
  * - stencil/HiS?
  *
  * prim:

@@ -687,6 +687,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    /* Create pipelines. */
    unsigned num_visited_pipelines = 0;
+
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if (fbs[f].skip)
          continue;
@@ -724,12 +725,18 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       fbs[f].height = fb_size;
       fbs[f].fb_color_only = ctx->create_framebuffer(ctx, colorbuf, NULL, fb_size, fb_size, samples);
       fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, colorbuf, zbuf, fb_size, fb_size, samples);
+   }
 
+#pragma omp parallel for if (ctx->allow_parallel_create_pipeline) collapse(2) schedule(static, 50)
+   for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
-         if (skip_pipeline[p])
+         if (skip_pipeline[p] || fbs[f].skip)
             continue;
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
+
+         VkFormat format = formats[f].format;
+         api_pipeline_desc pipeline_desc = pipeline_descs[p];
 
          char pipeline_name[256];
          get_pipeline_name(pipeline_name, sizeof(pipeline_name), 1, &pipelines[p]);
@@ -751,32 +758,32 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          if (colormask_x && format_get_num_channels(format) == 1)
             continue;
 
-         if ((pipeline_descs[p].blend_src_color || pipeline_descs[p].blend_src_alpha) &&
+         if ((pipeline_desc.blend_src_color || pipeline_desc.blend_src_alpha) &&
              format_is_integer(format))
             continue;
 
          if (!ctx->has_vrs &&
-             (pipeline_descs[p].vrs_fragment_size[0] > 1 ||
-              pipeline_descs[p].vrs_fragment_size[1] > 1 || shading_rate))
+             (pipeline_desc.vrs_fragment_size[0] > 1 ||
+              pipeline_desc.vrs_fragment_size[1] > 1 || shading_rate))
             continue;
 
          bool require_zbuf = strstr(pipeline_name, "zbuf");
 
          if (format) {
             if (format_is_sint(format))
-               pipeline_descs[p].fs = compiled_shaders[p].fs_out_int;
+               pipeline_desc.fs = compiled_shaders[p].fs_out_int;
             else if (format_is_integer(format))
-               pipeline_descs[p].fs = compiled_shaders[p].fs_out_uint;
+               pipeline_desc.fs = compiled_shaders[p].fs_out_uint;
             else
-               pipeline_descs[p].fs = compiled_shaders[p].fs_out_float;
+               pipeline_desc.fs = compiled_shaders[p].fs_out_float;
          } else {
-            pipeline_descs[p].fs = compiled_shaders[p].fs_image_store;
+            pipeline_desc.fs = compiled_shaders[p].fs_image_store;
          }
 
-         pipeline_descs[p].desc_set_layout = format ? NULL : desc_set_layout;
-         pipeline_descs[p].fb = require_zbuf ? fbs[f].fb_color_and_zbuf : fbs[f].fb_color_only;
+         pipeline_desc.desc_set_layout = format ? NULL : desc_set_layout;
+         pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf : fbs[f].fb_color_only;
 
-         fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_descs[p]);
+         fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
       }
    }
    puts("");
@@ -923,6 +930,7 @@ test_pix(api_context *ctx, const char *test_name)
    puts("Compiling shaders...");
 
    /* Compile shaders. */
+#pragma omp parallel for if(ctx->allow_parallel_create_shader) schedule(static, 10)
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
       bool match = false;
 
