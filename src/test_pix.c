@@ -345,61 +345,95 @@ typedef struct {
    WRITE_COLOR_CONST_IMPL(".blend_src_alpha1", helper_invoc, 0.5, 0.6, 0.7, 1), \
    WRITE_COLOR_CONST_IMPL(".blend_src_alpha_other", helper_invoc, 0.5, 0.6, 0.7, 0.8)
 
-#define VRS(vrs_width, vrs_height) \
+#define VRS_IMPL(vrs_width, vrs_height, helper_invoc) \
    {".vrs" #vrs_width "x" #vrs_height, \
-   "", \
-   "", \
-   "", \
-   "", \
-   "", \
-   \
-   VS_POS_ONLY(0), \
-   FS_WRITE_COLOR_CONST(1, 0.1, 0.2, 0.3, 0.4)}
-
-#define ZTEST_IMPL(name, helper_invoc, z) \
-   {name, \
     helper_invoc ? ".helper_invoc" : "", \
-   "", \
-   "", \
-   "", \
-   "", \
-   \
+    "", \
+    "", \
+    "", \
+    "", \
+    \
+    VS_POS_ONLY(0), \
+    FS_WRITE_COLOR_CONST(helper_invoc, 0.1, 0.2, 0.3, 0.4)}
+
+#define ZTEST_IMPL(name, helper_invoc, z, fs_name, fs) \
+   {name, \
+    fs_name, \
+    helper_invoc ? ".helper_invoc" : "", \
+    "", \
+    "", \
+    "", \
+    \
     VS_POS_ONLY(z), \
-    FS_WRITE_COLOR_CONST(helper_invoc, 0.2, 0.3, 0.4, 0.5)} \
+    (fs)}
+
+#define FS_EMPTY(helper_invoc) \
+   (helper_invoc ? NULL : \
+      FS_SHADER_HEADER \
+      "void main() {}")
+
+#define FS_DISCARD(helper_invoc) \
+   (helper_invoc ? \
+      FS_SHADER_HEADER \
+      "void main() {\n" \
+      "   if (!gl_HelperInvocation) \n" \
+      "      discard; \n" \
+      "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n" \
+      "}" : \
+      FS_SHADER_HEADER \
+      "void main() {\n" \
+      "   discard; \n" \
+      "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n" \
+      "}")
+
+#define FS_DISCARD_NO_OUTPUT(helper_invoc) \
+   (helper_invoc ? \
+      FS_SHADER_HEADER \
+      "void main() {\n" \
+      "   if (!gl_HelperInvocation) \n" \
+      "      discard; \n" \
+      "}" : \
+      FS_SHADER_HEADER \
+      "void main() {\n" \
+      "   discard; \n" \
+      "}")
+
+#define ZTEST_FS(name, helper_invoc, z) \
+   ZTEST_IMPL(name, helper_invoc, z, "", FS_WRITE_COLOR_CONST(helper_invoc, 0.2, 0.3, 0.4, 0.5))
+
+#if 0 /* TODO: these aren't useful without Z writes (fs_empty is no-op, fs_discard uses early Z) */
+   ZTEST_IMPL(name, helper_invoc, z, ".fs_empty", FS_EMPTY(helper_invoc)), \
+   ZTEST_IMPL(name, helper_invoc, z, ".fs_discard", FS_DISCARD(helper_invoc)), \
+   ZTEST_IMPL(name, helper_invoc, z, ".fs_discard_no_output", FS_DISCARD_NO_OUTPUT(helper_invoc))
+#endif
 
 #define ZTEST(helper_invoc) \
-   ZTEST_IMPL(".zbuf.ztest_never.fail", helper_invoc, 0), \
-   ZTEST_IMPL(".zbuf.ztest_less.fail", helper_invoc, 0.7), \
-   ZTEST_IMPL(".zbuf.ztest_notequal.fail", helper_invoc, 0.5), \
-   ZTEST_IMPL(".zbuf.ztest_less.pass", helper_invoc, 0.2), \
-   ZTEST_IMPL(".zbuf.ztest_equal.pass", helper_invoc, 0.5) \
+   ZTEST_FS(".zbuf.ztest_never.fail", helper_invoc, 0), \
+   ZTEST_FS(".zbuf.ztest_less.fail", helper_invoc, 0.7), \
+   ZTEST_FS(".zbuf.ztest_notequal.fail", helper_invoc, 0.5), \
+   ZTEST_FS(".zbuf.ztest_less.pass", helper_invoc, 0.2), \
+   ZTEST_FS(".zbuf.ztest_equal.pass", helper_invoc, 0.5)
 
 #define NAME(name) name, "", "", "", "", ""
+
+#define VRS(helper_invoc) \
+   VRS_IMPL(1, 2, helper_invoc), \
+   VRS_IMPL(2, 1, helper_invoc), \
+   VRS_IMPL(2, 2, helper_invoc)
 
 static const pipeline_info pipelines[] = {
    {NAME(".fs_empty"),
     VS_POS_ONLY(0),
-    FS_SHADER_HEADER
-    "void main() {\n"
-    "}"},
+    FS_EMPTY(0)},
 
    /* Discard. */
    {NAME(".fs_discard"),
     VS_POS_ONLY(0),
-    FS_SHADER_HEADER
-    "void main() {\n"
-    "   discard; \n"
-    "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n"
-    "}"},
+    FS_DISCARD(0)},
 
    {NAME(".fs_discard.helper_invoc"),
     VS_POS_ONLY(0),
-    FS_SHADER_HEADER
-    "void main() {\n"
-    "   if (!gl_HelperInvocation) \n"
-    "      discard; \n"
-    "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n"
-    "}"},
+    FS_DISCARD(1)},
 
    ZTEST(0), /* helper_invoc=0 */
    ZTEST(1), /* helper_invoc=1 */
@@ -410,9 +444,8 @@ static const pipeline_info pipelines[] = {
    WRITE_COLOR_Z_SAMPLEMASK_A2C(0), /* helper_invoc=0 */
    WRITE_COLOR_Z_SAMPLEMASK_A2C(1), /* helper_invoc=1 */
 
-   VRS(1, 2),
-   VRS(2, 1),
-   VRS(2, 2),
+   VRS(0), /* helper_invoc=0 */
+   VRS(1), /* helper_invoc=1 */
 
    /* Constant fill. */
    INPUTS(0, "", "", 0, "", ""),
@@ -557,7 +590,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                             strstr(pipeline_name, "samplepos");
       bool cull_back = strstr(pipeline_name, ".cull_back");
 
-      if (!test_filter(ctx, samples, &pipelines[p]) ||
+      if (!pipelines[p].fs_source ||
+          !test_filter(ctx, samples, &pipelines[p]) ||
           (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample"))) {
          skip_pipeline[p] = true;
          continue;
@@ -879,7 +913,7 @@ void
 test_pix(api_context *ctx, const char *test_name)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)];
-   static const unsigned sample_counts[] = {1, 4, 8};
+   static const unsigned sample_counts[] = {1, 2, 4, 8};
 
    puts("Compiling shaders...");
 
@@ -894,7 +928,7 @@ test_pix(api_context *ctx, const char *test_name)
          }
       }
 
-      if (!match)
+      if (!match || !pipelines[p].fs_source)
          continue;
 
       compiled_shaders[p].vs = ctx->create_shader(ctx, pipelines[p].vs_source, api_shader_vs);
@@ -925,7 +959,8 @@ test_pix(api_context *ctx, const char *test_name)
    }
 
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
-      if (ctx->supported_color_sample_counts & sample_counts[s])
+      if (ctx->supported_color_sample_counts & sample_counts[s] &&
+          (!ctx->options.samples || ctx->options.samples == sample_counts[s]))
          run_test_pix(ctx, test_name, sample_counts[s], compiled_shaders);
    }
 }

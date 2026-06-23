@@ -85,7 +85,7 @@ Each column is a different color buffer format except for the first column, whic
 Decoding subtest names:
 - `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
 - `fs_empty`: empty fragment shader
-- `fs_discard`: the fragment shader only contains `discard;`
+- `fs_discard`: the fragment shader contains `discard;` before writing the color output
 - `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
 - `zbuf`: the framebuffer contains a Z buffer
 - `z_tess_*.fail`, `z_tess_*.pass`: the subtest uses the given Z compare op to pass or fail the Z test
@@ -116,6 +116,7 @@ Optional parameters:
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
+- `-samples=N`: only test this number of samples
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 

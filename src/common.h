@@ -322,13 +322,14 @@ typedef struct {
    unsigned device; /* device index */
    unsigned freq_mhz;
    unsigned max_rate;
-   unsigned spacing;
+   unsigned samples;
 
    /* String options. */
    const char *test_filter;
    const char *format_filter;
 
    /* Memory size options. */
+   unsigned spacing;
    uint64_t max_size;
 } program_options;
 

@@ -40,10 +40,9 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - 2x MSAA
- * - ztest.pass + discard (RB+)
- * - ztest.pass + empty FS
- * - VRS rates with helper invocations
+ * - ztest.* + zwrite + discard
+ * - ztest.* + zwrite + discard + no color output (RB+)
+ * - ztest.* + zwrite + empty FS
  * - multiview + viewindex FS sysval
  * - layer FS sysval
  * - VRS rate FS sysval
@@ -155,6 +154,7 @@ static const option_desc option_list[] = {
    {OPTION_UINT, "-device=", offsetof(program_options, device)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},
+   {OPTION_UINT, "-samples=", offsetof(program_options, samples)},
 
    {OPTION_STRING, "-filter=", offsetof(program_options, test_filter)},
    {OPTION_STRING, "-format=", offsetof(program_options, format_filter)},
