@@ -2261,7 +2261,7 @@ vk_create_context(const program_options *options)
    //require(Vulkan13.textureCompressionASTC_HDR);
    //require(Vulkan13.shaderZeroInitializeWorkgroupMemory);
    //require(Vulkan13.shaderIntegerDotProduct);
-   //require(Vulkan13.maintenance4);
+   require(Vulkan13.maintenance4);
 
    optional(KHR_fragment_shading_rate.pipelineFragmentShadingRate);
    optional(KHR_fragment_shading_rate.primitiveFragmentShadingRate);
@@ -2492,7 +2492,7 @@ vk_create_context(const program_options *options)
    /* Set up the GLSL compiler. */
    shaderc_compile_options_set_target_env(ctx->glsl_compiler_options, shaderc_target_env_vulkan,
                                           shaderc_env_version_vulkan_1_3);
-   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_5);
+   shaderc_compile_options_set_target_spirv(ctx->glsl_compiler_options, shaderc_spirv_version_1_6);
    shaderc_compile_options_set_limit(ctx->glsl_compiler_options,
                                      shaderc_limit_max_mesh_work_group_size_x_ext,
                                      ctx->max_mesh_workgroup_size);

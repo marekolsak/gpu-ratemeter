@@ -1052,6 +1052,9 @@ static void
 gl_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *wait_fence,
                          api_fence **signal_fence)
 {
+   assert(!wait_fence);
+   assert(!signal_fence);
+
    gl_bind_unbind_pipeline(ctx, NULL);
    glFlush();
    gl_check_no_error();
