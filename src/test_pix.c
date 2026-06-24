@@ -177,6 +177,7 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xy.face.samplemask", "vec4(dot(gl_FragCoord.xy, vec2(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.cull_back", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".layer", "vec4(gl_Layer)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".shading_rate", "vec4(gl_ShadingRateEXT)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fully_covered", "vec4(gl_FragFullyCoveredNV)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid", "vec4(gl_SampleID)"), \
@@ -708,14 +709,16 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       else if (pix_size == 16)
          fb_size /= 2;
 
+      const unsigned num_layers = 1;
+
       if (format) {
          fbs[f].colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size,
-                                             fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
+                                             fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
                                              api_heap_device);
       }
 
       fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
-                                      fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
+                                      fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
                                       api_heap_device);
 
       fbs[f].width = fb_size;
