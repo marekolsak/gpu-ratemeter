@@ -85,6 +85,7 @@ typedef struct {
    unsigned depth;
    unsigned samples;
    VkFormat format;
+   api_heap_type heap;
 
 #ifdef GL_PRIVATE
    GLuint id;
@@ -92,6 +93,7 @@ typedef struct {
    GLenum glinternalformat;
    GLenum glformat;
    GLenum gltype;
+   uint64_t mem_size;
 #endif
 
 #ifdef VK_PRIVATE
@@ -383,7 +385,7 @@ typedef struct api_context {
    VkSampleCountFlags supported_color_sample_counts;
 
    /* Dynamic info. */
-   uint64_t device_mem_usage;
+   uint32_t device_mem_usage_mb;
 
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);

@@ -549,6 +549,8 @@ typedef struct {
    bool skip;
    unsigned width;
    unsigned height;
+   api_image *colorbuf;
+   api_image *zbuf;
    api_framebuffer *fb_color_only; /* there is no color buffer if the format is "imgStore" */
    api_framebuffer *fb_color_and_zbuf;
    api_pipeline *pipelines[ARRAY_SIZE(pipelines)];
@@ -583,7 +585,7 @@ test_filter(api_context *ctx, unsigned samples, const pipeline_info *pipeline)
 
 static void
 run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
-                  compiled_shaders_state *compiled_shaders)
+                  compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
    api_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
@@ -676,21 +678,6 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    printf("Building pipelines (MSAA samples = %u) ...", samples);
 
-   /* Create an image for image stores. It's a dummy image because we are not measuring memory
-    * throughput.
-    */
-   api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
-                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device);
-
-   /* Create the descriptor layout and the set. */
-   api_descriptor_set_layout *desc_set_layout =
-      ctx->create_descriptor_set_layout(ctx,
-                                        &(api_descriptor_set_layout_desc) {
-                                           .storage_image[0].array_size = 1,
-                                        });
-   api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
-   ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
-
    /* Create pipelines. */
    unsigned num_visited_pipelines = 0;
 
@@ -704,33 +691,32 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
        * execution time.
        */
       unsigned fb_size = 1024;
+      unsigned pix_size = format ? get_pixel_size_from_format(format) : 0;
 
       if (samples >= 4)
-         fb_size /= samples / 2;
+         fb_size /= 2;
+
+      if (samples == 1 && pix_size <= 2)
+         fb_size *= 2;
+      else if (pix_size == 16)
+         fb_size /= 2;
 
       if (format) {
-         if (samples == 1 && get_pixel_size_from_format(format) <= 2)
-            fb_size *= 2;
-         else if (get_pixel_size_from_format(format) == 16)
-            fb_size /= 2;
-      } else {
-         fb_size *= 2; /* no color attachment */
+         fbs[f].colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size,
+                                             fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
+                                             api_heap_device);
       }
 
-      api_image *colorbuf = NULL;
-      if (format) {
-         colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size, fb_size, 1, samples,
-                                      VK_IMAGE_TILING_OPTIMAL, api_heap_device);
-      }
-
-      api_image *zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
-                                          fb_size, fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
-                                          api_heap_device);
+      fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
+                                      fb_size, 1, samples, VK_IMAGE_TILING_OPTIMAL,
+                                      api_heap_device);
 
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;
-      fbs[f].fb_color_only = ctx->create_framebuffer(ctx, colorbuf, NULL, fb_size, fb_size, samples);
-      fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, colorbuf, zbuf, fb_size, fb_size, samples);
+      fbs[f].fb_color_only = ctx->create_framebuffer(ctx, fbs[f].colorbuf, NULL,
+                                                     fb_size, fb_size, samples);
+      fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zbuf,
+                                                         fb_size, fb_size, samples);
    }
 
 #pragma omp parallel for if (ctx->allow_parallel_create_pipeline) collapse(2) schedule(static, 50)
@@ -790,7 +776,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             pipeline_desc.fs = compiled_shaders[p].fs_image_store;
          }
 
-         pipeline_desc.desc_set_layout = format ? NULL : desc_set_layout;
+         pipeline_desc.desc_set_layout = format ? NULL : desc_set->layout;
          pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf : fbs[f].fb_color_only;
 
          fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
@@ -803,7 +789,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    api_timestamp_query_pool *timestamps =
       ctx->create_timestamp_pool(ctx, num_pipelines * num_formats * 2);
 
-   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->device_mem_usage >> 20));
+   printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
    printf("Executing tests (MSAA samples = %u) ...", samples);
    fflush(stdout);
 
@@ -929,6 +915,26 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       }
       puts("");
    }
+
+   /* Free memory. */
+   ctx->wait_idle_before_deallocation(ctx);
+
+   for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
+      if (fbs[f].fb_color_only)
+         ctx->destroy_framebuffer(ctx, fbs[f].fb_color_only);
+      if (fbs[f].fb_color_and_zbuf)
+         ctx->destroy_framebuffer(ctx, fbs[f].fb_color_and_zbuf);
+      if (fbs[f].colorbuf)
+         ctx->destroy_image(ctx, fbs[f].colorbuf);
+      if (fbs[f].zbuf)
+         ctx->destroy_image(ctx, fbs[f].zbuf);
+
+      /* Free pipelines. */
+      for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
+         if (fbs[f].pipelines[p])
+            ctx->destroy_pipeline(ctx, fbs[f].pipelines[p]);
+      }
+   }
 }
 
 void
@@ -993,9 +999,24 @@ test_pix(api_context *ctx, const char *test_name)
       free(fs_source);
    }
 
+   /* Create an image for image stores. It's a dummy image because we are not measuring memory
+    * throughput for the image store case.
+    */
+   api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
+                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device);
+
+   /* Create the descriptor layout and the set. */
+   api_descriptor_set_layout *desc_set_layout =
+      ctx->create_descriptor_set_layout(ctx,
+                                        &(api_descriptor_set_layout_desc) {
+                                           .storage_image[0].array_size = 1,
+                                        });
+   api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
+   ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
+
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
       if (ctx->supported_color_sample_counts & sample_counts[s] &&
           (!ctx->options.samples || ctx->options.samples == sample_counts[s]))
-         run_test_pix(ctx, test_name, sample_counts[s], compiled_shaders);
+         run_test_pix(ctx, test_name, sample_counts[s], compiled_shaders, desc_set);
    }
 }

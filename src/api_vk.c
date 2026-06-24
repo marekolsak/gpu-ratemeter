@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <alloca.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -243,10 +244,26 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
       vk_check(vkBindBufferMemory(ctx->device, buf->buffer, *buf->mem, 0));
 
       if (heap == api_heap_device)
-         ctx->device_mem_usage += reqs.size;
+         atomic_fetch_add(&ctx->device_mem_usage_mb, reqs.size >> 20);
    }
 
    return buf;
+}
+
+static void
+vk_destroy_buffer(api_context *ctx, api_buffer *buf)
+{
+   vkDestroyBuffer(ctx->device, buf->buffer, NULL);
+
+   for (unsigned i = 0; i < buf->num_mem_allocations; i++)
+      vkFreeMemory(ctx->device, buf->mem[i], NULL);
+
+   if (buf->heap == api_heap_device)
+      atomic_fetch_sub(&ctx->device_mem_usage_mb, buf->size >> 20);
+
+   free(buf->sparse_binds);
+   free(buf->sparse_unbinds);
+   free(buf);
 }
 
 static void
@@ -415,6 +432,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    image->depth = depth;
    image->samples = samples;
    image->format = format;
+   image->heap = heap;
 
    assert(type != VK_IMAGE_TYPE_1D || depth == 1);
 
@@ -490,7 +508,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                               NULL, &image->render_compatible_view));
 
    if (heap == api_heap_device)
-      ctx->device_mem_usage += image->mem_size;
+      atomic_fetch_add(&ctx->device_mem_usage_mb, image->mem_size >> 20);
    return image;
 }
 
@@ -500,6 +518,10 @@ vk_destroy_image(api_context *ctx, api_image *image)
    vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
    vkDestroyImage(ctx->device, image->image, NULL);
    vkFreeMemory(ctx->device, image->mem, NULL);
+
+   if (image->heap == api_heap_device)
+      atomic_fetch_sub(&ctx->device_mem_usage_mb, image->mem_size >> 20);
+
    free(image);
 }
 
@@ -2515,7 +2537,7 @@ vk_create_context(const program_options *options)
    ctx->destroy_context = NULL;
 
    ctx->create_buffer = vk_create_buffer;
-   ctx->destroy_buffer = NULL;
+   ctx->destroy_buffer = vk_destroy_buffer;
    ctx->upload_buffer_data = vk_upload_buffer_data;
    ctx->get_buffer_data = vk_get_buffer_data;
    ctx->clear_buffer = vk_clear_buffer;

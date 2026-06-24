@@ -143,7 +143,6 @@ d3d12_create_context(const program_options *options)
    ctx->options = *options;
 
    ctx->timestamp_period_in_seconds = 0.000000001;
-   ctx->device_mem_usage = 0;
 
    ctx->destroy_context = NULL;
 

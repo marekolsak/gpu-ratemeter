@@ -4,6 +4,7 @@
  */
 
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,8 +59,19 @@ gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
    gl_check_no_error();
 
    if (heap == api_heap_device)
-      ctx->device_mem_usage += size;
+      atomic_fetch_add(&ctx->device_mem_usage_mb, size >> 20);
    return buf;
+}
+
+static void
+gl_destroy_buffer(struct api_context *ctx, api_buffer *buf)
+{
+   glDeleteBuffers(1, &buf->id);
+
+   if (buf->heap == api_heap_device)
+      atomic_fetch_sub(&ctx->device_mem_usage_mb, buf->size >> 20);
+
+   free(buf);
 }
 
 static void
@@ -394,8 +406,10 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    image->depth = depth;
    image->samples = samples;
    image->format = format;
+   image->heap = heap;
    image->glformat = get_gl_format(format);
    image->gltype = get_gl_type(format);
+   image->mem_size = (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
 
    if (heap != api_heap_device)
       error("GL only supports heap=device for textures");
@@ -441,13 +455,14 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
 
    gl_check_no_error();
 
-   ctx->device_mem_usage += (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
+   atomic_fetch_add(&ctx->device_mem_usage_mb, image->mem_size >> 20);
    return image;
 }
 
 static void
 gl_destroy_image(api_context *ctx, api_image *image)
 {
+   atomic_fetch_sub(&ctx->device_mem_usage_mb, image->mem_size >> 20);
    glDeleteTextures(1, &image->id);
    free(image);
 }
@@ -1277,7 +1292,7 @@ gl_create_context(const program_options *options)
    ctx->destroy_context = NULL;
 
    ctx->create_buffer = gl_create_buffer;
-   ctx->destroy_buffer = NULL;
+   ctx->destroy_buffer = gl_destroy_buffer;
    ctx->upload_buffer_data = gl_upload_buffer_data;
    ctx->clear_buffer = gl_clear_buffer;
    ctx->copy_buffer = gl_copy_buffer;

@@ -1660,7 +1660,7 @@ test_prim(api_context *ctx, const char *test_name)
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++)
       run_test(ctx, state, INIT, &tests[i]);
 
-   printf("GPU memory allocated: %u MB\n", (unsigned)(ctx->device_mem_usage >> 20));
+   printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
    printf("Executing tests ...");
    fflush(stdout);
 
