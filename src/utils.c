@@ -632,3 +632,16 @@ heap_to_string(api_heap_type heap)
 
    return table[heap];
 }
+
+const char *
+queue_to_string(api_queue_type queue)
+{
+   static const char *table[] = {
+      [api_queue_gfx] = "Graphics",
+      [api_queue_compute] = "Compute",
+      [api_queue_transfer] = "Transfer",
+      [api_queue_sparse] = "Sparse",
+   };
+
+   return table[queue];
+}

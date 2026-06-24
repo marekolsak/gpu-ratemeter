@@ -20,8 +20,6 @@
  *
  * bufbw:
  * - VK_KHR_copy_memory_indirect
- * - transfer queue
- * - compute queue (its CP DMA is slower according to https://gitlab.freedesktop.org/mesa/mesa/-/work_items/15633)
  *
  * imgbw:
  * - write README
@@ -141,12 +139,14 @@ typedef struct {
 
 static const option_desc option_list[] = {
    {OPTION_BOOL, "-bda", offsetof(program_options, bda)},
+   {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
    {OPTION_BOOL, "-int8", offsetof(program_options, int8)},
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-sparse-bound", offsetof(program_options, sparse_bound)},
    {OPTION_BOOL, "-sparse-unbound", offsetof(program_options, sparse_unbound)},
+   {OPTION_BOOL, "-transfer", offsetof(program_options, transfer)},
 
    {OPTION_UINT, "-clockbits=", offsetof(program_options, clock_bits)},
    {OPTION_UINT, "-device=", offsetof(program_options, device)},

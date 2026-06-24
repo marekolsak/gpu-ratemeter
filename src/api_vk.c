@@ -273,20 +273,26 @@ vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers,
    VkBufferMemoryBarrier2 *barriers = alloca(sizeof(barriers[0]) * num_buffers);
 
    for (unsigned i = 0; i < num_buffers; i++) {
-      VkAccessFlags2 access = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
-                              VK_ACCESS_2_INDEX_READ_BIT |
-                              VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT |
-                              VK_ACCESS_2_UNIFORM_READ_BIT |
-                              VK_ACCESS_2_SHADER_READ_BIT |
-                              VK_ACCESS_2_SHADER_WRITE_BIT |
-                              VK_ACCESS_2_TRANSFER_READ_BIT |
-                              VK_ACCESS_2_TRANSFER_WRITE_BIT |
-                              VK_ACCESS_2_MEMORY_READ_BIT |
-                              VK_ACCESS_2_MEMORY_WRITE_BIT |
-                              VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
-                              VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
-                              VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
-                              (ctx->has_xfb ? VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT : 0);
+      VkAccessFlags2 access = VK_ACCESS_2_TRANSFER_READ_BIT |
+                              VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+      if (ctx->current_queue == api_queue_gfx || ctx->current_queue == api_queue_compute) {
+         access |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+                   VK_ACCESS_2_UNIFORM_READ_BIT |
+                   VK_ACCESS_2_SHADER_READ_BIT |
+                   VK_ACCESS_2_SHADER_WRITE_BIT |
+                   VK_ACCESS_2_MEMORY_READ_BIT |
+                   VK_ACCESS_2_MEMORY_WRITE_BIT |
+                   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+                   VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+                   VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+      }
+
+      if (ctx->current_queue == api_queue_gfx) {
+         access |= VK_ACCESS_2_INDEX_READ_BIT |
+                   VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT |
+                   (ctx->has_xfb ? VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT : 0);
+      }
 
       barriers[i] = (VkBufferMemoryBarrier2){
                     .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,

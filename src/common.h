@@ -312,12 +312,14 @@ typedef struct {
 
    /* Bool options.*/
    bool bda;
+   bool compute;
    bool int8;
    bool lean;
    bool no_validator;
    bool rdna4_timestamp_wa;
    bool sparse_bound;
    bool sparse_unbound;
+   bool transfer;
 
    /* Uint options. */
    unsigned clock_bits;
@@ -565,6 +567,7 @@ uint16_t float_to_half(float val);
 unsigned bitcount(unsigned n);
 unsigned logbase2(unsigned n);
 const char *heap_to_string(api_heap_type heap);
+const char *queue_to_string(api_queue_type queue);
 
 #ifdef __cplusplus
 }

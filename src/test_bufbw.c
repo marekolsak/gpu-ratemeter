@@ -129,7 +129,7 @@ next_size(unsigned size)
 
 static void
 run(api_context *ctx, const char *test_name, enum test_stage stage,
-    api_timestamp_query_pool *timestamps, unsigned *num_tests)
+    api_timestamp_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
 {
    if (stage == REPORT) {
       printf("%-53s", "Allocation size");
@@ -212,7 +212,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                if (stage == RUN) {
-                  ctx->begin_cmdbuf(ctx, api_queue_gfx);
+                  ctx->begin_cmdbuf(ctx, queue);
 
                   for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
                      if (iter == num_warmup_runs)
@@ -272,20 +272,34 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
 void
 test_bufbw(api_context *ctx, const char *test_name)
 {
+   api_queue_type queue;
+
+   if (ctx->options.compute)
+      queue = api_queue_compute;
+   else if (ctx->options.transfer)
+      queue = api_queue_transfer;
+   else
+      queue = api_queue_gfx;
+
+   if (!ctx->has_queue[queue])
+      error("%s queue support is required.", queue_to_string(queue));
+
+   printf("Using the %s queue.\n", queue_to_string(queue));
+
    unsigned num_tests = 0;
-   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests);
+   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests, queue);
 
    /* Create timestamp queries. */
    api_timestamp_query_pool *timestamps =
       ctx->create_timestamp_pool(ctx, num_tests * 2);
 
    printf("Executing tests ...");
-   run(ctx, test_name, RUN, timestamps, &num_tests);
+   run(ctx, test_name, RUN, timestamps, &num_tests, queue);
 
    puts("");
    puts("Reading back results...");
    ctx->query_timestamps(ctx, timestamps);
 
    puts("Units: GB/s");
-   run(ctx, test_name, REPORT, timestamps, &num_tests);
+   run(ctx, test_name, REPORT, timestamps, &num_tests, queue);
 }

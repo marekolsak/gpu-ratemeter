@@ -208,6 +208,10 @@ Decoding subtest names:
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
+Optional parameters:
+- `-compute`: Execute on the compute queue.
+- `-transfer`: Execute on the transfer queue.
+
 ### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
 WIP (functionally mostly finished, try it)
