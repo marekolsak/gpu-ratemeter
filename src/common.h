@@ -119,6 +119,7 @@ typedef struct {
    unsigned width;
    unsigned height;
    unsigned samples;
+   unsigned view_mask;
    api_image *colorbuf;
    api_image *zbuf;
 
@@ -372,6 +373,7 @@ typedef struct api_context {
    bool has_clear_image_region;
    bool has_fully_covered;
    bool has_image_tiling_linear;
+   bool has_multiview;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
    bool has_shader_int8;
@@ -420,7 +422,8 @@ typedef struct api_context {
                            const char *filename);
 
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
-                                          unsigned width, unsigned height, unsigned samples);
+                                          unsigned width, unsigned height, unsigned samples,
+                                          unsigned view_mask);
    void (*destroy_framebuffer)(struct api_context *ctx, api_framebuffer *fb);
 
    api_shader *(*create_shader)(struct api_context *ctx, const char *source, api_shader_type type);

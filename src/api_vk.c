@@ -650,14 +650,18 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
 
 static api_framebuffer *
 vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
-                      unsigned width, unsigned height, unsigned samples)
+                      unsigned width, unsigned height, unsigned samples, unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
    fb->samples = samples;
+   fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
    fb->zbuf = zbuf;
+
+   assert(view_mask);
+   assert(ctx->has_multiview || view_mask == 0x1);
 
    if (!(ctx->options.api_flags & API_VK_DYNAMIC_STATE)) {
       fb->colorbuf_att_index = 0;
@@ -708,36 +712,40 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
          for (unsigned i = 0; i < fb->num_attachments; i++)
             att_descs[i].loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 
-         vk_check(vkCreateRenderPass2(ctx->device,
-                                      &(VkRenderPassCreateInfo2) {
-                                         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
-                                         .attachmentCount = fb->num_attachments,
-                                         .pAttachments = att_descs,
-                                         .subpassCount = 1,
-                                         .pSubpasses = (VkSubpassDescription2[]) {
-                                            {
-                                               .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
-                                               .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                               .colorAttachmentCount = colorbuf ? 1 : 0,
-                                               .pColorAttachments = (VkAttachmentReference2[]) {
-                                                  {
-                                                     .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-                                                     .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
-                                                     .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                                  },
-                                               },
-                                               .pDepthStencilAttachment = &(VkAttachmentReference2) {
-                                                  .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-                                                  .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
-                                                  .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                                                  .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-                                               },
-                                            },
-                                         },
-                                      },
-                                      NULL, &fb->render_pass[clear]));
+         bool multiview = view_mask != 0x1;
 
+         VkRenderPassCreateInfo2 rp_create_info = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
+            .attachmentCount = fb->num_attachments,
+            .pAttachments = att_descs,
+            .subpassCount = 1,
+            .pSubpasses = (VkSubpassDescription2[]) {
+               {
+                  .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
+                  .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                  .viewMask = multiview ? view_mask : 0,
+                  .colorAttachmentCount = colorbuf ? 1 : 0,
+                  .pColorAttachments = (VkAttachmentReference2[]) {
+                     {
+                        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+                        .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
+                        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                     },
+                  },
+                  .pDepthStencilAttachment = &(VkAttachmentReference2) {
+                     .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+                     .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
+                     .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                     .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                  },
+               },
+            },
+            .correlatedViewMaskCount = multiview ? 1 : 0,
+            .pCorrelatedViewMasks = &view_mask,
+         };
+
+         vk_check(vkCreateRenderPass2(ctx->device, &rp_create_info, NULL, &fb->render_pass[clear]));
          vk_check(vkCreateFramebuffer(ctx->device,
                                       &(VkFramebufferCreateInfo) {
                                          .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -746,8 +754,9 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                          .pAttachments = att_views,
                                          .width = fb->width,
                                          .height = fb->height,
-                                         .layers = colorbuf ? colorbuf->depth :
-                                                   zbuf ? zbuf->depth : 1,
+                                         .layers = multiview ? 1 :
+                                                      colorbuf ? colorbuf->depth :
+                                                      zbuf ? zbuf->depth : 1,
                                       },
                                       NULL, &fb->fb[clear]));
       }
@@ -1235,8 +1244,10 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       .renderPass = uses_dynamic_state ? NULL : desc->fb->render_pass[0],
    };
 
+   bool multiview = desc->fb->view_mask != 0x1;
    VkPipelineRenderingCreateInfo dyn_rendering_pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+      .viewMask = multiview ? desc->fb->view_mask : 0,
       .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
       .pColorAttachmentFormats = desc->fb->colorbuf ? &desc->fb->colorbuf->format : NULL,
       .depthAttachmentFormat = desc->fb->zbuf ? desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
@@ -1379,6 +1390,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
                                          &pipeline->pipeline));
    }
 
+   assert(pipeline);
    return pipeline;
 }
 
@@ -1589,6 +1601,8 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    }
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
+      bool multiview = desc->fb->view_mask != 0x1;
+
       vkCmdBeginRendering(ctx->current_cmd_buffer,
                           &(VkRenderingInfo){
                              .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -1596,8 +1610,10 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                 .offset = {0, 0},
                                 .extent = {desc->fb->width, desc->fb->height},
                              },
-                             .layerCount = desc->fb->colorbuf ? desc->fb->colorbuf->depth :
-                                           desc->fb->zbuf ? desc->fb->zbuf->depth : 1,
+                             .layerCount = multiview ? 1 :
+                                             desc->fb->colorbuf ? desc->fb->colorbuf->depth :
+                                             desc->fb->zbuf ? desc->fb->zbuf->depth : 1,
+                             .viewMask = multiview ? desc->fb->view_mask : 0,
                              .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
                              .pColorAttachments = &(VkRenderingAttachmentInfo){
                                 .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -1697,6 +1713,7 @@ static void
 vk_draw(api_context *ctx, const api_draw_desc *desc)
 {
    assert(desc->count && (desc->mesh_shader || desc->instance_count));
+   assert(ctx->current_pipeline);
 
    if (desc->mesh_shader)
       ctx->vkCmdDrawMeshTasksEXT(ctx->current_cmd_buffer, desc->count, 1, 1);
@@ -2225,7 +2242,7 @@ vk_create_context(const program_options *options)
    //require(Vulkan11.uniformAndStorageBuffer16BitAccess);
    //require(Vulkan11.storagePushConstant16);
    //require(Vulkan11.storageInputOutput16);
-   //require(Vulkan11.multiview);
+   optional(Vulkan11.multiview);
    //require(Vulkan11.multiviewGeometryShader);
    //require(Vulkan11.multiviewTessellationShader);
    //require(Vulkan11.variablePointersStorageBuffer);
@@ -2490,6 +2507,7 @@ vk_create_context(const program_options *options)
    ctx->has_clear_image_region = false;
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
    ctx->has_image_tiling_linear = true;
+   ctx->has_multiview = Vulkan11.multiview;
    ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
    ctx->has_shader_int64 = Vulkan10.features.shaderInt64;

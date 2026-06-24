@@ -81,8 +81,11 @@ gpu-ratemeter -lean vk.pix
 
 Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
+The same subtests run up to 5 times: Once for each sample count and once for a multiview with 2 layers and 1 sample separately.
+
 Decoding subtest names:
-- `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
+- `noaa`, `msaa2`, `msaa4`, `msaa8`: the framebuffer has 1, 2, 4, or 8 samples
+- `multiview`: the framebuffer is a multiview with 2 layers and 1 sample
 - `fs_empty`: empty fragment shader
 - `fs_discard`: the fragment shader contains `discard;` before writing the color output
 - `fs_discard_no_output`: the fragment shader contains `discard;` with no outputs (it only discards Z writes)
@@ -108,6 +111,7 @@ Decoding subtest names:
   - `samplemask`: `gl_SampleMaskIn`
   - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
   - `shading_rate`: `gl_ShadingRateEXT`
+  - `view_index`: `gl_ViewIndex`
 - Used inputs are indicated as follows:
   - `Nflat`: N flat inputs
   - `Npersp`: N inputs with perspective interpolation at center

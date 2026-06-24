@@ -38,7 +38,6 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - multiview + viewindex FS sysval
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
  * pix - later maybe:
  * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric

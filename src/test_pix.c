@@ -9,8 +9,11 @@
 
 #include "common.h"
 
-/* Draw over the whole viewport this many times. The LESS Z test requires that this is <= 50. */
+/* Draw over the whole viewport this many times. */
 #define NUM_FULLSCREEN_TRIANGLES 10
+
+static_assert(NUM_FULLSCREEN_TRIANGLES <= 50, "required by ztest_less");
+static_assert(NUM_FULLSCREEN_TRIANGLES % 2 == 0, "required by multiview");
 
 typedef struct {
    /* These are concatenated at runtime to form the test name.
@@ -37,18 +40,28 @@ typedef struct {
 
 #define FS_SHADER_HEADER \
    SHADER_HEADER \
+   "\n" \
    "#define IMAGE_STORE 0 \n" /* 0 is replaced by 1 during compilation */ \
    "#define FS_OUTPUT_TYPE 0 \n" /* 0=float, 1=int, 2=uint, replaced during compilation */ \
    "#define HAS_VRS 0 \n" \
    "#define HAS_FULLY_COVERED 0 \n" \
+   "#define HAS_MULTIVIEW 0 \n" \
+   "\n" \
    \
    "#if HAS_VRS \n" \
    "#extension GL_EXT_fragment_shading_rate : require \n" \
    "#endif \n" \
+   "\n" \
    \
    "#if HAS_FULLY_COVERED \n" \
    "#extension GL_NV_conservative_raster_underestimation : require \n" \
    "#endif \n" \
+   "\n" \
+   \
+   "#if HAS_MULTIVIEW \n" \
+   "#extension GL_EXT_multiview : require \n" \
+   "#endif \n" \
+   "\n" \
    \
    "#if FS_OUTPUT_TYPE == 0 \n" \
    "#define FS_OUTPUT_TYPE_NAME vec4 \n" \
@@ -57,6 +70,7 @@ typedef struct {
    "#elif FS_OUTPUT_TYPE == 2 \n" \
    "#define FS_OUTPUT_TYPE_NAME uvec4 \n" \
    "#endif \n" \
+   "\n" \
    \
    "#if IMAGE_STORE \n" \
    "   #ifdef VULKAN \n" \
@@ -67,6 +81,7 @@ typedef struct {
    "#else \n" \
    "   layout(location = 0) out FS_OUTPUT_TYPE_NAME fs_out; \n" \
    "#endif \n" \
+   "\n" \
    \
    "void store_output_color0(vec4 value) { \n" \
    "#if IMAGE_STORE \n" \
@@ -187,7 +202,8 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xy", "vec4(float(gl_SampleID) + dot(gl_FragCoord.xy, vec2(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_z", "vec4(float(gl_SampleID) + gl_FragCoord.z)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xyzw", "vec4(float(gl_SampleID) + dot(gl_FragCoord, vec4(1)))"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask.fragpos_xyzw.face", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)) + float(gl_SampleMaskIn[0]) + dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing))")
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask.fragpos_xyzw.face", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)) + float(gl_SampleMaskIn[0]) + dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing))"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".view_index", "vec4(gl_ViewIndex)")
 
 #define INPUTS1(qual1_name, qual1) \
    INPUTS(1, qual1_name, qual1, 0, "", ""), \
@@ -568,13 +584,15 @@ typedef struct {
 } fb_pipelines;
 
 static void
-get_pipeline_name(char *out, unsigned max_out_length, unsigned samples,
+get_pipeline_name(char *out, unsigned max_out_length, unsigned samples, bool multiview,
                   const pipeline_info *pipeline)
 {
    char msaa[16];
 
    if (samples > 1)
       snprintf(msaa, sizeof(msaa), ".msaa%u", samples);
+   else if (multiview)
+      snprintf(msaa, sizeof(msaa), ".multiview");
    else
       snprintf(msaa, sizeof(msaa), ".noaa");
 
@@ -583,17 +601,18 @@ get_pipeline_name(char *out, unsigned max_out_length, unsigned samples,
 }
 
 static bool
-test_filter(api_context *ctx, unsigned samples, const pipeline_info *pipeline)
+test_filter(api_context *ctx, unsigned samples, bool multiview, const pipeline_info *pipeline)
 {
    char pipeline_name[256];
-   get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, pipeline);
+   get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, pipeline);
 
    return check_filter_string(ctx->options.test_filter, pipeline_name);
 }
 
 static void
 run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
-                  compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set)
+             compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set,
+             bool multiview)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
    api_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
@@ -602,7 +621,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
       char pipeline_name[256];
-      get_pipeline_name(pipeline_name, sizeof(pipeline_name), 1, &pipelines[p]);
+      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, &pipelines[p]);
 
       /* The pipeline name determines the states. */
       bool colormask0 = strstr(pipeline_name, ".colormask=0");
@@ -613,7 +632,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       bool cull_back = strstr(pipeline_name, ".cull_back");
 
       if (!pipelines[p].fs_source ||
-          !test_filter(ctx, samples, &pipelines[p]) ||
+          !test_filter(ctx, samples, multiview, &pipelines[p]) ||
+          (!multiview && strstr(pipeline_name, ".view_index")) ||
+          (multiview && strstr(pipeline_name, ".layer")) ||
           (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample"))) {
          skip_pipeline[p] = true;
          continue;
@@ -631,6 +652,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          skip_pipeline[p] = true;
          continue;
       }
+
+      assert((intptr_t)compiled_shaders[p].vs != 2);
 
       pipeline_descs[p] = (api_pipeline_desc){
          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -709,7 +732,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       else if (pix_size == 16)
          fb_size /= 2;
 
-      const unsigned num_layers = 1;
+      const unsigned num_layers = multiview ? 2 : 1;
+      const unsigned view_mask = multiview ? 0x3 : 0x1;
 
       if (format) {
          fbs[f].colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size,
@@ -724,9 +748,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;
       fbs[f].fb_color_only = ctx->create_framebuffer(ctx, fbs[f].colorbuf, NULL,
-                                                     fb_size, fb_size, samples);
+                                                     fb_size, fb_size, samples, view_mask);
       fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zbuf,
-                                                         fb_size, fb_size, samples);
+                                                         fb_size, fb_size, samples, view_mask);
    }
 
 #pragma omp parallel for if (ctx->allow_parallel_create_pipeline) collapse(2) schedule(static, 50)
@@ -741,7 +765,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          api_pipeline_desc pipeline_desc = pipeline_descs[p];
 
          char pipeline_name[256];
-         get_pipeline_name(pipeline_name, sizeof(pipeline_name), 1, &pipelines[p]);
+         get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview,
+                           &pipelines[p]);
 
          /* The pipeline name determines the states. */
          bool helper_invoc = strstr(pipeline_name, "helper_invoc");
@@ -827,7 +852,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .depth_clear_value = 0.5,
                                 });
 
-         const unsigned num_vertices = NUM_FULLSCREEN_TRIANGLES * 3;
+         const unsigned num_vertices = (NUM_FULLSCREEN_TRIANGLES / (multiview ? 2 : 1)) * 3;
          const unsigned num_warmup_vertices = num_vertices / 4;
 
          /* Warm up the GPU. */
@@ -903,7 +928,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          continue;
 
       char pipeline_name[256];
-      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, &pipelines[p]);
+      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, &pipelines[p]);
 
       char name[256];
       snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
@@ -953,7 +978,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 void
 test_pix(api_context *ctx, const char *test_name)
 {
-   compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)];
+   compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)] = {0};
    static const unsigned sample_counts[] = {1, 2, 4, 8};
 
    puts("Compiling shaders...");
@@ -964,15 +989,17 @@ test_pix(api_context *ctx, const char *test_name)
       bool match = false;
 
       for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
-         if (test_filter(ctx, sample_counts[s], &pipelines[p])) {
+         if (test_filter(ctx, sample_counts[s], false, &pipelines[p]) ||
+             (sample_counts[s] == 1 && test_filter(ctx, sample_counts[s], true, &pipelines[p]))) {
             match = true;
             break;
          }
       }
 
       if (!match || !pipelines[p].fs_source ||
-          (!ctx->has_vrs && strstr(pipelines[p].fs_source, "gl_ShadingRateEXT")) ||
-          (!ctx->has_fully_covered && strstr(pipelines[p].fs_source, "gl_FragFullyCoveredNV")))
+          (!ctx->has_fully_covered && strstr(pipelines[p].fs_source, "gl_FragFullyCoveredNV")) ||
+          (!ctx->has_multiview && strstr(pipelines[p].fs_source, "gl_ViewIndex")) ||
+          (!ctx->has_vrs && strstr(pipelines[p].fs_source, "gl_ShadingRateEXT")))
          continue;
 
       compiled_shaders[p].vs = ctx->create_shader(ctx, pipelines[p].vs_source, api_shader_vs);
@@ -980,10 +1007,12 @@ test_pix(api_context *ctx, const char *test_name)
       char *fs_source = strdup(pipelines[p].fs_source);
       char *fs_has_vrs_define = strstr(fs_source, "#define HAS_VRS 0");
       char *fs_has_fully_covered_define = strstr(fs_source, "#define HAS_FULLY_COVERED 0");
+      char *fs_has_multiview_define = strstr(fs_source, "#define HAS_MULTIVIEW 0");
 
       assert(fs_has_vrs_define);
       fs_has_vrs_define[16] = ctx->has_vrs ? '1' : '0';
       fs_has_fully_covered_define[26] = ctx->has_fully_covered ? '1' : '0';
+      fs_has_multiview_define[22] = ctx->has_multiview ? '1' : '0';
 
       compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, fs_source, api_shader_fs);
 
@@ -1028,8 +1057,14 @@ test_pix(api_context *ctx, const char *test_name)
    ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
 
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
-      if (ctx->supported_color_sample_counts & sample_counts[s] &&
-          (!ctx->options.samples || ctx->options.samples == sample_counts[s]))
-         run_test_pix(ctx, test_name, sample_counts[s], compiled_shaders, desc_set);
+      unsigned samples = sample_counts[s];
+
+      if (ctx->supported_color_sample_counts & samples &&
+          (!ctx->options.samples || ctx->options.samples == samples)) {
+         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, false);
+
+         if (samples == 1 && ctx->has_multiview)
+            run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, true);
+      }
    }
 }

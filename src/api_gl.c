@@ -606,14 +606,17 @@ gl_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
 
 static api_framebuffer *
 gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
-                      unsigned width, unsigned height, unsigned samples)
+                      unsigned width, unsigned height, unsigned samples, unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
    fb->samples = samples;
+   fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
    fb->zbuf = zbuf;
+
+   assert(view_mask == 0x1);
 
    glCreateFramebuffers(1, &fb->id);
    if (colorbuf)

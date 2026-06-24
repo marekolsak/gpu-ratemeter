@@ -232,7 +232,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
 {
    bool layered = image->depth > 1;
    api_framebuffer *fb = ctx->create_framebuffer(ctx, image, NULL, image->width, image->height,
-                                                 image->samples);
+                                                 image->samples, 0x1);
    api_pipeline *pipeline =
       ctx->create_pipeline(ctx,
                            &(api_pipeline_desc){
@@ -519,7 +519,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         state[size_index].fb =
                               ctx->create_framebuffer(ctx, state[size_index].dst, NULL,
                                                       state[size_index].width, state[size_index].height,
-                                                      dst_samples);
+                                                      dst_samples, 0x1);
                      }
                   }
 

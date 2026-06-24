@@ -1605,7 +1605,7 @@ test_prim(api_context *ctx, const char *test_name)
                                            FB_SIZE, FB_SIZE, 2, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device);
    state->fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
-                                       colorbuf->height, colorbuf->samples);
+                                       colorbuf->height, colorbuf->samples, 0x1);
 
    /* Create the timestamp pool. */
    state->timestamps = ctx->create_timestamp_pool(ctx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2);

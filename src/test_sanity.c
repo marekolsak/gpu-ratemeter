@@ -137,7 +137,7 @@ test_sanity(api_context *ctx, const char *test_name)
                                            1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
-                                                 colorbuf->height, colorbuf->samples);
+                                                 colorbuf->height, colorbuf->samples, 0x1);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);
 
    const char *vs_source =
