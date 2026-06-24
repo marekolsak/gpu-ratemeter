@@ -14,9 +14,8 @@ This app enables developers to evaluate observed GPU performance across all thos
 - Vulkan vs DX12 vs VKD3D
 - Vulkan vs DX11 vs DXVK
 - OpenGL in WSL2 vs Vulkan in WSL2 vs DX12
-- Vulkan with graphics pipeline objects (all shaders and states known at pipeline creation) vs all dynamic state (states unknown at pipeline creation) vs graphics pipeline
-libraries (shaders are compiled independently with no knowledge of states and other shaders)
-- VirtIO Native Context vs VirtIO VirGL/Venus vs native driver
+- Vulkan with graphics pipeline objects vs graphics pipeline libraries and static state vs dynamic state.
+- VirtIO Native Context vs VirtIO VirGL/Venus vs bare metal
 
 In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
 
@@ -67,7 +66,7 @@ gpu-ratemeter -lean vk.pix
 # How It Works
 
 - Results are calculated from GPU timestamps.
-- Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. If that happens, use a power profile that maintains a constant frequency at all times.
+- Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. It's recommended to use a power profile that keeps the frequency constant.
 - % progress is printed while building pipelines and executing subtests. Results are only printed at the end (unless a specific test has multiple stages).
 - The execution time of one test should not exceed 2 minutes on a decent desktop GPU.
 - The app is windowless and doesn't even register with the window system where that's possible.
