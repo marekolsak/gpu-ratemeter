@@ -9,6 +9,9 @@
 
 #include "common.h"
 
+/* Draw over the whole viewport this many times. The LESS Z test requires that this is <= 50. */
+#define NUM_FULLSCREEN_TRIANGLES 10
+
 typedef struct {
    /* These are concatenated at runtime to form the test name.
     * C macros can't concatenate conditional string expressions, so we do it at runtime.
@@ -28,8 +31,8 @@ typedef struct {
 
 #define SHADER_HEADER \
    "#version 460\n" \
-   "#ifdef VULKAN \n" \
-   "#define gl_VertexID gl_VertexIndex \n" \
+   "#ifndef VULKAN \n" \
+   "#define gl_VertexIndex (gl_VertexID + gl_BaseVertex) \n" \
    "#endif \n"
 
 #define FS_SHADER_HEADER \
@@ -80,15 +83,17 @@ typedef struct {
 /* This is one triangle that fills the whole screen. Drawing 2 triangles would make the GPU less
  * efficient along the diagonal edge, which does skew results noticably.
  */
-#define VS_SET_POSITION(z) "   gl_Position = vec4(gl_VertexID % 3 == 0 ? vec2(-2, -1) : \n" \
-                           "                      gl_VertexID % 3 == 1 ? vec2( 2, -1) : \n" \
-                           "                                             vec2( 0,  3), "#z", 1); \n"
+#define VS_SET_POSITION(z) "   gl_Position = vec4(gl_VertexIndex % 3 == 0 ? vec2(-2, -1) : \n" \
+                           "                      gl_VertexIndex % 3 == 1 ? vec2( 2, -1) : \n" \
+                           "                                                vec2( 0,  3), "z", 1); \n"
 
-#define VS_POS_ONLY(z) \
+#define VS_POS_WITH_Z(z) \
    SHADER_HEADER \
    "void main() {\n" \
    VS_SET_POSITION(z) \
    "}\n"
+
+#define VS_POS_ONLY VS_POS_WITH_Z("0")
 
 #define INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, sysval_name, sysval_code) \
    {num1 ? "." #num1 qual1_name : "", \
@@ -108,7 +113,7 @@ typedef struct {
    "#endif \n" \
    \
    "void main() {\n" \
-   "   float id = float(gl_VertexID); \n" \
+   "   float id = float(gl_VertexIndex); \n" \
    \
    /* These multiplications prevent shader linker optimizations. */ \
    "#if "#num1" > 0 \n" \
@@ -124,7 +129,7 @@ typedef struct {
    "      linear[i / 4][i % 4] = linear[(i - 1) / 4][(i - 1) % 4] * id; \n" \
    "#endif \n" \
    \
-   VS_SET_POSITION(0) \
+   VS_SET_POSITION("0") \
    "}\n", \
    \
    FS_SHADER_HEADER \
@@ -203,7 +208,7 @@ typedef struct {
    INPUTS(7, qual1_name, qual1, 1, qual2_name, qual2)
 
 #define WRITE_COLOR_Z_SAMPLEMASK_A2C_IMPL(zbuf, write_color, write_z, write_samplemask, alpha_to_coverage, color_disabled, z_disabled, helper_invoc) \
-   { zbuf ? ".zbuf.output" : ".output", \
+   { zbuf ? ".zbuf.zwrite.output" : ".output", \
    write_color && write_z && write_samplemask ? ".color+z+samplemask" : \
    write_color && write_z ? ".color+z" : \
    write_color && write_samplemask ? ".color+samplemask" : \
@@ -216,7 +221,7 @@ typedef struct {
    z_disabled ? ".z_disabled" : "", \
    helper_invoc ? ".helper_invoc" : "", \
    \
-   VS_POS_ONLY(0),\
+   VS_POS_ONLY,\
    \
    FS_SHADER_HEADER \
    "void main() {\n" \
@@ -344,7 +349,7 @@ typedef struct {
    "", \
    "", \
    \
-   VS_POS_ONLY(0), \
+   VS_POS_ONLY, \
    FS_WRITE_COLOR_CONST(helper_invoc, x, y, z, w)}
 
 #define WRITE_COLOR_CONST(helper_invoc) \
@@ -365,18 +370,18 @@ typedef struct {
     "", \
     "", \
     \
-    VS_POS_ONLY(0), \
+    VS_POS_ONLY, \
     FS_WRITE_COLOR_CONST(helper_invoc, 0.1, 0.2, 0.3, 0.4)}
 
-#define ZTEST_IMPL(name, helper_invoc, z, fs_name, fs) \
-   {name, \
+#define ZTEST_IMPL(zwrite, ztest, helper_invoc, z, fs_name, fs) \
+   {".zbuf", \
+    zwrite ? ".zwrite" : "", \
+    ztest, \
     fs_name, \
     helper_invoc ? ".helper_invoc" : "", \
     "", \
-    "", \
-    "", \
     \
-    VS_POS_ONLY(z), \
+    VS_POS_WITH_Z(z), \
     (fs)}
 
 #define FS_EMPTY(helper_invoc) \
@@ -410,21 +415,22 @@ typedef struct {
       "   discard; \n" \
       "}")
 
-#define ZTEST_FS(name, helper_invoc, z) \
-   ZTEST_IMPL(name, helper_invoc, z, "", FS_WRITE_COLOR_CONST(helper_invoc, 0.2, 0.3, 0.4, 0.5))
+#define ZTEST_FS(zwrite, ztest, helper_invoc, z) \
+   ZTEST_IMPL(zwrite, ztest, helper_invoc, z, "", FS_WRITE_COLOR_CONST(helper_invoc, 0.2, 0.3, 0.4, 0.5)), \
+   ZTEST_IMPL(zwrite, ztest, helper_invoc, z, ".fs_empty", zwrite ? FS_EMPTY(helper_invoc) : NULL), \
+   ZTEST_IMPL(zwrite, ztest, helper_invoc, z, ".fs_discard", zwrite ? FS_DISCARD(helper_invoc) : NULL), \
+   ZTEST_IMPL(zwrite, ztest, helper_invoc, z, ".fs_discard_no_output", zwrite ? FS_DISCARD_NO_OUTPUT(helper_invoc) : NULL)
 
-#if 0 /* TODO: these aren't useful without Z writes (fs_empty becomes no-op draw, fs_discard uses early Z) */
-   ZTEST_IMPL(name, helper_invoc, z, ".fs_empty", FS_EMPTY(helper_invoc)), \
-   ZTEST_IMPL(name, helper_invoc, z, ".fs_discard", FS_DISCARD(helper_invoc)), \
-   ZTEST_IMPL(name, helper_invoc, z, ".fs_discard_no_output", FS_DISCARD_NO_OUTPUT(helper_invoc))
-#endif
+#define ZTESTS_NO_ZWRITE(helper_invoc) \
+   ZTEST_FS(0, ".ztest_never.fail", helper_invoc, "0")
 
-#define ZTEST(helper_invoc) \
-   ZTEST_FS(".zbuf.ztest_never.fail", helper_invoc, 0), \
-   ZTEST_FS(".zbuf.ztest_less.fail", helper_invoc, 0.7), \
-   ZTEST_FS(".zbuf.ztest_notequal.fail", helper_invoc, 0.5), \
-   ZTEST_FS(".zbuf.ztest_less.pass", helper_invoc, 0.2), \
-   ZTEST_FS(".zbuf.ztest_equal.pass", helper_invoc, 0.5)
+/* Note: Z is cleared to 0.5. */
+#define ZTESTS(zwrite, helper_invoc) \
+   ZTEST_FS(zwrite, ".ztest_less.fail", helper_invoc, "0.7"), \
+   ZTEST_FS(zwrite, ".ztest_notequal.fail", helper_invoc, "0.5"), \
+   /* Decrease position.z slightly for every draw, so that the LESS test keeps passing with Z writes enabled. */ \
+   ZTEST_FS(zwrite, ".ztest_less.pass", helper_invoc, "0.5 - (float(gl_VertexIndex / 3 + 1) * 0.01)"), \
+   ZTEST_FS(zwrite, ".ztest_equal.pass", helper_invoc, "0.5")
 
 #define NAME(name) name, "", "", "", "", ""
 
@@ -435,20 +441,24 @@ typedef struct {
 
 static const pipeline_info pipelines[] = {
    {NAME(".fs_empty"),
-    VS_POS_ONLY(0),
+    VS_POS_ONLY,
     FS_EMPTY(0)},
 
    /* Discard. */
    {NAME(".fs_discard"),
-    VS_POS_ONLY(0),
+    VS_POS_ONLY,
     FS_DISCARD(0)},
 
    {NAME(".fs_discard.helper_invoc"),
-    VS_POS_ONLY(0),
+    VS_POS_ONLY,
     FS_DISCARD(1)},
 
-   ZTEST(0), /* helper_invoc=0 */
-   ZTEST(1), /* helper_invoc=1 */
+   ZTESTS_NO_ZWRITE(0), /* helper_invoc=0 */
+   ZTESTS(0, 0), /* zwrite=0, helper_invoc=0 */
+   ZTESTS(1, 0), /* zwrite=1, helper_invoc=0 */
+   ZTESTS_NO_ZWRITE(1), /* helper_invoc=1 */
+   ZTESTS(0, 1), /* zwrite=0, helper_invoc=1 */
+   ZTESTS(1, 1), /* zwrite=1, helper_invoc=1 */
 
    WRITE_COLOR_CONST(0), /* helper_invoc=0 */
    WRITE_COLOR_CONST(1), /* helper_invoc=1 */
@@ -556,9 +566,6 @@ typedef struct {
    api_pipeline *pipelines[ARRAY_SIZE(pipelines)];
 } fb_pipelines;
 
-/* Draw over the whole viewport this many times. */
-#define NUM_FULLSCREEN_TRIANGLES 10
-
 static void
 get_pipeline_name(char *out, unsigned max_out_length, unsigned samples,
                   const pipeline_info *pipeline)
@@ -611,7 +618,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          continue;
       }
 
-      /* Skip tests that use a Z buffer or don't write a color buffer. */
+      /* For bandwidth tests, skip those that use a Z buffer or don't write a color buffer. */
       if (ctx->options.report_bandwidth &&
           (strstr(pipeline_name, "fs_empty") ||
            strstr(pipeline_name, "fs_discard") ||
@@ -633,7 +640,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          .sample_shading = sample_shading,
          .samplemask = (1 << samples) - 1,
          .depth_enabled = strstr(pipeline_name, "zbuf") && !strstr(pipeline_name, "z_disabled"),
-         .depth_write_enabled = !strstr(pipeline_name, ".ztest"),
+         .depth_write_enabled = strstr(pipeline_name, ".zwrite"),
          .depth_compare_op = strstr(pipeline_name, ".ztest_never") ? VK_COMPARE_OP_NEVER :
                              strstr(pipeline_name, ".ztest_less") ? VK_COMPARE_OP_LESS :
                              strstr(pipeline_name, ".ztest_equal") ? VK_COMPARE_OP_EQUAL :
@@ -816,9 +823,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                                    .depth_clear_value = 0.5,
                                 });
+
+         const unsigned num_vertices = NUM_FULLSCREEN_TRIANGLES * 3;
+         const unsigned num_warmup_vertices = num_vertices / 4;
+
          /* Warm up the GPU. */
-         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3 / 4,
-                                         .instance_count = 1});
+         ctx->draw(ctx, &(api_draw_desc){.count = num_warmup_vertices, .instance_count = 1});
          ctx->end_render_pass(ctx);
          ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
 
@@ -827,8 +837,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                 });
-         ctx->draw(ctx, &(api_draw_desc){.count = NUM_FULLSCREEN_TRIANGLES * 3,
-                                         .instance_count = 1});
+         ctx->draw(ctx, &(api_draw_desc){.count = num_vertices, .instance_count = 1,
+                                         .first_vertex = num_warmup_vertices});
          ctx->end_render_pass(ctx);
          ctx->write_next_timestamp(ctx, timestamps);
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);

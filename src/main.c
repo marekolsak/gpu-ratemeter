@@ -38,9 +38,6 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - ztest.* + zwrite + discard
- * - ztest.* + zwrite + discard + no color output (RB+)
- * - ztest.* + zwrite + empty FS
  * - layer FS sysval (with 2D array and 3D image)
  * - render to 3D image
  * - multiview + viewindex FS sysval

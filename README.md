@@ -85,8 +85,10 @@ Decoding subtest names:
 - `noaa`, `msaa4`, `msaa8`: the framebuffer has 1, 4, or 8 samples
 - `fs_empty`: empty fragment shader
 - `fs_discard`: the fragment shader contains `discard;` before writing the color output
+- `fs_discard_no_output`: the fragment shader contains `discard;` with no outputs (it only discards Z writes)
 - `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
 - `zbuf`: the framebuffer contains a Z buffer
+- `zwrite`: Z writes are enabled
 - `z_tess_*.fail`, `z_tess_*.pass`: the subtest uses the given Z compare op to pass or fail the Z test
 - `colormask=0`, `colormask=x`: the color mask is set to 0 or only the X component
 - `blend_src_color0`, `blend_src_color1`, `blend_src_alpha0`, `blend_src_alpha1`: the subtest uses blending with color or alpha blend factors and color values such that 0 means that blending fully discards the pixels, while 1 means that blending fully overwrites the pixels
@@ -121,7 +123,7 @@ Optional parameters:
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
-Same as `pix`, but print the memory bandwidth in GB/s instead of samples/clock. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
+Same as `pix`, but it prints the memory bandwidth in GB/s instead of samples/clock. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
 
 ### `prim`: Primitive Throughput (primitives/clock)
 
