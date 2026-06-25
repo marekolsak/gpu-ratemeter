@@ -58,12 +58,21 @@ get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *
 void
 print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                       uint64_t num_units, const char *rate_format,
-                                      const char *bandwidth_format, unsigned bandwidth_exp2_divisor)
+                                      const char *bandwidth_format, const char *string_format,
+                                      unsigned bandwidth_exp2_divisor)
 {
    double rate = num_units /  get_time_in_seconds_from_timestamps(ctx, pool);
 
+   /* a comma separator between results */
+   printf(",");
+
    if (ctx->options.report_bandwidth) {
-      printf(bandwidth_format, rate / (1ull << bandwidth_exp2_divisor));
+      rate /= 1ull << bandwidth_exp2_divisor;
+
+      if (ctx->options.max_valid_result && rate > ctx->options.max_valid_result)
+         printf(string_format, "error");
+      else
+         printf(bandwidth_format, rate);
    } else {
       /* If the frequency is set, print the results in units per clock cycle, else print it
        * in billions per second.
@@ -77,7 +86,10 @@ print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool
       if (ctx->options.max_rate)
          rate *= 100.0 / ctx->options.max_rate;
 
-      printf(rate_format, rate);
+      if (ctx->options.max_valid_result && rate > ctx->options.max_valid_result)
+         printf(string_format, "error");
+      else
+         printf(rate_format, rate);
    }
 }
 

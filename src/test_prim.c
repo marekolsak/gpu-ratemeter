@@ -1546,7 +1546,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
    char test_name[1024];
    get_test_name(test_name, sizeof(test_name), state, test);
 
-   if (!check_filter_string(ctx->options.test_filter, test_name))
+   if (!check_filter_string(ctx->options.filter, test_name))
       return;
 
    switch (test_stage) {
@@ -1580,7 +1580,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
          if (state->pipelines[test->geom_style][test->cull_method][test->special2][v]) {
             print_throughput_from_next_timestamps(ctx, state->timestamps,
                                                   NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
-                                                  ctx->options.max_rate ? ",%6.1f" : ",%6.2f", NULL, 0);
+                                                  ctx->options.max_rate ? "%6.1f" : "%6.2f", NULL, "%6s", 0);
          } else {
             printf(",   n/a");
          }

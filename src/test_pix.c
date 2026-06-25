@@ -583,45 +583,74 @@ typedef struct {
    api_pipeline *pipelines[ARRAY_SIZE(pipelines)];
 } fb_pipelines;
 
+typedef enum {
+   TEST_NORMAL,
+   TEST_MULTIVIEW,
+   TEST_IMAGE_3D,
+   TEST_LINEAR,
+} test_flavor;
+
 static void
-get_pipeline_name(char *out, unsigned max_out_length, unsigned samples, bool multiview,
+get_pipeline_name_prefix(char *out, unsigned max_out_length, unsigned samples, test_flavor test_flavor)
+{
+   assert(test_flavor == TEST_NORMAL || samples == 1);
+
+   switch (test_flavor) {
+   case TEST_NORMAL:
+      if (samples > 1)
+         snprintf(out, max_out_length, "msaa%u", samples);
+      else
+         snprintf(out, max_out_length, "noaa");
+      break;
+   case TEST_MULTIVIEW:
+      snprintf(out, max_out_length, "multiview");
+      break;
+   case TEST_IMAGE_3D:
+      snprintf(out, max_out_length, "image3d");
+      break;
+   case TEST_LINEAR:
+      snprintf(out, max_out_length, "linear");
+      break;
+   default:
+      error("pix: unexpected test_flavor");
+   }
+}
+
+static void
+get_pipeline_name(char *out, unsigned max_out_length, unsigned samples, test_flavor test_flavor,
                   const pipeline_info *pipeline)
 {
-   char msaa[16];
+   char prefix[16];
 
-   if (samples > 1)
-      snprintf(msaa, sizeof(msaa), ".msaa%u", samples);
-   else if (multiview)
-      snprintf(msaa, sizeof(msaa), ".multiview");
-   else
-      snprintf(msaa, sizeof(msaa), ".noaa");
+   get_pipeline_name_prefix(prefix, sizeof(prefix), samples, test_flavor);
 
-   snprintf(out, max_out_length, "%s%s%s%s%s%s%s", msaa, pipeline->name1, pipeline->name2,
+   snprintf(out, max_out_length, ".%s%s%s%s%s%s%s", prefix, pipeline->name1, pipeline->name2,
             pipeline->name3, pipeline->name4, pipeline->name5, pipeline->name6);
 }
 
 static bool
-test_filter(api_context *ctx, unsigned samples, bool multiview, const pipeline_info *pipeline)
+test_filter(api_context *ctx, unsigned samples, test_flavor test_flavor, const pipeline_info *pipeline)
 {
    char pipeline_name[256];
-   get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, pipeline);
+   get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, pipeline);
 
-   return check_filter_string(ctx->options.test_filter, pipeline_name);
+   return check_filter_string(ctx->options.filter, pipeline_name);
 }
 
 static void
 run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
              compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set,
-             bool multiview)
+             test_flavor test_flavor)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
    api_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
    bool skip_pipeline[ARRAY_SIZE(pipelines)] = {0};
    unsigned num_pipelines = 0;
+   const bool multiview = test_flavor == TEST_MULTIVIEW;
 
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
       char pipeline_name[256];
-      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, &pipelines[p]);
+      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, &pipelines[p]);
 
       /* The pipeline name determines the states. */
       bool colormask0 = strstr(pipeline_name, ".colormask=0");
@@ -632,7 +661,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       bool cull_back = strstr(pipeline_name, ".cull_back");
 
       if (!pipelines[p].fs_source ||
-          !test_filter(ctx, samples, multiview, &pipelines[p]) ||
+          !test_filter(ctx, samples, test_flavor, &pipelines[p]) ||
           (!multiview && strstr(pipeline_name, ".view_index")) ||
           (multiview && strstr(pipeline_name, ".layer")) ||
           (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample"))) {
@@ -649,6 +678,24 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
            strstr(pipeline_name, "zbuf") ||
            colormask0 ||
            (strstr(pipeline_name, "output") && !strstr(pipeline_name, "color")))) {
+         skip_pipeline[p] = true;
+         continue;
+      }
+
+      /* Skip most subtests for image 3D and linear. */
+      if ((test_flavor == TEST_IMAGE_3D || test_flavor == TEST_LINEAR) &&
+          (strstr(pipeline_name, "zbuf") ||
+           strstr(pipeline_name, "output") ||
+           strstr(pipeline_name, "face") ||
+           strstr(pipeline_name, "fully_covered") ||
+           strstr(pipeline_name, "fragpos") ||
+           strstr(pipeline_name, "layer") ||
+           strstr(pipeline_name, "sample") ||
+           strstr(pipeline_name, "shading_rate") ||
+           strstr(pipeline_name, "centroid") ||
+           strstr(pipeline_name, "1linear") ||
+           (strstr(pipeline_name, "flat") && !strstr(pipeline_name, "1flat")) ||
+           (strstr(pipeline_name, "persp") && !strstr(pipeline_name, "1persp")))) {
          skip_pipeline[p] = true;
          continue;
       }
@@ -699,7 +746,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
-          (!check_filter_string(ctx->options.format_filter, formats[f].name))) {
+          (!check_filter_string(ctx->options.format, formats[f].name))) {
          fbs[f].skip = true;
          continue;
       }
@@ -707,13 +754,18 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       num_formats++;
    }
 
-   printf("Building pipelines (MSAA samples = %u) ...", samples);
+   char prefix[16];
+   get_pipeline_name_prefix(prefix, sizeof(prefix), samples, test_flavor);
 
-   /* Create pipelines. */
-   unsigned num_visited_pipelines = 0;
+   bool na = (test_flavor == TEST_MULTIVIEW && !ctx->has_multiview) ||
+             (test_flavor == TEST_LINEAR && !ctx->has_image_tiling_linear);
 
+   /* Create framebuffers. */
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if (fbs[f].skip)
+         continue;
+
+      if (na)
          continue;
 
       VkFormat format = formats[f].format;
@@ -724,34 +776,46 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       unsigned fb_size = 1024;
       unsigned pix_size = format ? get_pixel_size_from_format(format) : 0;
 
-      if (samples >= 4)
+      if (samples >= 8)
+         fb_size /= 4;
+      else if (samples >= 4)
          fb_size /= 2;
 
-      if (samples == 1 && pix_size <= 2)
-         fb_size *= 2;
-      else if (pix_size == 16)
+      if (pix_size == 16)
          fb_size /= 2;
 
-      const unsigned num_layers = multiview ? 2 : 1;
+      VkImageType image_type = test_flavor == TEST_IMAGE_3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+      VkImageTiling layout = test_flavor == TEST_LINEAR ? VK_IMAGE_TILING_LINEAR
+                                                        : VK_IMAGE_TILING_OPTIMAL;
+      const unsigned num_layers = test_flavor == TEST_IMAGE_3D ? 8 : (multiview ? 2 : 1);
       const unsigned view_mask = multiview ? 0x3 : 0x1;
 
       if (format) {
-         fbs[f].colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, format, fb_size,
-                                             fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
+         fbs[f].colorbuf = ctx->create_image(ctx, image_type, format, fb_size,
+                                             fb_size, num_layers, samples, layout,
                                              api_heap_device);
       }
-
-      fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
-                                      fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
-                                      api_heap_device);
 
       fbs[f].width = fb_size;
       fbs[f].height = fb_size;
       fbs[f].fb_color_only = ctx->create_framebuffer(ctx, fbs[f].colorbuf, NULL,
                                                      fb_size, fb_size, samples, view_mask);
-      fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zbuf,
-                                                         fb_size, fb_size, samples, view_mask);
+
+      if (test_flavor != TEST_IMAGE_3D && test_flavor != TEST_LINEAR) {
+         fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
+                                         fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
+                                         api_heap_device);
+
+         fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zbuf,
+                                                            fb_size, fb_size, samples, view_mask);
+      }
    }
+
+   printf("GPU memory allocated for %s: %u MB\n", prefix, ctx->device_mem_usage_mb);
+   printf("Building pipelines for %s ...", prefix);
+
+   /* Create pipelines. */
+   unsigned num_visited_pipelines = 0;
 
 #pragma omp parallel for if (ctx->allow_parallel_create_pipeline) collapse(2) schedule(static, 50)
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
@@ -761,11 +825,14 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
 
+         if (na)
+            continue;
+
          VkFormat format = formats[f].format;
          api_pipeline_desc pipeline_desc = pipeline_descs[p];
 
          char pipeline_name[256];
-         get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview,
+         get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor,
                            &pipelines[p]);
 
          /* The pipeline name determines the states. */
@@ -814,6 +881,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          pipeline_desc.desc_set_layout = format ? NULL : desc_set->layout;
          pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf : fbs[f].fb_color_only;
 
+         assert(pipeline_desc.vs);
+         assert(pipeline_desc.fs);
+         assert(pipeline_desc.fb);
+
          fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
       }
    }
@@ -824,8 +895,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    api_timestamp_query_pool *timestamps =
       ctx->create_timestamp_pool(ctx, num_pipelines * num_formats * 2);
 
-   printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
-   printf("Executing tests (MSAA samples = %u) ...", samples);
+   printf("Executing tests for %s ...", prefix);
    fflush(stdout);
 
    /* Run tests. */
@@ -877,16 +947,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    assert(num_visited_pipelines <= num_pipelines * num_formats);
    puts("");
 
-   puts("Reading back results...");
    ctx->query_timestamps(ctx, timestamps);
-
-   if (samples == 1) {
-      printf("Units: %s\n",
-             ctx->options.report_bandwidth ? "GB/s" :
-             ctx->options.max_rate ? "% of the maximum pixel rate, multiplied by the number of MSAA samples" :
-             ctx->options.freq_mhz ? "pixels/clock (no MSAA) or samples/clock (MSAA)" :
-                                     "billion pixels/second (no MSAA) or billion samples/second (MSAA)");
-   }
 
    printf("%-87s", "Formats");
 
@@ -928,7 +989,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          continue;
 
       char pipeline_name[256];
-      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, multiview, &pipelines[p]);
+      get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, &pipelines[p]);
 
       char name[256];
       snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
@@ -949,7 +1010,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             num_units *= get_pixel_size_from_format(formats[f].format);
 
          print_throughput_from_next_timestamps(ctx, timestamps, num_units,
-                                               ",%7.1f", ",%7.0f", 30);
+                                               "%7.1f", "%7.0f", "%7s", 30);
       }
       puts("");
    }
@@ -981,6 +1042,12 @@ test_pix(api_context *ctx, const char *test_name)
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)] = {0};
    static const unsigned sample_counts[] = {1, 2, 4, 8};
 
+   printf("Units: %s\n",
+          ctx->options.report_bandwidth ? "GB/s" :
+          ctx->options.max_rate ? "% of the maximum pixel rate, multiplied by the number of MSAA samples" :
+          ctx->options.freq_mhz ? "pixels/clock (no MSAA) or samples/clock (MSAA)" :
+                                  "billion pixels/second (no MSAA) or billion samples/second (MSAA)");
+
    puts("Compiling shaders...");
 
    /* Compile shaders. */
@@ -989,8 +1056,11 @@ test_pix(api_context *ctx, const char *test_name)
       bool match = false;
 
       for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
-         if (test_filter(ctx, sample_counts[s], false, &pipelines[p]) ||
-             (sample_counts[s] == 1 && test_filter(ctx, sample_counts[s], true, &pipelines[p]))) {
+         if (test_filter(ctx, sample_counts[s], TEST_NORMAL, &pipelines[p]) ||
+             (sample_counts[s] == 1 &&
+              (test_filter(ctx, 1, TEST_MULTIVIEW, &pipelines[p]) ||
+               test_filter(ctx, 1, TEST_IMAGE_3D, &pipelines[p]) ||
+               test_filter(ctx, 1, TEST_LINEAR, &pipelines[p])))) {
             match = true;
             break;
          }
@@ -1056,15 +1126,52 @@ test_pix(api_context *ctx, const char *test_name)
    api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
    ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
 
+   /* Determine the subset to test. */
+   int test_flavor = -1;
+   int test_samples = -1;
+
+   if (ctx->options.subset) {
+      for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
+         char samples_str[2] = {'0' + sample_counts[s]};
+
+         if (!strcmp(ctx->options.subset, samples_str)) {
+            test_flavor = TEST_NORMAL;
+            test_samples = sample_counts[s];
+            break;
+         }
+      }
+
+      if (!strcmp(ctx->options.subset, "multiview")) {
+         test_flavor = TEST_MULTIVIEW;
+         test_samples = 1;
+      }
+
+      if (!strcmp(ctx->options.subset, "image3d")) {
+         test_flavor = TEST_IMAGE_3D;
+         test_samples = 1;
+      }
+
+      if (!strcmp(ctx->options.subset, "linear")) {
+         test_flavor = TEST_LINEAR;
+         test_samples = 1;
+      }
+   }
+
+   /* Run tests. */
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
       unsigned samples = sample_counts[s];
 
       if (ctx->supported_color_sample_counts & samples &&
-          (!ctx->options.samples || ctx->options.samples == samples)) {
-         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, false);
-
-         if (samples == 1 && ctx->has_multiview)
-            run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, true);
-      }
+          (test_flavor == -1 || (test_flavor == TEST_NORMAL && test_samples == samples)))
+         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, TEST_NORMAL);
    }
+
+   if (test_flavor == -1 || test_flavor == TEST_MULTIVIEW)
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_MULTIVIEW);
+
+   if (test_flavor == -1 || test_flavor == TEST_IMAGE_3D)
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_IMAGE_3D);
+
+   if (test_flavor == -1 || test_flavor == TEST_LINEAR)
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_LINEAR);
 }

@@ -41,7 +41,6 @@
  * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
  * pix - later maybe:
  * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
- * - render to 3D image
  * - stencil/HiS
  *
  * prim:
@@ -147,10 +146,11 @@ static const option_desc option_list[] = {
    {OPTION_UINT, "-device=", offsetof(program_options, device)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_UINT, "-maxrate=", offsetof(program_options, max_rate)},
-   {OPTION_UINT, "-samples=", offsetof(program_options, samples)},
+   {OPTION_UINT, "-maxvalidresult=", offsetof(program_options, max_valid_result)},
 
-   {OPTION_STRING, "-filter=", offsetof(program_options, test_filter)},
-   {OPTION_STRING, "-format=", offsetof(program_options, format_filter)},
+   {OPTION_STRING, "-filter=", offsetof(program_options, filter)},
+   {OPTION_STRING, "-format=", offsetof(program_options, format)},
+   {OPTION_STRING, "-subset=", offsetof(program_options, subset)},
 
    {OPTION_MEMSIZE, "-spacing=", offsetof(program_options, spacing)},
    {OPTION_MEMSIZE, "-maxsize=", offsetof(program_options, max_size)},

@@ -639,7 +639,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  (*num_tests)++;
 
                               if (stage == REPORT)
-                                 printf(" , %9s", "n/a");
+                                 printf(",%10s", "n/a");
                            }
 
                            if (stage == REPORT)
@@ -811,7 +811,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  bytes = num_pixels * msaa_pix_size * 2;
 
                               print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
-                                                                    " , %9.2f", 30);
+                                                                    "%10.2f", "%10s", 30);
                            }
                         }
 

@@ -327,11 +327,12 @@ typedef struct {
    unsigned device; /* device index */
    unsigned freq_mhz;
    unsigned max_rate;
-   unsigned samples;
+   unsigned max_valid_result;
 
    /* String options. */
-   const char *test_filter;
-   const char *format_filter;
+   const char *filter;
+   const char *format;
+   const char *subset;
 
    /* Memory size options. */
    unsigned spacing;
@@ -554,7 +555,8 @@ bool check_filter_string(const char *filter_string, const char *name);
 double get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *pool);
 void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
-                                           const char *bandwidth_format, unsigned bandwidth_exp2_divisor);
+                                           const char *bandwidth_format, const char *string_format,
+                                           unsigned bandwidth_exp2_divisor);
 noreturn void error(const char *format, ...) printflike(1, 2);
 char *strdup(const char *s);
 void print_progress(unsigned num_items, unsigned *num_processed_items, unsigned print_period);

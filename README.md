@@ -49,6 +49,7 @@ Optional parameters common to all tests:
 - `-no-validator`: disable the Vulkan validation layer (enabled by default)
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting bandwidth or latency)
 - `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting bandwidth or latency)
+- `-maxvalidresult=N`: (for buggy timestamps) if the result is greater than N, print "error" instead of the result
 
 Examples:
 
@@ -59,8 +60,8 @@ gpu-ratemeter -lean gl.pix
 gpu-ratemeter -lean vk.pix
 ```
 
-> [!warning]
-> The app currently expects that most features supported by desktop GPUs are supported.
+> [!note]
+> The desirable execution time per test is less than 1 minute. Exceeding that for some devices would warrant adding new optional parameters that would help reduce it. Pipeline object creation can also be distributed across all CPU cores (the `pix` test on Vulkan already does that).
 
 
 # How It Works
@@ -68,7 +69,6 @@ gpu-ratemeter -lean vk.pix
 - Results are calculated from GPU timestamps.
 - Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. It's recommended to use a power profile that keeps the frequency constant.
 - % progress is printed while building pipelines and executing subtests. Results are only printed at the end (unless a specific test has multiple stages).
-- The execution time of one test should not exceed 2 minutes on a decent desktop GPU.
 - The app is windowless and doesn't even register with the window system where that's possible.
 - If needed for debugging or developing new tests/subtests, it can save any rendered image to a PNG and open it in an image viewer.
 
@@ -81,11 +81,14 @@ gpu-ratemeter -lean vk.pix
 
 Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
-The same subtests run up to 5 times: Once for each sample count and once for a multiview with 2 layers and 1 sample separately.
+The test is executed multiple times, each time with a different framebuffer (and rasterization) behavior. The following framebuffer configurations are tested:
+- `noaa`: the framebuffer is 2D with 1 sample and 1 layer
+- `msaa2`, `msaa4`, `msaa8`: the framebuffer is 2D with 2, 4, or 8 samples and 1 layer
+- `multiview`: the framebuffer is 2D with 1 sample and 2 layers, using the multiview feature to render to both layers simultaneously (per-view varyings are not tested currently)
+- `image3d`: the framebuffer is a 3D image with 8 slices, but only slice 0 is drawn to (only a small subset of representative tests is executed for this case)
+- `linear`: the framebuffer is a 2D image using the linear layout (only a small subset of representative tests is executed for this case)
 
 Decoding subtest names:
-- `noaa`, `msaa2`, `msaa4`, `msaa8`: the framebuffer has 1, 2, 4, or 8 samples
-- `multiview`: the framebuffer is a multiview with 2 layers and 1 sample
 - `fs_empty`: empty fragment shader
 - `fs_discard`: the fragment shader contains `discard;` before writing the color output
 - `fs_discard_no_output`: the fragment shader contains `discard;` with no outputs (it only discards Z writes)
@@ -124,7 +127,7 @@ Optional parameters:
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
-- `-samples=N`: only test this number of samples
+- `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 

@@ -255,7 +255,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                    */
                   uint64_t num_bytes = (uint64_t)size * num_runs *
                                        (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
-                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, ",%8.2f", 30);
+                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
                }
 
                if (stage == RUN)

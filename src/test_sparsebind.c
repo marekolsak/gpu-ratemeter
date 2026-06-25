@@ -290,7 +290,7 @@ test_sparsebind(api_context *ctx, const char *test_name)
             }
 
             print_throughput_from_next_timestamps(ctx, timestamps, get_num_iterations(ctx, tests[i]),
-                                                  NULL, ",%9.0f", 0);
+                                                  NULL, "%9.0f", "%9s", 0);
          }
       }
       puts("");
