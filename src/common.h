@@ -179,6 +179,11 @@ typedef struct {
    GLuint ubo_id;
    GLintptr ubo_offset;
    GLsizeiptr ubo_size;
+
+   GLuint ssbo_id;
+   GLintptr ssbo_offset;
+   GLsizeiptr ssbo_size;
+
    GLuint tbo_ids[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS][MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE];
    GLuint tex_ids[MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE];
    GLuint image_ids[MAX_STORAGE_IMAGE_ARRAY_SIZE];

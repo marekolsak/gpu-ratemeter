@@ -83,6 +83,13 @@ gl_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 }
 
 static void
+gl_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, void *data)
+{
+   glGetNamedBufferSubData(buf->id, offset, size, data);
+   gl_check_no_error();
+}
+
+static void
 gl_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
 {
    glClearNamedBufferSubData(buf->id, GL_R32UI, offset, size, GL_RED_INTEGER, GL_UNSIGNED_INT,
@@ -773,10 +780,9 @@ gl_set_storage_buffer_descriptors(api_context *ctx, api_descriptor_set *set, uns
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
    assert(1 <= set->layout->desc.storage_buffer[binding_index].array_size);
-   /*set->ssbo_id = buffer->id;
+   set->ssbo_id = buffer->id;
    set->ssbo_offset = offset;
-   set->ssbo_size = size;*/
-   assert(0);
+   set->ssbo_size = size;
 }
 
 static void
@@ -834,6 +840,13 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
       if (set->layout->desc.uniform_buffer[i].array_size) {
          glBindBufferRange(GL_UNIFORM_BUFFER, set->layout->desc.uniform_buffer[i].gl_binding,
                            set->ubo_id, set->ubo_offset, set->ubo_size);
+      }
+   }
+
+   for (unsigned i = 0; i < MAX_STORAGE_BUFFER_BINDINGS; i++) {
+      if (set->layout->desc.storage_buffer[i].array_size) {
+         glBindBufferRange(GL_SHADER_STORAGE_BUFFER, set->layout->desc.storage_buffer[i].gl_binding,
+                           set->ssbo_id, set->ssbo_offset, set->ssbo_size);
       }
    }
 
@@ -1348,6 +1361,7 @@ gl_create_context(const program_options *options)
    ctx->create_buffer = gl_create_buffer;
    ctx->destroy_buffer = gl_destroy_buffer;
    ctx->upload_buffer_data = gl_upload_buffer_data;
+   ctx->get_buffer_data = gl_get_buffer_data;
    ctx->clear_buffer = gl_clear_buffer;
    ctx->copy_buffer = gl_copy_buffer;
 
