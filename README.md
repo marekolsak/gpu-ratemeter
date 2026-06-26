@@ -49,7 +49,7 @@ Optional parameters common to all tests:
 - `-no-validator`: disable the Vulkan validation layer (enabled by default)
 - `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting bandwidth or latency)
 - `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting bandwidth or latency)
-- `-maxvalidresult=N`: (for buggy timestamps) if the result is greater than N, print "error" instead of the result
+- `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 
 Examples:
 
@@ -92,7 +92,7 @@ Decoding subtest names:
 - `fs_empty`: empty fragment shader
 - `fs_discard`: the fragment shader contains `discard;` before writing the color output
 - `fs_discard_no_output`: the fragment shader contains `discard;` with no outputs (it only discards Z writes)
-- `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS coarse shading by some drivers
+- `helper_invoc`: the subtest uses `gl_HelperInvocation` to suppress the automatic use of VRS by some drivers
 - `zbuf`: the framebuffer contains a Z buffer
 - `zwrite`: Z writes are enabled
 - `z_tess_*.fail`, `z_tess_*.pass`: the subtest uses the given Z compare op to pass or fail the Z test
@@ -102,7 +102,7 @@ Decoding subtest names:
 - `output.color`, `output.z`, `output.samplemask`: the fragment shader contains color, Z, or samplemask outputs (all other subtests also write a color output unless 1) the name contains `output` without `color`, or 2) it's the `imgStore` column)
 - `z_disabled`: the Z test is disabled
 - `a2c`: alpha-to-coverage is enabled
-- `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS coarse shading
+- `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:

@@ -1150,6 +1150,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_CULL_MODE;
+      dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_POLYGON_MODE_EXT;
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_FRONT_FACE;
       if (ctx->has_vrs)
          dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
@@ -1210,6 +1211,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
       .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
          .rasterizerDiscardEnable = uses_dynamic_state ? false : desc->rasterizer_discard,
+         .polygonMode = uses_dynamic_state ? false : desc->polygon_mode,
          .cullMode = uses_dynamic_state ? 0 : desc->cull_mode,
          .frontFace = uses_dynamic_state ? 0 : VK_FRONT_FACE_CLOCKWISE,
          .lineWidth = 1.0f,
@@ -1426,6 +1428,7 @@ vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
       }
 
       vkCmdSetRasterizerDiscardEnable(ctx->current_cmd_buffer, pipeline->desc.rasterizer_discard);
+      ctx->vkCmdSetPolygonModeEXT(ctx->current_cmd_buffer, pipeline->desc.polygon_mode);
       vkCmdSetCullMode(ctx->current_cmd_buffer, pipeline->desc.cull_mode);
       vkCmdSetFrontFace(ctx->current_cmd_buffer, VK_FRONT_FACE_CLOCKWISE);
 
@@ -2195,7 +2198,7 @@ vk_create_context(const program_options *options)
    //require(Vulkan10.features.drawIndirectFirstInstance);
    //require(Vulkan10.features.depthClamp);
    //require(Vulkan10.features.depthBiasClamp);
-   //require(Vulkan10.features.fillModeNonSolid);
+   require(Vulkan10.features.fillModeNonSolid);
    //require(Vulkan10.features.depthBounds);
    //require(Vulkan10.features.wideLines);
    //require(Vulkan10.features.largePoints);
@@ -2328,7 +2331,7 @@ vk_create_context(const program_options *options)
 
       //require(EXT_extended_dynamic_state3.extendedDynamicState3TessellationDomainOrigin);
       //require(EXT_extended_dynamic_state3.extendedDynamicState3DepthClampEnable);
-      //require(EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode);
+      require(EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode);
       require(EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples);
       require(EXT_extended_dynamic_state3.extendedDynamicState3SampleMask);
       require(EXT_extended_dynamic_state3.extendedDynamicState3AlphaToCoverageEnable);
@@ -2395,6 +2398,8 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdSetVertexInputEXT);
    if (EXT_mesh_shader.meshShader)
       GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
+   if (EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode)
+      GET_PROC_ADDR(vkCmdSetPolygonModeEXT);
    if (EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples)
       GET_PROC_ADDR(vkCmdSetRasterizationSamplesEXT);
    if (EXT_extended_dynamic_state3.extendedDynamicState3SampleMask)

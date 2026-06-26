@@ -38,10 +38,8 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - draw different triangle sizes (similar to prim), fill the screen in the Morton order
- * pix - later maybe:
- * - VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
- * - stencil/HiS
+ * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
+ * - (maybe) stencil/HiS
  *
  * prim:
  * - VS + transform feedback

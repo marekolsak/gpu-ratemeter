@@ -207,9 +207,11 @@ typedef struct {
 typedef struct {
    VkPrimitiveTopology topology;
    bool primitive_restart;
+
    VkCullModeFlags cull_mode;
-   unsigned clipdist_enable_mask;
+   unsigned clipdist_enable_mask; /* GL only */
    bool rasterizer_discard;
+   VkPolygonMode polygon_mode;
 
    unsigned num_vb_desc;
    unsigned vb_strides[MAX_VERTEX_BUFFERS];
@@ -504,6 +506,7 @@ typedef struct api_context {
    /* Extension functions. */
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+   PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
    PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
    PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
    PFN_vkCmdSetAlphaToCoverageEnableEXT vkCmdSetAlphaToCoverageEnableEXT;

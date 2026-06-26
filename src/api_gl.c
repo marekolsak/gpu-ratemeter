@@ -990,6 +990,15 @@ gl_bind_unbind_pipeline(api_context *ctx, api_pipeline *pipeline)
       }
    }
 
+   if (pipeline->desc.polygon_mode == VK_POLYGON_MODE_FILL)
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+   else if (pipeline->desc.polygon_mode == VK_POLYGON_MODE_LINE)
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+   else if (pipeline->desc.polygon_mode == VK_POLYGON_MODE_POINT)
+      glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+   else
+      error("gl: invalid polygon mode");
+
    if (pipeline->desc.cull_mode) {
       glEnable(GL_CULL_FACE);
       if (pipeline->desc.cull_mode == VK_CULL_MODE_FRONT_AND_BACK)
