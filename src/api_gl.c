@@ -1285,18 +1285,41 @@ gl_create_context(const program_options *options)
 
    const char *const egl_extension_list = eglQueryString(egl_dpy, EGL_EXTENSIONS);
 
-   if (!strstr(egl_extension_list, "EGL_KHR_surfaceless_context"))
-      error("EGL_KHR_surfaceless_context unsupported");
+#define egl_require_ext(ext) \
+   if (!strstr(egl_extension_list, #ext)) \
+      error(#ext " is required.");
+
+   egl_require_ext(EGL_KHR_create_context);
+   egl_require_ext(EGL_KHR_surfaceless_context);
 
    /* Create an OpenGL context. */
+   static const EGLint ctx_attribs[] = {
+       EGL_CONTEXT_MAJOR_VERSION, 4,
+       EGL_CONTEXT_MINOR_VERSION, 6,
+
+       EGL_CONTEXT_OPENGL_PROFILE_MASK,
+       EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+
+       EGL_NONE
+   };
+
    egl_check(eglBindAPI(EGL_OPENGL_API));
-   egl_check(egl_ctx = eglCreateContext(egl_dpy, cfg, EGL_NO_CONTEXT, NULL));
+   egl_ctx = eglCreateContext(egl_dpy, cfg, EGL_NO_CONTEXT, ctx_attribs);
+
+   if (egl_ctx == EGL_NO_CONTEXT) {
+      int egl_error = eglGetError();
+
+      switch (egl_error) {
+      case EGL_BAD_MATCH:
+         error("Failed to create the GL context. OpenGL 4.6 Core profile is required.");
+      default:
+         error("Failed to create the GL context. Unexpected EGL error (%i).", egl_error);
+      }
+   }
+
    egl_check(eglMakeCurrent(egl_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl_ctx));
    egl_check(gladLoadGLLoader((GLADloadproc)eglGetProcAddress));
    gl_check_no_error();
-
-   if (GLVersion.major < 4 || (GLVersion.major == 4 && GLVersion.minor < 6))
-      error("OpenGL 4.6 is required.");
 
    printf("Renderer: %s\n", glGetString(GL_RENDERER));
 
