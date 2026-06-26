@@ -10,10 +10,10 @@
 #include "common.h"
 
 /* Draw over the whole viewport this many times. */
-#define NUM_FULLSCREEN_TRIANGLES 10
+#define NUM_FULLSCREEN_DRAWS 10
 
-static_assert(NUM_FULLSCREEN_TRIANGLES <= 50, "required by ztest_less");
-static_assert(NUM_FULLSCREEN_TRIANGLES % 2 == 0, "required by multiview");
+static_assert(NUM_FULLSCREEN_DRAWS <= 50, "required by ztest_less");
+static_assert(NUM_FULLSCREEN_DRAWS % 2 == 0, "required by multiview");
 
 typedef struct {
    /* These are concatenated at runtime to form the test name.
@@ -29,7 +29,7 @@ typedef struct {
    const char *vs_source;
    const char *fs_source;
 
-   int unused;
+   int reserved_for_static_assert;
 } pipeline_info;
 
 #define SHADER_HEADER \
@@ -135,7 +135,7 @@ typedef struct {
    "   var[0].x = id; \n" \
    "   for (int i = 1; i < "#num1" * 4; i++) \n" \
    "      var[i / 4][i % 4] = var[(i - 1) / 4][(i - 1) % 4] * id; \n" \
-   " \n" \
+   "\n" \
    "#endif \n" \
    \
    "#if "#num2" > 0 \n" \
@@ -921,7 +921,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .depth_clear_value = 0.5,
                                 });
 
-         const unsigned num_vertices = (NUM_FULLSCREEN_TRIANGLES / (multiview ? 2 : 1)) * 3;
+         const unsigned num_vertices = (NUM_FULLSCREEN_DRAWS / (multiview ? 2 : 1)) * 3;
          const unsigned num_warmup_vertices = num_vertices / 4;
 
          /* Warm up the GPU. */
@@ -1004,7 +1004,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          }
 
          uint64_t num_units = (uint64_t)fbs[f].width * fbs[f].height * samples *
-                              NUM_FULLSCREEN_TRIANGLES;
+                              NUM_FULLSCREEN_DRAWS;
          if (ctx->options.report_bandwidth)
             num_units *= get_pixel_size_from_format(formats[f].format);
 
