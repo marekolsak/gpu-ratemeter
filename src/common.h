@@ -272,20 +272,27 @@ typedef struct {
    unsigned first_vertex;
 } api_draw_desc;
 
+typedef enum {
+   api_query_timestamp,
+   api_query_fs_invocations,
+} api_query_type;
+
 typedef struct {
+   api_query_type type;
    unsigned num_queries;
    unsigned num_written_queries;
    unsigned num_read_queries;
    uint64_t *results;
 
 #ifdef GL_PRIVATE
+   GLenum gltarget;
    GLuint *queries;
 #endif
 
 #ifdef VK_PRIVATE
    VkQueryPool pool;
 #endif
-} api_timestamp_query_pool;
+} api_query_pool;
 
 typedef struct {
    api_framebuffer *fb;
@@ -481,9 +488,12 @@ typedef struct api_context {
 
    void (*driver_workaround)(struct api_context *ctx, driver_wa wa);
 
-   api_timestamp_query_pool *(*create_timestamp_pool)(struct api_context *ctx, unsigned num_queries);
-   void (*write_next_timestamp)(struct api_context *ctx, api_timestamp_query_pool *pool);
-   void (*query_timestamps)(struct api_context *ctx, api_timestamp_query_pool *pool);
+   api_query_pool *(*create_query_pool)(struct api_context *ctx, unsigned num_queries,
+                                        api_query_type type);
+   void (*begin_next_query)(struct api_context *ctx, api_query_pool *pool);
+   void (*end_next_query)(struct api_context *ctx, api_query_pool *pool);
+   void (*write_next_query_value)(struct api_context *ctx, api_query_pool *pool);
+   void (*get_query_results)(struct api_context *ctx, api_query_pool *pool);
 
    /* Private members. */
 #ifdef GL_PRIVATE
@@ -555,8 +565,8 @@ void test_sparsebind(api_context *ctx, const char *test_name);
 
 /* utils.c */
 bool check_filter_string(const char *filter_string, const char *name);
-double get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *pool);
-void print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
+double get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool);
+void print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,
                                            const char *bandwidth_format, const char *string_format,
                                            unsigned bandwidth_exp2_divisor);

@@ -1175,32 +1175,74 @@ gl_driver_workaround(api_context *ctx, driver_wa wa)
    }
 }
 
-static api_timestamp_query_pool *
-gl_create_timestamp_pool(api_context *ctx, unsigned num_queries)
+static api_query_pool *
+gl_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
 {
-   api_timestamp_query_pool *pool = calloc(1, sizeof(api_timestamp_query_pool));
+   api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 
+   pool->type = type;
    pool->num_written_queries = 0;
    pool->num_queries = num_queries;
    pool->results = calloc(num_queries, sizeof(uint64_t));
 
+   switch (type) {
+   case api_query_timestamp:
+      pool->gltarget = GL_TIMESTAMP;
+      break;
+   case api_query_fs_invocations:
+      pool->gltarget = GL_FRAGMENT_SHADER_INVOCATIONS;
+      break;
+   default:
+      error("invalid query type");
+   }
+
    pool->queries = calloc(num_queries, sizeof(GLuint));
-   glCreateQueries(GL_TIMESTAMP, num_queries, pool->queries);
+   glCreateQueries(pool->gltarget, num_queries, pool->queries);
    gl_check_no_error();
 
    return pool;
 }
 
 static void
-gl_write_next_timestamp(api_context *ctx, api_timestamp_query_pool *pool)
+gl_begin_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
-   glQueryCounter(pool->queries[pool->num_written_queries], GL_TIMESTAMP);
+
+   switch (pool->type) {
+   case api_query_fs_invocations:
+      glBeginQuery(pool->gltarget, pool->queries[pool->num_written_queries]);
+      break;
+   default:
+      error("invalid begin/end query type");
+   }
+}
+
+static void
+gl_end_next_query(api_context *ctx, api_query_pool *pool)
+{
+   assert(pool->num_written_queries < pool->num_queries);
+
+   switch (pool->type) {
+   case api_query_fs_invocations:
+      glEndQuery(pool->gltarget);
+      break;
+   default:
+      error("invalid begin/end query type");
+   }
+
    pool->num_written_queries++;
 }
 
 static void
-gl_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+gl_write_next_query_value(api_context *ctx, api_query_pool *pool)
+{
+   assert(pool->num_written_queries < pool->num_queries);
+   glQueryCounter(pool->queries[pool->num_written_queries], pool->gltarget);
+   pool->num_written_queries++;
+}
+
+static void
+gl_get_query_results(api_context *ctx, api_query_pool *pool)
 {
    for (unsigned i = 0; i < pool->num_written_queries; i++)
       glGetQueryObjectui64v(pool->queries[i], GL_QUERY_RESULT, &pool->results[i]);
@@ -1350,9 +1392,11 @@ gl_create_context(const program_options *options)
    ctx->draw = gl_draw;
    ctx->driver_workaround = gl_driver_workaround;
 
-   ctx->create_timestamp_pool = gl_create_timestamp_pool;
-   ctx->write_next_timestamp = gl_write_next_timestamp;
-   ctx->query_timestamps = gl_query_timestamps;
+   ctx->create_query_pool = gl_create_query_pool;
+   ctx->begin_next_query = gl_begin_next_query;
+   ctx->end_next_query = gl_end_next_query;
+   ctx->write_next_query_value = gl_write_next_query_value;
+   ctx->get_query_results = gl_get_query_results;
 
    ctx->current_pipeline = NULL;
 

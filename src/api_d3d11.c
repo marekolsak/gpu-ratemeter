@@ -103,11 +103,12 @@ d3d11_draw(api_context *ctx, const api_draw_desc *desc)
 {
 }
 
-static api_timestamp_query_pool *
-d3d11_create_timestamp_pool(api_context *ctx, unsigned num_queries)
+static api_query_pool *
+d3d11_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
 {
-   api_timestamp_query_pool *pool = calloc(1, sizeof(api_timestamp_query_pool));
+   api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 
+   pool->type = type;
    pool->num_written_queries = 0;
    pool->num_queries = num_queries;
    pool->results = calloc(num_queries, sizeof(uint64_t));
@@ -116,12 +117,12 @@ d3d11_create_timestamp_pool(api_context *ctx, unsigned num_queries)
 }
 
 static void
-d3d11_write_next_timestamp(api_context *ctx, api_timestamp_query_pool *pool)
+d3d11_write_next_query_value(api_context *ctx, api_query_pool *pool)
 {
 }
 
 static void
-d3d11_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+d3d11_get_query_results(api_context *ctx, api_query_pool *pool)
 {
 }
 
@@ -174,9 +175,9 @@ d3d11_create_context(const program_options *options)
    ctx->bind_vertex_buffers = d3d11_bind_vertex_buffers;
    ctx->draw = d3d11_draw;
 
-   ctx->create_timestamp_pool = d3d11_create_timestamp_pool;
-   ctx->write_next_timestamp = d3d11_write_next_timestamp;
-   ctx->query_timestamps = d3d11_query_timestamps;
+   ctx->create_query_pool = d3d11_create_query_pool;
+   ctx->write_next_query_value = d3d11_write_next_query_value;
+   ctx->get_query_results = d3d11_get_query_results;
 
    return ctx;
 }

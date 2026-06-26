@@ -47,7 +47,7 @@ check_filter_string(const char *filter_string, const char *name)
 }
 
 double
-get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_read_queries + 1 < pool->num_written_queries);
    uint64_t start = pool->results[pool->num_read_queries++];
@@ -56,7 +56,7 @@ get_time_in_seconds_from_timestamps(api_context *ctx, api_timestamp_query_pool *
 }
 
 void
-print_throughput_from_next_timestamps(api_context *ctx, api_timestamp_query_pool *pool,
+print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
                                       uint64_t num_units, const char *rate_format,
                                       const char *bandwidth_format, const char *string_format,
                                       unsigned bandwidth_exp2_divisor)

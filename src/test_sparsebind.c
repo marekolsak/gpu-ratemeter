@@ -86,7 +86,7 @@ get_num_bind_flags(test_flags flags)
 }
 
 static void
-run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags,
+run_one(api_context *ctx, api_query_pool *timestamps, test_flags flags,
         cmdbuf_option cmdbuf_option, bool async)
 {
    /* Validate flags. */
@@ -104,7 +104,7 @@ run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags
 
    /* Execution. */
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->write_next_timestamp(ctx, timestamps);
+   ctx->write_next_query_value(ctx, timestamps);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    unsigned num_iterations = get_num_iterations(ctx, flags);
@@ -146,7 +146,7 @@ run_one(api_context *ctx, api_timestamp_query_pool *timestamps, test_flags flags
    }
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->write_next_timestamp(ctx, timestamps);
+   ctx->write_next_query_value(ctx, timestamps);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 }
 
@@ -217,8 +217,8 @@ test_sparsebind(api_context *ctx, const char *test_name)
    generate_tests(tests, ARRAY_SIZE(tests), &num_tests);
 
    /* Create timestamp queries. */
-   api_timestamp_query_pool *timestamps =
-      ctx->create_timestamp_pool(ctx, num_tests * 2 * 5);
+   api_query_pool *timestamps =
+      ctx->create_query_pool(ctx, num_tests * 2 * 5, api_query_timestamp);
 
    printf("Executing tests ...");
    unsigned num_visited_tests = 0;
@@ -237,8 +237,7 @@ test_sparsebind(api_context *ctx, const char *test_name)
    }
    puts("");
 
-   puts("Reading back results...");
-   ctx->query_timestamps(ctx, timestamps);
+   ctx->get_query_results(ctx, timestamps);
 
    puts("");
    puts("Units are bind calls/second and/or command buffers/second.");

@@ -329,7 +329,7 @@ typedef struct {
    api_framebuffer *fb;
    api_descriptor_set_layout *ms_desc_set_layout[MAX_VARYING_SHADERS];
    api_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
-   api_timestamp_query_pool *timestamps;
+   api_query_pool *timestamps;
 } test_state;
 
 static api_shader *
@@ -1338,13 +1338,13 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    run_draws(ctx, num_iterations / 4, test->geom_style, count);
    ctx->end_render_pass(ctx);
 
-   ctx->write_next_timestamp(ctx, state->timestamps);
+   ctx->write_next_query_value(ctx, state->timestamps);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = state->fb,
                           });
    run_draws(ctx, num_iterations, test->geom_style, count);
    ctx->end_render_pass(ctx);
-   ctx->write_next_timestamp(ctx, state->timestamps);
+   ctx->write_next_query_value(ctx, state->timestamps);
 
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 }
@@ -1608,7 +1608,8 @@ test_prim(api_context *ctx, const char *test_name)
                                        colorbuf->height, colorbuf->samples, 0x1);
 
    /* Create the timestamp pool. */
-   state->timestamps = ctx->create_timestamp_pool(ctx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2);
+   state->timestamps = ctx->create_query_pool(ctx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2,
+                                              api_query_timestamp);
 
    /* Create the descriptor set for mesh shaders. */
    if (ctx->max_mesh_workgroup_size) {
@@ -1662,7 +1663,6 @@ test_prim(api_context *ctx, const char *test_name)
 
    printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
    printf("Executing tests ...");
-   fflush(stdout);
 
    unsigned num_visited_tests = 0;
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {
@@ -1671,8 +1671,7 @@ test_prim(api_context *ctx, const char *test_name)
    }
    puts("");
 
-   puts("Reading back results...");
-   ctx->query_timestamps(ctx, state->timestamps);
+   ctx->get_query_results(ctx, state->timestamps);
 
    printf("Units: %s\n",
           ctx->options.max_rate ? "% of the maximum primitive rate" :

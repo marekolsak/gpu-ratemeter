@@ -129,7 +129,7 @@ next_size(unsigned size)
 
 static void
 run(api_context *ctx, const char *test_name, enum test_stage stage,
-    api_timestamp_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
+    api_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
 {
    if (stage == REPORT) {
       printf("%-53s", "Allocation size");
@@ -216,7 +216,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
 
                   for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
                      if (iter == num_warmup_runs)
-                        ctx->write_next_timestamp(ctx, timestamps);
+                        ctx->write_next_query_value(ctx, timestamps);
 
                      if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
                          (is_copy && cycled_offset_base + test_src_offset + size > src->size))
@@ -244,7 +244,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                      }
                   }
 
-                  ctx->write_next_timestamp(ctx, timestamps);
+                  ctx->write_next_query_value(ctx, timestamps);
                   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                }
 
@@ -290,15 +290,14 @@ test_bufbw(api_context *ctx, const char *test_name)
    run(ctx, test_name, COUNT_TESTS, NULL, &num_tests, queue);
 
    /* Create timestamp queries. */
-   api_timestamp_query_pool *timestamps =
-      ctx->create_timestamp_pool(ctx, num_tests * 2);
+   api_query_pool *timestamps =
+      ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    run(ctx, test_name, RUN, timestamps, &num_tests, queue);
-
    puts("");
-   puts("Reading back results...");
-   ctx->query_timestamps(ctx, timestamps);
+
+   ctx->get_query_results(ctx, timestamps);
 
    puts("Units: GB/s");
    run(ctx, test_name, REPORT, timestamps, &num_tests, queue);

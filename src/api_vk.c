@@ -1756,20 +1756,37 @@ vk_driver_workaround(api_context *ctx, driver_wa wa)
                          });
 }
 
-static api_timestamp_query_pool *
-vk_create_timestamp_pool(api_context *ctx, unsigned num_queries)
+static api_query_pool *
+vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
 {
-   api_timestamp_query_pool *pool = calloc(1, sizeof(api_timestamp_query_pool));
+   api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 
+   pool->type = type;
    pool->num_written_queries = 0;
    pool->num_queries = num_queries;
    pool->results = calloc(num_queries, sizeof(uint64_t));
 
+   VkQueryType qtype = 0;
+   VkQueryPipelineStatisticFlags pipe_stats = 0;
+
+   switch (type) {
+   case api_query_timestamp:
+      qtype = VK_QUERY_TYPE_TIMESTAMP;
+      break;
+   case api_query_fs_invocations:
+      qtype = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+      pipe_stats = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+      break;
+   default:
+      error("invalid query type");
+   }
+
    vk_check(vkCreateQueryPool(ctx->device,
                               &(VkQueryPoolCreateInfo){
                                  .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-                                 .queryType = VK_QUERY_TYPE_TIMESTAMP,
+                                 .queryType = qtype,
                                  .queryCount = num_queries,
+                                 .pipelineStatistics = pipe_stats,
                               }, NULL, &pool->pool));
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
@@ -1780,16 +1797,54 @@ vk_create_timestamp_pool(api_context *ctx, unsigned num_queries)
 }
 
 static void
-vk_write_next_timestamp(api_context *ctx, api_timestamp_query_pool *pool)
+vk_begin_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
-   vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
-                       pool->num_written_queries);
+
+   switch (pool->type) {
+   case api_query_fs_invocations:
+      vkCmdBeginQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries, 0);
+      break;
+   default:
+      error("invalid begin/end query type");
+   }
+}
+
+static void
+vk_end_next_query(api_context *ctx, api_query_pool *pool)
+{
+   assert(pool->num_written_queries < pool->num_queries);
+
+   switch (pool->type) {
+   case api_query_fs_invocations:
+      vkCmdEndQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries);
+      break;
+   default:
+      error("invalid begin/end query type");
+   }
+
    pool->num_written_queries++;
 }
 
 static void
-vk_query_timestamps(api_context *ctx, api_timestamp_query_pool *pool)
+vk_write_next_query_value(api_context *ctx, api_query_pool *pool)
+{
+   assert(pool->num_written_queries < pool->num_queries);
+
+   switch (pool->type) {
+   case api_query_timestamp:
+      vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
+                          pool->num_written_queries);
+      break;
+   default:
+      error("invalid single-value query type");
+   }
+
+   pool->num_written_queries++;
+}
+
+static void
+vk_get_query_results(api_context *ctx, api_query_pool *pool)
 {
    pool->num_read_queries = 0;
 
@@ -2618,9 +2673,11 @@ vk_create_context(const program_options *options)
    ctx->draw = vk_draw;
    ctx->driver_workaround = vk_driver_workaround;
 
-   ctx->create_timestamp_pool = vk_create_timestamp_pool;
-   ctx->write_next_timestamp = vk_write_next_timestamp;
-   ctx->query_timestamps = vk_query_timestamps;
+   ctx->create_query_pool = vk_create_query_pool;
+   ctx->begin_next_query = vk_begin_next_query;
+   ctx->end_next_query = vk_end_next_query;
+   ctx->write_next_query_value = vk_write_next_query_value;
+   ctx->get_query_results = vk_get_query_results;
 
    return ctx;
 }

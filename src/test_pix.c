@@ -892,11 +892,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    assert(num_visited_pipelines <= num_pipelines * num_formats);
 
    /* Create timestamp queries. */
-   api_timestamp_query_pool *timestamps =
-      ctx->create_timestamp_pool(ctx, num_pipelines * num_formats * 2);
+   api_query_pool *timestamps =
+      ctx->create_query_pool(ctx, num_pipelines * num_formats * 2, api_query_timestamp);
 
    printf("Executing tests for %s ...", prefix);
-   fflush(stdout);
 
    /* Run tests. */
    num_visited_pipelines = 0;
@@ -930,7 +929,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->end_render_pass(ctx);
          ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
 
-         ctx->write_next_timestamp(ctx, timestamps);
+         ctx->write_next_query_value(ctx, timestamps);
          /* Render pass for the measurement. */
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
@@ -938,7 +937,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->draw(ctx, &(api_draw_desc){.count = num_vertices, .instance_count = 1,
                                          .first_vertex = num_warmup_vertices});
          ctx->end_render_pass(ctx);
-         ctx->write_next_timestamp(ctx, timestamps);
+         ctx->write_next_query_value(ctx, timestamps);
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
@@ -947,7 +946,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    assert(num_visited_pipelines <= num_pipelines * num_formats);
    puts("");
 
-   ctx->query_timestamps(ctx, timestamps);
+   ctx->get_query_results(ctx, timestamps);
 
    printf("%-87s", "Formats");
 

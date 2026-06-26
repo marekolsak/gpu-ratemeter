@@ -392,7 +392,7 @@ static const VkClearColorValue solid_color_uint = {.uint32 = {23, 45, 89, 107}};
 
 static void
 run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tests,
-    api_timestamp_query_pool *timestamps)
+    api_query_pool *timestamps)
 {
    if (stage == REPORT) {
       printf("Op      ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
@@ -754,7 +754,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  /* The first few just warm up caches and the hw. */
                                  if (i == NUM_WARMUP_RUNS) {
                                     ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
-                                    ctx->write_next_timestamp(ctx, timestamps);
+                                    ctx->write_next_query_value(ctx, timestamps);
                                  }
 
                                  switch (test_index) {
@@ -793,7 +793,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  }
                               }
 
-                              ctx->write_next_timestamp(ctx, timestamps);
+                              ctx->write_next_query_value(ctx, timestamps);
                               ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                            }
 
@@ -851,10 +851,10 @@ test_imgbw(api_context *ctx, const char *test_name)
 
    run(ctx, test_name, COUNT_TESTS, &num_tests, NULL);
 
-   api_timestamp_query_pool *timestamps = ctx->create_timestamp_pool(ctx, num_tests * 2);
+   api_query_pool *timestamps = ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
    run(ctx, test_name, RUN, &num_tests, timestamps);
 
-   ctx->query_timestamps(ctx, timestamps);
+   ctx->get_query_results(ctx, timestamps);
    run(ctx, test_name, REPORT, NULL, timestamps);
 }

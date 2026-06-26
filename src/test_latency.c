@@ -534,11 +534,8 @@ test_latency(api_context *ctx, const char *test_name)
    run(ctx, test_name, INIT, &state);
 
    printf("Executing tests ...");
-
    run(ctx, test_name, RUN, &state);
-
    puts("");
-   puts("Reading back results...");
 
    run(ctx, test_name, REPORT, &state);
 
