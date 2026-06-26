@@ -1315,6 +1315,13 @@ gl_create_context(const program_options *options)
    ctx->has_queue[api_queue_gfx] = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
 
+   unsigned supported_subgroup_ops = 0;
+   unsigned required_subgroup_ops = GL_SUBGROUP_FEATURE_BASIC_BIT_KHR |
+                                    GL_SUBGROUP_FEATURE_QUAD_BIT_KHR;
+
+   if (GLAD_GL_KHR_shader_subgroup)
+      glGetIntegerv(GL_SUBGROUP_SUPPORTED_FEATURES_KHR, (int*)&supported_subgroup_ops);
+
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
    ctx->has_buffer_device_address = false;
@@ -1324,6 +1331,8 @@ gl_create_context(const program_options *options)
    ctx->has_shader_int8 = false;
    ctx->has_shader_int64 = GLAD_GL_ARB_gpu_shader_int64;
    ctx->has_shader_subgroup_clock = GLAD_GL_ARB_shader_clock;
+   ctx->has_shader_subgroup_ops =
+      (supported_subgroup_ops & required_subgroup_ops) == required_subgroup_ops;
    ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
    ctx->has_vrs = false;
    ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;

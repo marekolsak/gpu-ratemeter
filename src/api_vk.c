@@ -2010,6 +2010,9 @@ vk_create_context(const program_options *options)
    VkPhysicalDeviceProperties2 device_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
    };
+   VkPhysicalDeviceSubgroupProperties subgroup_props = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
+   };
    VkPhysicalDeviceConservativeRasterizationPropertiesEXT EXT_conservative_rasterization_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT,
    };
@@ -2019,6 +2022,7 @@ vk_create_context(const program_options *options)
 
    void **pNext = &device_props.pNext;
 
+   chain_next(pNext, &subgroup_props);
    if (has_extension(ctx, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME))
       chain_next(pNext, &EXT_conservative_rasterization_props);
    if (has_extension(ctx, VK_EXT_MESH_SHADER_EXTENSION_NAME))
@@ -2557,6 +2561,10 @@ vk_create_context(const program_options *options)
       ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
    }
 
+   const unsigned subgroup_op_stages = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
+   const unsigned subgroup_ops = VK_SUBGROUP_FEATURE_BASIC_BIT |
+                                 VK_SUBGROUP_FEATURE_QUAD_BIT;
+
    ctx->allow_parallel_create_shader = true;
    ctx->allow_parallel_create_pipeline = true;
    ctx->timestamp_period_in_seconds = device_props.properties.limits.timestampPeriod * 0.000000001;
@@ -2572,6 +2580,9 @@ vk_create_context(const program_options *options)
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
    ctx->has_shader_int64 = Vulkan10.features.shaderInt64;
    ctx->has_shader_subgroup_clock = KHR_shader_clock.shaderSubgroupClock;
+   ctx->has_shader_subgroup_ops =
+      (subgroup_props.supportedStages & subgroup_op_stages) == subgroup_op_stages &&
+      (subgroup_props.supportedOperations & subgroup_ops) == subgroup_ops;
    ctx->has_sparse_buffer = ctx->has_queue[api_queue_sparse] && Vulkan10.features.sparseBinding &&
                             Vulkan10.features.sparseResidencyBuffer;
    ctx->has_vs_tes_layer_output = Vulkan12.shaderOutputLayer;
