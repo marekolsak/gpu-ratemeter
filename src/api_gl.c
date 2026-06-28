@@ -1202,6 +1202,9 @@ gl_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
    case api_query_timestamp:
       pool->gltarget = GL_TIMESTAMP;
       break;
+   case api_query_clipper_out_primitives:
+      pool->gltarget = GL_CLIPPING_OUTPUT_PRIMITIVES;
+      break;
    case api_query_fs_invocations:
       pool->gltarget = GL_FRAGMENT_SHADER_INVOCATIONS;
       break;
@@ -1222,6 +1225,7 @@ gl_begin_next_query(api_context *ctx, api_query_pool *pool)
    assert(pool->num_written_queries < pool->num_queries);
 
    switch (pool->type) {
+   case api_query_clipper_out_primitives:
    case api_query_fs_invocations:
       glBeginQuery(pool->gltarget, pool->queries[pool->num_written_queries]);
       break;
@@ -1236,6 +1240,7 @@ gl_end_next_query(api_context *ctx, api_query_pool *pool)
    assert(pool->num_written_queries < pool->num_queries);
 
    switch (pool->type) {
+   case api_query_clipper_out_primitives:
    case api_query_fs_invocations:
       glEndQuery(pool->gltarget);
       break;

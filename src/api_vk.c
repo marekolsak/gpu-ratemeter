@@ -1773,6 +1773,10 @@ vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
    case api_query_timestamp:
       qtype = VK_QUERY_TYPE_TIMESTAMP;
       break;
+   case api_query_clipper_out_primitives:
+      qtype = VK_QUERY_TYPE_PIPELINE_STATISTICS;
+      pipe_stats = VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT;
+      break;
    case api_query_fs_invocations:
       qtype = VK_QUERY_TYPE_PIPELINE_STATISTICS;
       pipe_stats = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
@@ -1802,6 +1806,7 @@ vk_begin_next_query(api_context *ctx, api_query_pool *pool)
    assert(pool->num_written_queries < pool->num_queries);
 
    switch (pool->type) {
+   case api_query_clipper_out_primitives:
    case api_query_fs_invocations:
       vkCmdBeginQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries, 0);
       break;
@@ -1816,6 +1821,7 @@ vk_end_next_query(api_context *ctx, api_query_pool *pool)
    assert(pool->num_written_queries < pool->num_queries);
 
    switch (pool->type) {
+   case api_query_clipper_out_primitives:
    case api_query_fs_invocations:
       vkCmdEndQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries);
       break;
@@ -2561,9 +2567,10 @@ vk_create_context(const program_options *options)
       ctx->has_heap[i] = vk_find_heap(ctx, ~0, i) != -1;
    }
 
-   const unsigned subgroup_op_stages = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
-   const unsigned subgroup_ops = VK_SUBGROUP_FEATURE_BASIC_BIT |
-                                 VK_SUBGROUP_FEATURE_QUAD_BIT;
+   const unsigned required_subgroup_op_stages = VK_SHADER_STAGE_ALL_GRAPHICS |
+                                                VK_SHADER_STAGE_COMPUTE_BIT;
+   const unsigned required_subgroup_ops = VK_SUBGROUP_FEATURE_BASIC_BIT |
+                                          VK_SUBGROUP_FEATURE_QUAD_BIT;
 
    ctx->allow_parallel_create_shader = true;
    ctx->allow_parallel_create_pipeline = true;
@@ -2581,8 +2588,8 @@ vk_create_context(const program_options *options)
    ctx->has_shader_int64 = Vulkan10.features.shaderInt64;
    ctx->has_shader_subgroup_clock = KHR_shader_clock.shaderSubgroupClock;
    ctx->has_shader_subgroup_ops =
-      (subgroup_props.supportedStages & subgroup_op_stages) == subgroup_op_stages &&
-      (subgroup_props.supportedOperations & subgroup_ops) == subgroup_ops;
+      (subgroup_props.supportedStages & required_subgroup_op_stages) == required_subgroup_op_stages &&
+      (subgroup_props.supportedOperations & required_subgroup_ops) == required_subgroup_ops;
    ctx->has_sparse_buffer = ctx->has_queue[api_queue_sparse] && Vulkan10.features.sparseBinding &&
                             Vulkan10.features.sparseResidencyBuffer;
    ctx->has_vs_tes_layer_output = Vulkan12.shaderOutputLayer;

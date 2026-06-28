@@ -279,6 +279,7 @@ typedef struct {
 
 typedef enum {
    api_query_timestamp,
+   api_query_clipper_out_primitives,
    api_query_fs_invocations,
 } api_query_type;
 
