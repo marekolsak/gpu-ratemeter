@@ -38,7 +38,7 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - gl_PrimitiveID
+ * - gl_ViewportIndex
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - (maybe) stencil/HiS
  *

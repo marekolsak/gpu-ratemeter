@@ -211,6 +211,7 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fragpos_xyzw.face.samplemask.cull_back", "vec4(dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing) + float(gl_SampleMaskIn[0]))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".layer", "vec4(gl_Layer)"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".primitive_id", "vec4(gl_PrimitiveID)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".shading_rate", "vec4(gl_ShadingRateEXT)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".fully_covered", "vec4(gl_FragFullyCoveredNV)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid", "vec4(gl_SampleID)"), \

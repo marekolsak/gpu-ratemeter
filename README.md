@@ -110,6 +110,7 @@ Decoding subtest names:
   - `fragpos_*`: `gl_FragCoord.*` using only the listed components
   - `fully_covered`: `gl_FullyCoveredEXT` (also known as `gl_FragFullyCoveredNV`)
   - `layer`: `gl_Layer`
+  - `primitive_id`: `gl_PrimitiveID`
   - `sampleid`: `gl_SampleID` (this forces sample shading if framebuffer samples > 1)
   - `samplemask`: `gl_SampleMaskIn`
   - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
