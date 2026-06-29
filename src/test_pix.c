@@ -508,16 +508,18 @@ typedef struct {
    "   const int num_meshes_x = "#num_meshes_x"; \n" \
    "\n" \
    \
-   /* The number of vertices should be: 6 * quads_per_strip * strips_per_mesh * num_meshes_x^2 */ \
-   /* Try to keep quads_per_strip:strips_per_mesh ratio 4:5. */ \
-   /* strips_per_mesh must be even. num_meshes_x must be 2^n. */ \
+   /* The number of vertices must be: 6 * quads_per_strip * strips_per_mesh * num_meshes_x^2 */ \
+   /* Try to keep quads_per_strip:strips_per_mesh ratio 7:10. */ \
+   /* - quads_per_strip must be a multiple of 7.            */ \
+   /* - strips_per_mesh must be even if greater than 1.       */ \
+   /* - num_meshes_x must be 2^n.                             */ \
    \
    /* Sizing of geometry elements. */ \
    "   const int top_edge_tri_length = 4; \n" \
    "   const int tri_height = 3; \n" \
    \
-   "   const int vertices_per_quad = 6; \n" \
-   "   const int vertices_per_mesh = vertices_per_quad * quads_per_strip * strips_per_mesh; \n" \
+   "   const int vertices_per_strip = 2 + quads_per_strip * 2; \n" \
+   "   const int vertices_per_mesh = vertices_per_strip * strips_per_mesh; \n" \
    \
    "   const int top_edge_mesh_length = top_edge_tri_length * quads_per_strip; \n" \
    "   const int mesh_height = tri_height * strips_per_mesh; \n" \
@@ -529,11 +531,8 @@ typedef struct {
    \
    "   int index = gl_VertexIndex; \n" \
    \
-   "   const int vtx = index % vertices_per_quad; \n" \
-   "   index /= vertices_per_quad; \n" \
-   \
-   "   const int quad_index = index % quads_per_strip; \n" \
-   "   index /= quads_per_strip; \n" \
+   "   const int vtx = index % vertices_per_strip; \n" \
+   "   index /= vertices_per_strip; \n" \
    \
    "   const int strip_index = index % strips_per_mesh; \n" \
    "   index /= strips_per_mesh; \n" \
@@ -542,40 +541,23 @@ typedef struct {
    "\n" \
    \
    /* Generate positions within the quad. It's a parallelogram consisting */ \
-   /* of 2 equilateral triangles. */ \
+   /* of 2 equilateral triangles.                                         */ \
+   /*                                                                     */ \
+   /* The top edge length is 4 and the height is 3.                       */ \
+   /*                                                                     */ \
+   /* Each quad uses these indices:                                       */ \
+   /*                                                                     */ \
+   /* 0  2  4  6    = X coordinates                                       */ \
+   /*                                                                     */ \
+   /* 0-----2     0 = Y coordinate                                        */ \
+   /*  \   / \                                                            */ \
+   /*   \ /   \                                                           */ \
+   /*    1-----3  3 = Y coordinate                                        */ \
+   /*                                                                     */ \
+   /* Odd strips are flipped vertically.                                  */ \
    \
-   /* The top edge length is 4 and the height is 3. */ \
-   \
-   /* 0    2    4    6 */ \
-   \
-   /* 0--------2,3       0 */ \
-   /*  \       /  \ */ \
-   /*    \   /      \ */ \
-   /*     1,4--------5   3 */ \
-   \
-   /* Odd strips are flipped vertically while preserving CCW winding. */ \
-   \
-   /*     2,3--------5 */ \
-   /*    /   \      / */ \
-   /*  /       \  / */ \
-   /* 0--------1,4 */ \
-   "   ivec2 pos; \n" \
-   "\n" \
-   "   if (strip_index % 2 == 0) { \n" \
-   "      pos = ivec2(vtx == 0             ? 0 : \n" \
-   "                  vtx == 1 || vtx == 4 ? top_edge_tri_length / 2 : \n" \
-   "                  vtx == 2 || vtx == 3 ? top_edge_tri_length : top_edge_tri_length * 3 / 2, \n" \
-   "                  vtx == 1 || vtx == 4 || vtx == 5 ? tri_height : 0); \n" \
-   "   } else { \n" \
-   "      pos = ivec2(vtx == 0             ? 0 : \n" \
-   "                  vtx == 2 || vtx == 3 ? top_edge_tri_length / 2 : \n" \
-   "                  vtx == 1 || vtx == 4 ? top_edge_tri_length : top_edge_tri_length * 3 / 2, \n" \
-   "                  vtx == 0 || vtx == 1 || vtx == 4 ? tri_height : 0); \n" \
-   "   } \n" \
-   "\n" \
-   \
-   /* Generate a strip of horizontally adjacent parallelograms. */ \
-   "   pos.x += quad_index * top_edge_tri_length; \n" \
+   "   ivec2 pos = ivec2(vtx * top_edge_tri_length / 2, " \
+   "                     ((vtx % 2) ^ (strip_index % 2)) * tri_height); \n" \
    "\n" \
    \
    /* Generate a mesh of vertically adjacent strips */ \
@@ -607,7 +589,7 @@ typedef struct {
    "   gl_Position = vec4(clip_pos, 0, 1); \n" \
    "\n" \
    \
-   "   out0 = (gl_VertexIndex % 3) / 2.0; \n" \
+   "   out0 = (vtx % 3) / 2.0; \n" \
    "} \n"
 
 #define FS_RASTER \
@@ -1287,12 +1269,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          unsigned clip_prims = stats->clip_primitives;
 
          printf("%i: %u total FS invoc, %"PRIu64" FS invoc / %.1f %%, %"PRIu64" IA prims, "
-                "%"PRIu64" clip invoc, %u clip prims, %.2f² avg. prim area, %.1f pix/vert\n",
+                "%"PRIu64" clip invoc, %u clip prims, %.2f² avg. prim area, %.1f pix/prim\n",
                 i, total_fs_invoc, stats->fs_invocations,
                 100.0 * stats->fs_invocations / total_fs_invoc,
                 stats->ia_primitives, stats->clip_invocations, clip_prims,
                 sqrt((double)stats->fs_invocations / clip_prims),
-                (double)stats->fs_invocations / (clip_prims * 3));
+                (double)stats->fs_invocations / (clip_prims));
       }
    }
 
@@ -1499,21 +1481,55 @@ test_pix(api_context *ctx, const char *test_name)
       ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
    }
 
-#define RASTER_MAX_INDICES 7000000
 
    /* Create the index buffer for the raster test. The vertex data is generated
     * from gl_VertexIndex, but we need an index buffer to force vertex reuse.
+    *
+    * Each strip has 14 triangles, 16 vertices with reuse, and 42 indices.
     */
-   api_buffer *raster_indexbuf = ctx->create_buffer(ctx, 4 * RASTER_MAX_INDICES, api_heap_device, 0);
-   uint32_t *indices = malloc(4 * RASTER_MAX_INDICES);
+   const unsigned raster_max_indices = 7000000;
+   const unsigned raster_indexbuf_size = raster_max_indices * 4;
+   const unsigned indices_per_quad = 6;
+   const unsigned quads_per_strip = 7;
+   const unsigned vertices_per_strip = 2 + quads_per_strip * 2;
+   assert(vertices_per_strip == 16);
+   const unsigned indices_per_strip = quads_per_strip * indices_per_quad;
+   assert(indices_per_strip == 42);
+   const unsigned max_strips = raster_max_indices / indices_per_strip;
 
-   /* Each strip has 14 triangles, 16 vertices with reuse, and 14*3=42 vertices without reuse. */
-   for (unsigned i = 0, j = 0; i + 41 < RASTER_MAX_INDICES; i += 42, j += 16) {
-      for (unsigned k = 0; k < 42; k++)
-         indices[i + k] = i + k;
+   api_buffer *raster_indexbuf = ctx->create_buffer(ctx, raster_indexbuf_size, api_heap_device, 0);
+   uint32_t *indices = malloc(raster_indexbuf_size);
+
+   for (unsigned strip = 0; strip < max_strips; strip++) {
+      /* Each quad uses these indices:
+       *
+       * 0-----2
+       *  \   / \
+       *   \ /   \
+       *    1-----3
+       *
+       * Face culling must be disabled because the winding flips for odd triangles,
+       * but the vertex order allows us to chain the quads to form a strip and it simplifies
+       * the vertex position computation for the shader because even vertices are at the top,
+       * odd vertices are at the bottom, and VertexIndex / 2 is the column.
+       */
+      for (unsigned quad = 0; quad < quads_per_strip; quad++) {
+         unsigned index_base = strip * indices_per_strip + quad * indices_per_quad;
+         unsigned first_vertex = strip * vertices_per_strip + quad * 2;
+
+         assert(index_base + 5 < raster_max_indices);
+
+         indices[index_base + 0] = first_vertex;
+         indices[index_base + 1] = first_vertex + 1;
+         indices[index_base + 2] = first_vertex + 2;
+
+         indices[index_base + 3] = first_vertex + 1;
+         indices[index_base + 4] = first_vertex + 2;
+         indices[index_base + 5] = first_vertex + 3;
+      }
    }
 
-   ctx->upload_buffer_data(ctx, raster_indexbuf, 0, 4 * RASTER_MAX_INDICES, indices);
+   ctx->upload_buffer_data(ctx, raster_indexbuf, 0, raster_indexbuf_size, indices);
    free(indices);
 
    /* Determine the subset to test. */
