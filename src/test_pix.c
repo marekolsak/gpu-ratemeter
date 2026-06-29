@@ -36,8 +36,8 @@ typedef struct {
 
    /* Only for raster tests. */
    struct {
-      unsigned quads_per_strip;
-      unsigned strips_per_mesh;
+      unsigned quads_per_row;
+      unsigned rows_per_mesh;
       unsigned num_meshes_x;
    } raster;
 } pipeline_info;
@@ -476,7 +476,7 @@ typedef struct {
 
 #define GATHER_TOTAL_FS_INVOC (ctx->has_shader_subgroup_ops && getenv("g"))
 
-#define VS_RASTER(quads_per_strip, strips_per_mesh, num_meshes_x) \
+#define VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x) \
    SHADER_HEADER \
    "layout(location = 0) out float out0; \n" \
    "\n" \
@@ -496,33 +496,37 @@ typedef struct {
    \
    /* Below is a procedurally-generated 2D grid of geometry divided into meshes.     */ \
    /* Each mesh has a fixed number of vertices and it's roughly a 2D triangle patch. */ \
-   \
+   /*                                                                                */ \
    /* The 2D space is filled with the meshes in the Morton order, so the number      */ \
    /* of meshes to draw must be n^2. Then the whole thing is centered in clip space  */ \
    /* and rotated to make all edges not parallel with axes to get FS helper          */ \
    /* invocations at all edges.                                                      */ \
+   /*                                                                                */ \
+   /* The number of vertex indices must be: 6 * quads_per_row * rows_per_mesh * num_meshes_x^2 */ \
+   /* Try to keep quads_per_row:rows_per_mesh ratio 7:10.                            */ \
+   /* - quads_per_row must be a multiple of 7.                                       */ \
+   /* - rows_per_mesh must be even if greater than 1.                                */ \
+   /* - num_meshes_x must be 2^n.                                                    */ \
    \
    /* Geometry parameters. */ \
-   "   const int quads_per_strip = "#quads_per_strip"; \n" \
-   "   const int strips_per_mesh = "#strips_per_mesh"; \n" \
+   "   const int vertices_per_strip = 16; \n" \
+   "   const int quads_per_row = "#quads_per_row"; \n" \
+   "   const int strips_per_row = quads_per_row / 7; \n" \
+   "   const int rows_per_mesh = "#rows_per_mesh"; \n" \
    "   const int num_meshes_x = "#num_meshes_x"; \n" \
    "\n" \
    \
-   /* The number of vertices must be: 6 * quads_per_strip * strips_per_mesh * num_meshes_x^2 */ \
-   /* Try to keep quads_per_strip:strips_per_mesh ratio 7:10. */ \
-   /* - quads_per_strip must be a multiple of 7.            */ \
-   /* - strips_per_mesh must be even if greater than 1.       */ \
-   /* - num_meshes_x must be 2^n.                             */ \
-   \
-   /* Sizing of geometry elements. */ \
+   /* Sizing. Only the ratio matters. It should be roughly an equilateral triangle. */ \
    "   const int top_edge_tri_length = 4; \n" \
+   "   const int strip_width = top_edge_tri_length * 7; \n" \
    "   const int tri_height = 3; \n" \
+   "\n" \
    \
-   "   const int vertices_per_strip = 2 + quads_per_strip * 2; \n" \
-   "   const int vertices_per_mesh = vertices_per_strip * strips_per_mesh; \n" \
+   "   const int vertices_per_mesh = vertices_per_strip *  rows_per_mesh; \n" \
+   "\n" \
    \
-   "   const int top_edge_mesh_length = top_edge_tri_length * quads_per_strip; \n" \
-   "   const int mesh_height = tri_height * strips_per_mesh; \n" \
+   "   const int top_edge_mesh_length = top_edge_tri_length * quads_per_row; \n" \
+   "   const int mesh_height = tri_height * rows_per_mesh; \n" \
    "\n" \
    \
    /* Total size */ \
@@ -534,8 +538,11 @@ typedef struct {
    "   const int vtx = index % vertices_per_strip; \n" \
    "   index /= vertices_per_strip; \n" \
    \
-   "   const int strip_index = index % strips_per_mesh; \n" \
-   "   index /= strips_per_mesh; \n" \
+   "   const int strip_index_in_row = index % strips_per_row; \n" \
+   "   index /= strips_per_row; \n" \
+   \
+   "   const int strip_row = index % rows_per_mesh; \n" \
+   "   index /= rows_per_mesh; \n" \
    \
    "   int mesh_index = index; \n" \
    "\n" \
@@ -557,11 +564,12 @@ typedef struct {
    /* Odd strips are flipped vertically.                                  */ \
    \
    "   ivec2 pos = ivec2(vtx * top_edge_tri_length / 2, " \
-   "                     ((vtx % 2) ^ (strip_index % 2)) * tri_height); \n" \
+   "                     ((vtx % 2) ^ (strip_row % 2)) * tri_height); \n" \
    "\n" \
    \
-   /* Generate a mesh of vertically adjacent strips */ \
-   "   pos.y += strip_index * tri_height; \n" \
+   /* Generate a mesh of strips. */ \
+   "   pos.x += strip_index_in_row * strip_width; \n" \
+   "   pos.y += strip_row * tri_height; \n" \
    "\n" \
    \
    /* Generate meshes placed in the Z order curve on the screen. */ \
@@ -645,7 +653,7 @@ typedef struct {
    "#endif \n" \
    "} \n"
 
-#define RASTER_IMPL(non_helper_percentage, quads_per_strip, strips_per_mesh, num_meshes_x) \
+#define RASTER_IMPL(non_helper_percentage, quads_per_row, rows_per_mesh, num_meshes_x) \
    {".raster" #non_helper_percentage, \
     "", \
     "", \
@@ -653,10 +661,10 @@ typedef struct {
     "", \
     "", \
     \
-    VS_RASTER(quads_per_strip, strips_per_mesh, num_meshes_x), \
+    VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x), \
     FS_RASTER, \
     0, /* reserved_for_static_assert */ \
-    {quads_per_strip, strips_per_mesh, num_meshes_x}}
+    {quads_per_row, rows_per_mesh, num_meshes_x}}
 
 static const pipeline_info pipelines[] = {
    {NAME(".fs_empty"),
@@ -688,34 +696,35 @@ static const pipeline_info pipelines[] = {
    VRS(0), /* helper_invoc=0 */
    VRS(1), /* helper_invoc=1 */
 
-   /* To get statistics:
-    *    g=1 build/gpu-ratemeter -lean -rdna4ts -maxvalidresult=4000 -maxrate=128 -freq=2488 -subset=1 -filter=raster vk.pix && xdg-open raster.png
+   /* To gather statistics:
+    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean -rdna4ts -maxvalidresult=4000 -maxrate=128 -freq=2488 -subset=1 -filter=raster gl.pix
     *
-    * Use a multiple of 7 quads (14 triangles, 16 vertices) per strip unless there is only 1 strip.
+    * There must be a multiple of 7 quads (14 triangles, 16 vertices) per strip unless there is only 1 strip.
+    * If there are multiple meshes, the number of rows per mesh must be even.
+    * The number of meshes must be a power of two.
+    *
+    * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshes_x)
     */
-   RASTER_IMPL(99.9, 1, 1, 1),    /* 2 visible triangles, 724^2 pixels per triangle */
-   RASTER_IMPL(99.6, 7, 2, 1),    /* 8 visible triangles, 362^2 pixels per triangle */
-   RASTER_IMPL(99.4, 7, 3, 1),    /* 14 visible triangles, 274^2 pixels per triangle */
-   RASTER_IMPL(99.1, 7, 5, 1),    /* 28 visible triangles, 192^2 pixels per triangle */
-   RASTER_IMPL(98.7, 7, 7, 1),    /* 53 visible triangles, 141^2 pixels per triangle */
-   RASTER_IMPL(98.0, 14, 10, 1),  /* 97 visible triangles, 104^2 pixels per triangle */
-   RASTER_IMPL(97.2, 14, 14, 1),  /* 175 visible triangles, 77.4^2 pixels per triangle */
-   RASTER_IMPL(96.3, 14, 20, 1),  /* 284 visible triangles, 60.8^2 pixels per triangle */
-   RASTER_IMPL(94.6, 21, 30, 1),  /* 478 visible triangles, 46.8^2 pixels per triangle, 731 pix/vert */
-   RASTER_IMPL(93.0, 14, 20, 2),  /* 702 visible triangles, 38.6^2 pixels per triangle, 498 pix/vert */
-   RASTER_IMPL(89.8, 21, 30, 2),  /* 1216 visible triangles, 29.4^2 pixels per triangle, 287 pix/vert */
-   RASTER_IMPL(84.1, 35, 50, 2),  /* 2631 visible triangles, 20^2 pixels per triangle, 133 pix/vert */
-   RASTER_IMPL(81.5, 21, 30, 4),  /* 3504 visible triangles, 17.3^2 pixels per triangle, 100 pix/vert */
-   RASTER_IMPL(76.8, 14, 20, 8),  /* 5648 visible triangles, 13.6^2 pixels per triangle, 61.9 pix/vert */
-   RASTER_IMPL(72.5, 35, 50, 4),  /* 8225 visible triangles, 11.3^2 pixels per triangle, 42.5 pix/vert */
-   RASTER_IMPL(68.8, 21, 30, 8),  /* 11343 visible triangles, 9.61^2 pixels per triangle, 30.8 pix/vert */
-   RASTER_IMPL(62.3, 14, 20, 16), /* 18958 visible triangles, 7.44^2 pixels per triangle, 18.4 pix/vert */
-   RASTER_IMPL(57.0, 35, 50, 8),  /* 28496 visible triangles, 6.07^2 pixels per triangle, 12.3 pix/vert */
-   RASTER_IMPL(52.2, 21, 30, 16), /* 40023 visible triangles, 5.12^2 pixels per triangle, 8.7 pix/vert */
-   RASTER_IMPL(45.3, 14, 20, 32), /* 68728 visible triangles, 3.91^2 pixels per triangle, 5.1 pix/vert */
-   RASTER_IMPL(39.9, 35, 50, 16), /* 105122 visible triangles, 3.16^2 pixels per triangle, 3.3 pix/vert */
-   RASTER_IMPL(35.7, 21, 30, 32), /* 149332 visible triangles, 2.65^2 pixels per triangle, 2.3 pix/vert */
-   RASTER_IMPL(29.6, 14, 20, 64), /* 260772 visible triangles, 2.01^2 pixels per triangle, 1.3 pix/vert */
+   RASTER_IMPL(99.8, 1, 1, 1),    /*  0: 262756 total FS invoc, 262144 FS invoc / 99.8 %, 2 visible triangles, 362.04² avg. prim area, 131072.0 pix/prim */
+   RASTER_IMPL(99.2, 7, 2, 1),    /*  1: 264388 total FS invoc, 262144 FS invoc / 99.2 %, 6 visible triangles, 209.02² avg. prim area, 43690.7 pix/prim */
+   RASTER_IMPL(98.9, 7, 3, 1),    /*  2: 265048 total FS invoc, 262144 FS invoc / 98.9 %, 11 visible triangles, 154.37² avg. prim area, 23831.3 pix/prim */
+   RASTER_IMPL(98.1, 7, 5, 1),    /*  3: 267104 total FS invoc, 262144 FS invoc / 98.1 %, 21 visible triangles, 111.73² avg. prim area, 12483.0 pix/prim */
+   RASTER_IMPL(97.4, 7, 7, 1),    /*  4: 269216 total FS invoc, 262144 FS invoc / 97.4 %, 40 visible triangles, 80.95² avg. prim area, 6553.6 pix/prim */
+   RASTER_IMPL(96.1, 14, 10, 1),  /*  5: 272796 total FS invoc, 262144 FS invoc / 96.1 %, 74 visible triangles, 59.52² avg. prim area, 3542.5 pix/prim */
+   RASTER_IMPL(94.6, 14, 14, 1),  /*  6: 277028 total FS invoc, 262144 FS invoc / 94.6 %, 134 visible triangles, 44.23² avg. prim area, 1956.3 pix/prim */
+   RASTER_IMPL(93.0, 14, 20, 1),  /*  7: 282024 total FS invoc, 262144 FS invoc / 93.0 %, 226 visible triangles, 34.06² avg. prim area, 1159.9 pix/prim */
+   RASTER_IMPL(89.8, 21, 30, 1),  /*  8: 291848 total FS invoc, 262144 FS invoc / 89.8 %, 456 visible triangles, 23.98² avg. prim area, 574.9 pix/prim */
+   RASTER_IMPL(86.9, 14, 20, 2),  /*  9: 301796 total FS invoc, 262144 FS invoc / 86.9 %, 800 visible triangles, 18.10² avg. prim area, 327.7 pix/prim */
+   RASTER_IMPL(81.5, 21, 30, 2),  /* 10: 321532 total FS invoc, 262144 FS invoc / 81.5 %, 1728 visible triangles, 12.32² avg. prim area, 151.7 pix/prim */
+   RASTER_IMPL(72.5, 35, 50, 2),  /* 11: 361336 total FS invoc, 262144 FS invoc / 72.5 %, 4720 visible triangles, 7.45² avg. prim area, 55.5 pix/prim */
+   RASTER_IMPL(68.8, 21, 30, 4),  /* 12: 380952 total FS invoc, 262144 FS invoc / 68.8 %, 6722 visible triangles, 6.24² avg. prim area, 39.0 pix/prim */
+   RASTER_IMPL(62.3, 14, 20, 8),  /* 13: 420684 total FS invoc, 262144 FS invoc / 62.3 %, 11906 visible triangles, 4.69² avg. prim area, 22.0 pix/prim */
+   RASTER_IMPL(57.0, 35, 50, 4),  /* 14: 460172 total FS invoc, 262144 FS invoc / 57.0 %, 18408 visible triangles, 3.77² avg. prim area, 14.2 pix/prim */
+   RASTER_IMPL(52.5, 21, 30, 8),  /* 15: 499532 total FS invoc, 262144 FS invoc / 52.5 %, 26508 visible triangles, 3.14² avg. prim area, 9.9 pix/prim */
+   RASTER_IMPL(45.3, 14, 20, 16), /* 16: 578192 total FS invoc, 262144 FS invoc / 45.3 %, 46874 visible triangles, 2.36² avg. prim area, 5.6 pix/prim */
+   RASTER_IMPL(39.9, 35, 50, 8),  /* 17: 656636 total FS invoc, 262144 FS invoc / 39.9 %, 73008 visible triangles, 1.89² avg. prim area, 3.6 pix/prim */
+   RASTER_IMPL(35.7, 21, 30, 16), /* 18: 734832 total FS invoc, 262144 FS invoc / 35.7 %, 105282 visible triangles, 1.58² avg. prim area, 2.5 pix/prim */
+   RASTER_IMPL(29.6, 14, 20, 32), /* 19: 886064 total FS invoc, 262144 FS invoc / 29.6 %, 186502 visible triangles, 1.19² avg. prim area, 1.4 pix/prim */
 
    /* Constant fill. */
    INPUTS(0, "", "", 0, "", ""),
@@ -806,11 +815,11 @@ typedef struct {
 
 typedef struct {
    bool skip;
-   unsigned width;
-   unsigned height;
    api_image *colorbuf;
+   api_image *colorbuf_raster;
    api_image *zbuf;
    api_framebuffer *fb_color_only; /* there is no color buffer if the format is "imgStore" */
+   api_framebuffer *fb_color_only_raster;
    api_framebuffer *fb_color_and_zbuf;
    api_pipeline *pipelines[ARRAY_SIZE(pipelines)];
    api_pipeline *pipelines_quad_count[ARRAY_SIZE(pipelines)];
@@ -880,7 +889,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    bool skip_pipeline[ARRAY_SIZE(pipelines)] = {0};
    unsigned num_pipelines = 0;
    const bool multiview = test_flavor == TEST_MULTIVIEW;
-   const bool gather_total_fs_invoc = GATHER_TOTAL_FS_INVOC;
+   const bool raster_gather_total_fs_invoc = GATHER_TOTAL_FS_INVOC;
+   const bool raster_dump_image = getenv("d") != NULL;
 
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
       char pipeline_name[256];
@@ -1004,12 +1014,13 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
       VkFormat format = formats[f].format;
 
+      unsigned fb_size = 1024;
+      unsigned fb_raster_size = fb_size / 2; /* raster tests use the same size for all formats */
+      unsigned pix_size = format ? get_pixel_size_from_format(format) : 0;
+
       /* Scale the framebuffer size up or down depending on bpp and samples to normalize
        * execution time.
        */
-      unsigned fb_size = 1024;
-      unsigned pix_size = format ? get_pixel_size_from_format(format) : 0;
-
       if (samples >= 8)
          fb_size /= 4;
       else if (samples >= 4)
@@ -1028,12 +1039,17 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          fbs[f].colorbuf = ctx->create_image(ctx, image_type, format, fb_size,
                                              fb_size, num_layers, samples, layout,
                                              api_heap_device);
+
+         fbs[f].colorbuf_raster = ctx->create_image(ctx, image_type, format, fb_raster_size,
+                                                    fb_raster_size, num_layers, samples, layout,
+                                                    api_heap_device);
       }
 
-      fbs[f].width = fb_size;
-      fbs[f].height = fb_size;
       fbs[f].fb_color_only = ctx->create_framebuffer(ctx, fbs[f].colorbuf, NULL,
                                                      fb_size, fb_size, samples, view_mask);
+      fbs[f].fb_color_only_raster = ctx->create_framebuffer(ctx, fbs[f].colorbuf_raster, NULL,
+                                                            fb_raster_size, fb_raster_size,
+                                                            samples, view_mask);
 
       if (test_flavor != TEST_IMAGE_3D && test_flavor != TEST_LINEAR) {
          fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
@@ -1077,6 +1093,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          bool blend = strstr(pipeline_name, "blend");
          bool shading_rate = strstr(pipeline_name, "shading_rate");
          bool fully_covered = strstr(pipeline_name, "fully_covered");
+         bool raster = pipelines[p].raster.num_meshes_x != 0;
 
          if (!format && (helper_invoc || a2c || colormask0 || colormask_x || blend))
             continue;
@@ -1113,7 +1130,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          }
 
          pipeline_desc.desc_set_layout = format ? NULL : desc_set->layout;
-         pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf : fbs[f].fb_color_only;
+         assert(!require_zbuf || !raster);
+         pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf :
+                            raster ? fbs[f].fb_color_only_raster : fbs[f].fb_color_only;
 
          assert(pipeline_desc.vs);
          assert(pipeline_desc.fs);
@@ -1121,8 +1140,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
 
-         if (gather_total_fs_invoc && format == VK_FORMAT_R8G8B8A8_UNORM &&
-             pipelines[p].raster.num_meshes_x) {
+         if (raster_gather_total_fs_invoc && raster && format && !format_is_integer(format)) {
             pipeline_desc.desc_set_layout = desc_set->layout;
             pipeline_desc.fs = compiled_shaders[p].fs_count_total_invoc;
             fbs[f].pipelines_quad_count[p] = ctx->create_pipeline(ctx, &pipeline_desc);
@@ -1135,12 +1153,14 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    /* Create timestamp queries. */
    api_query_pool *timestamps =
       ctx->create_query_pool(ctx, num_pipelines * num_formats * 2, api_query_timestamp);
-   api_query_pool *pipe_stats;
+   api_query_pool *pipe_stats = NULL;
 
-   if (gather_total_fs_invoc)
+   if (raster_gather_total_fs_invoc)
       pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
 
    printf("Executing tests for %s ...", prefix);
+
+   bool raster_dumped_images = false;
 
    /* Run tests. */
    num_visited_pipelines = 0;
@@ -1150,37 +1170,37 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       if (skip_pipeline[p])
          continue;
 
+      bool raster_gathered_total_fs_invoc = false;
+
       for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
          if (!fbs[f].pipelines[p])
             continue;
 
-         bool is_raster = pipelines[p].raster.num_meshes_x;
-         bool is_raster_dbg = is_raster && fbs[f].colorbuf &&
-                              fbs[f].colorbuf->format == VK_FORMAT_R8G8B8A8_UNORM;
-
          const unsigned num_fullscreen_draws = NUM_FULLSCREEN_DRAWS / (multiview ? 2 : 1);
 
+         const bool raster = pipelines[p].raster.num_meshes_x != 0;
          const unsigned num_raster_vertices =
-               6 * pipelines[p].raster.quads_per_strip *
-               pipelines[p].raster.strips_per_mesh *
+               6 * pipelines[p].raster.quads_per_row *
+               pipelines[p].raster.rows_per_mesh *
                pipelines[p].raster.num_meshes_x * pipelines[p].raster.num_meshes_x;
          const unsigned num_raster_instances = num_fullscreen_draws;
 
-         assert(pipelines[p].raster.strips_per_mesh <= 1 ||
-                pipelines[p].raster.quads_per_strip % 7 == 0);
+         assert(pipelines[p].raster.rows_per_mesh <= 1 ||
+                pipelines[p].raster.quads_per_row % 7 == 0);
          assert(pipelines[p].raster.num_meshes_x <= 1 ||
-                pipelines[p].raster.strips_per_mesh % 2 == 0);
+                pipelines[p].raster.rows_per_mesh % 2 == 0);
          assert(IS_POT(pipelines[p].raster.num_meshes_x));
 
          const unsigned num_normal_vertices = 3 * num_fullscreen_draws;
          const unsigned num_normal_instances = 1;
 
-         const unsigned num_warmup_vertices = is_raster ? num_raster_vertices : num_normal_vertices / 4;
-         const unsigned num_warmup_instances = is_raster ? num_raster_instances / 4 : num_normal_instances;
+         const unsigned num_warmup_vertices = raster ? num_raster_vertices : num_normal_vertices / 4;
+         const unsigned num_warmup_instances = raster ? num_raster_instances / 4 : num_normal_instances;
 
          assert(num_raster_vertices * 4 < raster_indexbuf->size);
 
-         if (gather_total_fs_invoc && is_raster_dbg) {
+         if (raster_gather_total_fs_invoc && raster && !raster_gathered_total_fs_invoc &&
+             fbs[f].colorbuf_raster && !format_is_integer(fbs[f].colorbuf_raster->format)) {
             ctx->wait_for_idle(ctx);
             ctx->set_storage_buffer_descriptor(ctx, desc_set, 0, total_fs_invoc,
                                                num_raster_gather_tests * 4, 4);
@@ -1195,19 +1215,21 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                       .fb = fbs[f].pipelines[p]->desc.fb,
                                    });
-            ctx->draw(ctx, &(api_draw_desc){.indexed = is_raster,
+            ctx->draw(ctx, &(api_draw_desc){.indexed = raster,
                                             .count = num_raster_vertices,
                                             .instance_count = 1});
             ctx->end_render_pass(ctx);
             ctx->end_next_query(ctx, pipe_stats);
             ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+
+            raster_gathered_total_fs_invoc = true;
          }
 
          ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
          if (!formats[f].format)
             ctx->bind_descriptor_set(ctx, desc_set);
-         if (is_raster)
+         if (raster)
             ctx->bind_index_buffer(ctx, raster_indexbuf);
 
          ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
@@ -1216,12 +1238,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                    .clear = true,
-                                   .color_clear_value.float32 = {0.2, 0.2, 0.4, 1},
+                                   .color_clear_value.float32 = {1, 0, 0, 1},
                                    .depth_clear_value = 0.5,
                                 });
 
          /* Warm up the GPU. */
-         ctx->draw(ctx, &(api_draw_desc){.indexed = is_raster,
+         ctx->draw(ctx, &(api_draw_desc){.indexed = raster,
                                          .count = num_warmup_vertices,
                                          .instance_count = num_warmup_instances});
          ctx->end_render_pass(ctx);
@@ -1233,16 +1255,18 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                 });
          ctx->draw(ctx, &(api_draw_desc){
-                      .indexed = is_raster,
-                      .count = is_raster ? num_raster_vertices : num_normal_vertices,
-                      .instance_count = is_raster ? num_raster_instances : num_normal_instances,
-                      .first_vertex = is_raster ? 0 : num_warmup_vertices});
+                      .indexed = raster,
+                      .count = raster ? num_raster_vertices : num_normal_vertices,
+                      .instance_count = raster ? num_raster_instances : num_normal_instances,
+                      .first_vertex = raster ? 0 : num_warmup_vertices});
          ctx->end_render_pass(ctx);
          ctx->write_next_query_value(ctx, timestamps);
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
-         if (gather_total_fs_invoc && is_raster_dbg)
-            ctx->image_write_png(ctx, fbs[f].colorbuf, 0, "raster.png");
+         if (raster && raster_dump_image && !raster_dumped_images && fbs[f].colorbuf_raster) {
+            ctx->image_write_png(ctx, fbs[f].colorbuf_raster, 0, "raster.png");
+            raster_dumped_images = true;
+         }
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
       }
@@ -1252,7 +1276,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    ctx->get_query_results(ctx, timestamps);
 
-   if (gather_total_fs_invoc) {
+   if (raster_gather_total_fs_invoc) {
       uint32_t *total_fs_invoc_results = alloca(4 * num_raster_gather_tests);
 
       ctx->get_buffer_data(ctx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
@@ -1262,19 +1286,18 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          unsigned total_fs_invoc = total_fs_invoc_results[i];
          api_pipeline_stat_results *stats = &pipe_stats->pipe_stats[i];
 
-         /* RDNA 4 unfortunately returns an incorrect number of clip prims that's 2-4x greater
-          * than the correct number. The only way to get the correct number is to cull
-          * in the shader and use clip invocations here.
+         /* Note: This is only correct with radeonsi and AMD_DEBUG=nggc,mono because
+          * clip_primitives is wrong RDNA 4. All other HW should use clip_primitives here,
+          * but this stat gathering is only for test debugging, so it doesn't matter.
           */
-         unsigned clip_prims = stats->clip_primitives;
+         uint64_t clip_prims = stats->clip_invocations;
 
-         printf("%i: %u total FS invoc, %"PRIu64" FS invoc / %.1f %%, %"PRIu64" IA prims, "
-                "%"PRIu64" clip invoc, %u clip prims, %.2f² avg. prim area, %.1f pix/prim\n",
+         printf("%2i: %u total FS invoc, %"PRIu64" FS invoc / %.1f %%, "
+                "%"PRIu64" visible triangles, %.2f² avg. prim area, %.1f pix/prim\n",
                 i, total_fs_invoc, stats->fs_invocations,
-                100.0 * stats->fs_invocations / total_fs_invoc,
-                stats->ia_primitives, stats->clip_invocations, clip_prims,
+                100.0 * stats->fs_invocations / total_fs_invoc, clip_prims,
                 sqrt((double)stats->fs_invocations / clip_prims),
-                (double)stats->fs_invocations / (clip_prims));
+                (double)stats->fs_invocations / clip_prims);
       }
    }
 
@@ -1324,6 +1347,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
       printf("%-87s", name);
 
+      bool raster = strstr(pipeline_name, "raster");
+
       for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
          if (fbs[f].skip)
             continue;
@@ -1333,7 +1358,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             continue;
          }
 
-         uint64_t num_units = (uint64_t)fbs[f].width * fbs[f].height * samples *
+         api_framebuffer *fb = raster ? fbs[f].fb_color_only_raster : fbs[f].fb_color_only;
+         uint64_t num_units = (uint64_t)fb->width * fb->height * samples *
                               NUM_FULLSCREEN_DRAWS;
          if (ctx->options.report_bandwidth)
             num_units *= get_pixel_size_from_format(formats[f].format);
@@ -1350,10 +1376,14 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if (fbs[f].fb_color_only)
          ctx->destroy_framebuffer(ctx, fbs[f].fb_color_only);
+      if (fbs[f].fb_color_only_raster)
+         ctx->destroy_framebuffer(ctx, fbs[f].fb_color_only_raster);
       if (fbs[f].fb_color_and_zbuf)
          ctx->destroy_framebuffer(ctx, fbs[f].fb_color_and_zbuf);
       if (fbs[f].colorbuf)
          ctx->destroy_image(ctx, fbs[f].colorbuf);
+      if (fbs[f].colorbuf_raster)
+         ctx->destroy_image(ctx, fbs[f].colorbuf_raster);
       if (fbs[f].zbuf)
          ctx->destroy_image(ctx, fbs[f].zbuf);
 
