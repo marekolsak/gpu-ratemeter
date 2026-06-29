@@ -31,6 +31,8 @@ typedef struct {
 
    const char *vs_source;
    const char *fs_source;
+   const char *vs_source_prefix; /* TODO: move most shader code here from the ugly macros */
+   const char *fs_source_prefix;
 
    int reserved_for_static_assert;
 
@@ -282,6 +284,8 @@ typedef struct {
    "   gl_SampleMask[0] = not_helperi; \n" \
    "#endif \n" \
    "}", \
+   NULL, \
+   NULL, \
    \
    STATIC_ASSERT_EXPR(write_color + write_z + write_samplemask + alpha_to_coverage >= (write_color ? 2 : 1)) + \
    STATIC_ASSERT_EXPR(write_color || (!color_disabled && !alpha_to_coverage)) + \
@@ -667,6 +671,8 @@ typedef struct {
    {NAME(".raster" #non_helper_percentage), \
     VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x), \
     FS_RASTER, \
+    NULL, \
+    NULL, \
     0, /* reserved_for_static_assert */ \
     {quads_per_row, rows_per_mesh, num_meshes_x}}
 
@@ -715,12 +721,12 @@ static const pipeline_info pipelines[] = {
     * 1 row. If there are multiple meshes, the number of rows per mesh must be even. The number of
     * meshes in the X axis must be a power of two, and a non-zero number of meshes also indiates
     * that it's a raster subest.
-   *
+    *
     * Triangle and quad tests should set rows_per_mesh=0, and then quads_per_row identfies
     * the subest.
-   *
+    *
     * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshs_x)
-   */
+    */
    RASTER(100.fullscreen_triangle, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_TRIANGLE, 0, 1),
    RASTER(99.8.fullscreen_quad, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_QUAD, 0, 1),
    RASTER(99.9, 1, 1, 1),
@@ -1306,8 +1312,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       ctx->get_buffer_data(ctx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
       ctx->get_query_results(ctx, pipe_stats);
 
-      printf("| Subtest                       | Total FS invoc. | %% non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri |\n");
-      printf("|-------------------------------|-----------------|---------------------|--------------|---------------|-------------------|\n");
+      printf("| Subtest                       | Total FS invoc. | %% non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri | Avg. FS invoc. / tri |\n");
+      printf("|-------------------------------|-----------------|---------------------|--------------|---------------|-------------------|----------------------|\n");
 
       for (unsigned i = 0; i < num_raster_gather_tests; i++) {
          unsigned total_fs_invoc = total_fs_invoc_results[i];
@@ -1320,6 +1326,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          double non_helpers_percent = 100.0 * stats->fs_invocations / total_fs_invoc;
          uint64_t clip_prims = stats->clip_invocations;
          double pix_per_tri = (double)stats->fs_invocations / clip_prims;
+         double fs_invoc_per_tri = (double)total_fs_invoc / clip_prims;
 
          char name[64];
          snprintf(name, sizeof(name), "%s", raster_names[i] + 7);
@@ -1330,9 +1337,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             memcpy(name, percent, strlen(percent));
          }
 
-         printf("| raster%-23s | %15u | %17.1f %% | %12"PRIu64" | %12.2f² | %17.1f |\n",
+         printf("| raster%-23s | %15u | %17.1f %% | %12"PRIu64" | %12.2f² | %17.1f | %20.1f |\n",
                 name, total_fs_invoc, non_helpers_percent, clip_prims, sqrt(pix_per_tri),
-                pix_per_tri);
+                pix_per_tri, fs_invoc_per_tri);
       }
    }
 
