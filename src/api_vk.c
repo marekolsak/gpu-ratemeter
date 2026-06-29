@@ -2270,7 +2270,7 @@ vk_create_context(const program_options *options)
    //require(Vulkan10.features.wideLines);
    //require(Vulkan10.features.largePoints);
    //require(Vulkan10.features.alphaToOne);
-   //require(Vulkan10.features.multiViewport);
+   require(Vulkan10.features.multiViewport);
    //require(Vulkan10.features.samplerAnisotropy);
    //require(Vulkan10.features.textureCompressionETC2);
    //require(Vulkan10.features.textureCompressionASTC_LDR);

@@ -116,6 +116,7 @@ Decoding subtest names:
   - `samplepos`: `gl_SamplePosition` (this forces sample shading if framebuffer samples > 1)
   - `shading_rate`: `gl_ShadingRateEXT`
   - `view_index`: `gl_ViewIndex`
+  - `viewport_index`: `gl_ViewportIndex`
 - Used inputs are indicated as follows:
   - `Nflat`: N flat inputs
   - `Npersp`: N inputs with perspective interpolation at center

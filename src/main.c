@@ -38,7 +38,6 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
- * - gl_ViewportIndex
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - (maybe) stencil/HiS
  *
@@ -51,7 +50,7 @@
  * - TES?
  * - GL clip planes
  * - multiview
- * - task shader
+ * - task shader (test a low number of mesh workgroups per TS invocation)
  * - fill the screen in the Morton order instead of linearly
  * - 1-primitive instances/clock
  * - 1-primitive draws in a multidraw, prims/clock == draws/clock

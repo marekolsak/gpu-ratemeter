@@ -222,7 +222,8 @@ typedef struct {
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_z", "vec4(float(gl_SampleID) + gl_FragCoord.z)"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.fragpos_xyzw", "vec4(float(gl_SampleID) + dot(gl_FragCoord, vec4(1)))"), \
    INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".sampleid.samplepos.samplemask.fragpos_xyzw.face", "vec4(float(gl_SampleID) + dot(gl_SamplePosition.xy, vec2(1)) + float(gl_SampleMaskIn[0]) + dot(gl_FragCoord, vec4(1)) + float(gl_FrontFacing))"), \
-   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".view_index", "vec4(gl_ViewIndex)")
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".view_index", "vec4(gl_ViewIndex)"), \
+   INPUTS_IMPL(num1, qual1_name, qual1, num2, qual2_name, qual2, ".viewport_index", "vec4(gl_ViewportIndex)")
 
 #define INPUTS1(qual1_name, qual1) \
    INPUTS(1, qual1_name, qual1, 0, "", ""), \
