@@ -128,8 +128,9 @@ Optional parameters:
 `raster` are subtests executed as part of `pix` that measure how much helper invocations and triangle
 sizes negatively impact pixel throughput and when primitive throughput starts becoming the limiting
 factor. While all other subtests use a single fullscreen triangle and 0 helper invocations,
-the `raster` subtests draw a mesh of equally-sized roughly equilateral triangles where each subtest
-uses a different triangle size. A fullscreen triangle and fullscreen quad subtests are also included.
+the `raster` subtests draw a mesh of equally-sized roughly equilateral triangles. Each subsequent
+subtest decreases the triangle size and increases the number of triangles to always fill the whole screen.
+A fullscreen triangle and fullscreen quad subtests are also included for reference.
 
 The pipeline statistics of each subtest are in the table below. (unlike standard pipeline statistics, these also include helper invocations)
 
