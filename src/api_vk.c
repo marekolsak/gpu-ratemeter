@@ -1764,7 +1764,6 @@ vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
    pool->type = type;
    pool->num_written_queries = 0;
    pool->num_queries = num_queries;
-   pool->results = calloc(num_queries, sizeof(uint64_t));
 
    VkQueryType qtype = 0;
    VkQueryPipelineStatisticFlags pipe_stats = 0;
@@ -1772,14 +1771,23 @@ vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
    switch (type) {
    case api_query_timestamp:
       qtype = VK_QUERY_TYPE_TIMESTAMP;
+      pool->results = calloc(num_queries, sizeof(uint64_t));
       break;
-   case api_query_clipper_out_primitives:
+   case api_query_pipeline_statistics:
       qtype = VK_QUERY_TYPE_PIPELINE_STATISTICS;
-      pipe_stats = VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT;
-      break;
-   case api_query_fs_invocations:
-      qtype = VK_QUERY_TYPE_PIPELINE_STATISTICS;
-      pipe_stats = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
+      pipe_stats = VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_TESSELLATION_CONTROL_SHADER_PATCHES_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_TESSELLATION_EVALUATION_SHADER_INVOCATIONS_BIT |
+                   VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+      assert(bitcount(pipe_stats) == sizeof(api_pipeline_stat_results) / 8);
+      pool->results = calloc(num_queries, sizeof(api_pipeline_stat_results));
       break;
    default:
       error("invalid query type");
@@ -1804,31 +1812,18 @@ static void
 vk_begin_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
+   assert(pool->type != api_query_timestamp);
 
-   switch (pool->type) {
-   case api_query_clipper_out_primitives:
-   case api_query_fs_invocations:
-      vkCmdBeginQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries, 0);
-      break;
-   default:
-      error("invalid begin/end query type");
-   }
+   vkCmdBeginQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries, 0);
 }
 
 static void
 vk_end_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
+   assert(pool->type != api_query_timestamp);
 
-   switch (pool->type) {
-   case api_query_clipper_out_primitives:
-   case api_query_fs_invocations:
-      vkCmdEndQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries);
-      break;
-   default:
-      error("invalid begin/end query type");
-   }
-
+   vkCmdEndQuery(ctx->current_cmd_buffer, pool->pool, pool->num_written_queries);
    pool->num_written_queries++;
 }
 
@@ -1836,16 +1831,10 @@ static void
 vk_write_next_query_value(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
+   assert(pool->type == api_query_timestamp);
 
-   switch (pool->type) {
-   case api_query_timestamp:
-      vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
-                          pool->num_written_queries);
-      break;
-   default:
-      error("invalid single-value query type");
-   }
-
+   vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
+                       pool->num_written_queries);
    pool->num_written_queries++;
 }
 
@@ -1857,10 +1846,23 @@ vk_get_query_results(api_context *ctx, api_query_pool *pool)
    if (!pool->num_written_queries)
       return;
 
+   unsigned stride = 0;
+
+   switch (pool->type) {
+   case api_query_timestamp:
+      stride = 8;
+      break;
+   case api_query_pipeline_statistics:
+      stride = sizeof(api_pipeline_stat_results);
+      break;
+   default:
+      error("invalid query type");
+   }
+
    vk_wait_for_idle(ctx);
    vk_check(vkGetQueryPoolResults(ctx->device, pool->pool, 0, pool->num_written_queries,
-                                  sizeof(uint64_t) * pool->num_written_queries, pool->results,
-                                  sizeof(uint64_t), VK_QUERY_RESULT_64_BIT));
+                                  stride * pool->num_written_queries, pool->results,
+                                  stride, VK_QUERY_RESULT_64_BIT));
 }
 
 static void
@@ -2681,7 +2683,7 @@ vk_create_context(const program_options *options)
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;
-   ctx->wait_idle_before_deallocation = vk_wait_for_idle;
+   ctx->wait_for_idle = vk_wait_for_idle;
 
    ctx->begin_render_pass = vk_begin_render_pass;
    ctx->end_render_pass = vk_end_render_pass;

@@ -4,6 +4,7 @@
 
 #include <alloca.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -55,7 +56,7 @@ typedef struct {
    "#define HAS_VRS 0 \n" \
    "#define HAS_FULLY_COVERED 0 \n" \
    "#define HAS_MULTIVIEW 0 \n" \
-   "#define GATHER_FS_QUAD_COUNT 0 \n" \
+   "#define GATHER_TOTAL_FS_INVOC 0 \n" \
    "\n" \
    \
    "#if HAS_VRS \n" \
@@ -73,7 +74,7 @@ typedef struct {
    "#endif \n" \
    "\n" \
    \
-   "#if GATHER_FS_QUAD_COUNT \n" \
+   "#if GATHER_TOTAL_FS_INVOC \n" \
    "#extension GL_KHR_shader_subgroup_basic : require \n" \
    "#extension GL_KHR_shader_subgroup_quad : require \n" \
    "#endif \n" \
@@ -473,7 +474,7 @@ typedef struct {
    VRS_IMPL(2, 1, helper_invoc), \
    VRS_IMPL(2, 2, helper_invoc)
 
-#define GATHER_FS_QUAD_COUNT (ctx->has_shader_subgroup_ops && getenv("g"))
+#define GATHER_TOTAL_FS_INVOC (ctx->has_shader_subgroup_ops && getenv("g"))
 
 #define VS_RASTER(quads_per_strip, strips_per_mesh, num_meshes_x) \
    SHADER_HEADER \
@@ -613,7 +614,7 @@ typedef struct {
    FS_SHADER_HEADER \
    "\n" \
    \
-   "#if GATHER_FS_QUAD_COUNT \n" \
+   "#if GATHER_TOTAL_FS_INVOC \n" \
    "#ifdef VULKAN \n" \
    "layout(set = 0, binding = 1, std430) buffer Counters { \n" \
    "#else \n" \
@@ -627,7 +628,7 @@ typedef struct {
    "layout(location = 0) in float in0; \n" \
    "\n" \
    \
-   "#if GATHER_FS_QUAD_COUNT \n" \
+   "#if GATHER_TOTAL_FS_INVOC \n" \
    "bool isFirstNonHelperInvocationInQuad() \n" \
    "{ \n" \
    "    bool pred = !gl_HelperInvocation; \n" \
@@ -656,7 +657,7 @@ typedef struct {
    "   store_output_color0(vec4(vec3(in0), 1)); \n" \
    "\n" \
    \
-   "#if GATHER_FS_QUAD_COUNT \n" \
+   "#if GATHER_TOTAL_FS_INVOC \n" \
    "   if (isFirstNonHelperInvocationInQuad()) \n" \
    "      atomicAdd(num_invocations, 4); \n" \
    "#endif \n" \
@@ -818,7 +819,7 @@ typedef struct {
    api_shader *fs_out_int;
    api_shader *fs_out_uint;
    api_shader *fs_image_store;
-   api_shader *fs_quad_count; /* the color output is float */
+   api_shader *fs_count_total_invoc; /* the color output is float */
 } compiled_shaders_state;
 
 typedef struct {
@@ -890,14 +891,14 @@ test_filter(api_context *ctx, unsigned samples, test_flavor test_flavor, const p
 static void
 run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
              compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set,
-             test_flavor test_flavor, api_buffer *fs_quads)
+             test_flavor test_flavor, api_buffer *total_fs_invoc, api_buffer *raster_indexbuf)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
    api_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
    bool skip_pipeline[ARRAY_SIZE(pipelines)] = {0};
    unsigned num_pipelines = 0;
    const bool multiview = test_flavor == TEST_MULTIVIEW;
-   const bool gather_fs_quad_count = GATHER_FS_QUAD_COUNT;
+   const bool gather_total_fs_invoc = GATHER_TOTAL_FS_INVOC;
 
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
       char pipeline_name[256];
@@ -1011,8 +1012,6 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    bool na = (test_flavor == TEST_MULTIVIEW && !ctx->has_multiview) ||
              (test_flavor == TEST_LINEAR && !ctx->has_image_tiling_linear);
 
-   unsigned rgba8_fb_size = 0;
-
    /* Create framebuffers. */
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if (fbs[f].skip)
@@ -1036,9 +1035,6 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
       if (pix_size == 16)
          fb_size /= 2;
-
-      if (format == VK_FORMAT_R8G8B8A8_UNORM)
-         rgba8_fb_size = fb_size;
 
       VkImageType image_type = test_flavor == TEST_IMAGE_3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
       VkImageTiling layout = test_flavor == TEST_LINEAR ? VK_IMAGE_TILING_LINEAR
@@ -1143,10 +1139,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
 
-         if (gather_fs_quad_count && format == VK_FORMAT_R8G8B8A8_UNORM &&
+         if (gather_total_fs_invoc && format == VK_FORMAT_R8G8B8A8_UNORM &&
              pipelines[p].raster.num_meshes_x) {
             pipeline_desc.desc_set_layout = desc_set->layout;
-            pipeline_desc.fs = compiled_shaders[p].fs_quad_count;
+            pipeline_desc.fs = compiled_shaders[p].fs_count_total_invoc;
             fbs[f].pipelines_quad_count[p] = ctx->create_pipeline(ctx, &pipeline_desc);
          }
       }
@@ -1157,8 +1153,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    /* Create timestamp queries. */
    api_query_pool *timestamps =
       ctx->create_query_pool(ctx, num_pipelines * num_formats * 2, api_query_timestamp);
-   api_query_pool *prim_count_query =
-      ctx->create_query_pool(ctx, num_pipelines * 2, api_query_clipper_out_primitives);
+   api_query_pool *pipe_stats;
+
+   if (gather_total_fs_invoc)
+      pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
 
    printf("Executing tests for %s ...", prefix);
 
@@ -1198,28 +1196,28 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          const unsigned num_warmup_vertices = is_raster ? num_raster_vertices : num_normal_vertices / 4;
          const unsigned num_warmup_instances = is_raster ? num_raster_instances / 4 : num_normal_instances;
 
+         assert(num_raster_vertices * 4 < raster_indexbuf->size);
 
-         if (gather_fs_quad_count && is_raster_dbg) {
-            ctx->wait_idle_before_deallocation(ctx);
-            ctx->set_storage_buffer_descriptor(ctx, desc_set, 0, fs_quads, num_raster_gather_tests * 4, 4);
+         if (gather_total_fs_invoc && is_raster_dbg) {
+            ctx->wait_for_idle(ctx);
+            ctx->set_storage_buffer_descriptor(ctx, desc_set, 0, total_fs_invoc,
+                                               num_raster_gather_tests * 4, 4);
 
             num_raster_gather_tests++;
 
             ctx->begin_cmdbuf(ctx, api_queue_gfx);
-            ctx->clear_buffer(ctx, fs_quads, 0, 4, 0);
-
             ctx->bind_descriptor_set(ctx, desc_set);
+            ctx->bind_index_buffer(ctx, raster_indexbuf);
             ctx->bind_pipeline(ctx, fbs[f].pipelines_quad_count[p]);
-            ctx->begin_next_query(ctx, prim_count_query);
+            ctx->begin_next_query(ctx, pipe_stats);
             ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                       .fb = fbs[f].pipelines[p]->desc.fb,
-                                      .clear = true,
-                                      .color_clear_value.float32 = {0.2, 0.2, 0.4, 1},
-                                      .depth_clear_value = 0.5,
                                    });
-            ctx->draw(ctx, &(api_draw_desc){.count = num_raster_vertices, .instance_count = 1});
+            ctx->draw(ctx, &(api_draw_desc){.indexed = is_raster,
+                                            .count = num_raster_vertices,
+                                            .instance_count = 1});
             ctx->end_render_pass(ctx);
-            ctx->end_next_query(ctx, prim_count_query);
+            ctx->end_next_query(ctx, pipe_stats);
             ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
          }
 
@@ -1227,6 +1225,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          if (!formats[f].format)
             ctx->bind_descriptor_set(ctx, desc_set);
+         if (is_raster)
+            ctx->bind_index_buffer(ctx, raster_indexbuf);
 
          ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
 
@@ -1239,7 +1239,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                 });
 
          /* Warm up the GPU. */
-         ctx->draw(ctx, &(api_draw_desc){.count = num_warmup_vertices,
+         ctx->draw(ctx, &(api_draw_desc){.indexed = is_raster,
+                                         .count = num_warmup_vertices,
                                          .instance_count = num_warmup_instances});
          ctx->end_render_pass(ctx);
          ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
@@ -1250,6 +1251,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                 });
          ctx->draw(ctx, &(api_draw_desc){
+                      .indexed = is_raster,
                       .count = is_raster ? num_raster_vertices : num_normal_vertices,
                       .instance_count = is_raster ? num_raster_instances : num_normal_instances,
                       .first_vertex = is_raster ? 0 : num_warmup_vertices});
@@ -1257,7 +1259,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->write_next_query_value(ctx, timestamps);
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
-         if (gather_fs_quad_count && is_raster_dbg)
+         if (gather_total_fs_invoc && is_raster_dbg)
             ctx->image_write_png(ctx, fbs[f].colorbuf, 0, "raster.png");
 
          print_progress(num_pipelines * num_formats, &num_visited_pipelines, 20);
@@ -1268,25 +1270,29 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    ctx->get_query_results(ctx, timestamps);
 
-   if (gather_fs_quad_count) {
-      uint32_t *fs_quads_results = alloca(4 * num_raster_gather_tests);
+   if (gather_total_fs_invoc) {
+      uint32_t *total_fs_invoc_results = alloca(4 * num_raster_gather_tests);
 
-      ctx->get_buffer_data(ctx, fs_quads, 0, 4 * num_raster_gather_tests, fs_quads_results);
-      ctx->get_query_results(ctx, prim_count_query);
-
-      unsigned rgba8_pixels = rgba8_fb_size * rgba8_fb_size;
+      ctx->get_buffer_data(ctx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
+      ctx->get_query_results(ctx, pipe_stats);
 
       for (unsigned i = 0; i < num_raster_gather_tests; i++) {
-         /* RDNA 4 unfortunately returns the vertex count for
-          * VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT. */
+         unsigned total_fs_invoc = total_fs_invoc_results[i];
+         api_pipeline_stat_results *stats = &pipe_stats->pipe_stats[i];
 
-         unsigned prim_count = prim_count_query->results[i] / 3;
+         /* RDNA 4 unfortunately returns an incorrect number of clip prims that's 2-4x greater
+          * than the correct number. The only way to get the correct number is to cull
+          * in the shader and use clip invocations here.
+          */
+         unsigned clip_prims = stats->clip_primitives;
 
-         printf("FS invoc[%i] = %i, pixels = %i / %.1f %%, %u prims, %.2f² avg. prim area, "
-                "%.1f pix/vert\n",
-                i, fs_quads_results[i], rgba8_pixels,
-                (fs_quads_results[i] ? 100.0 * rgba8_pixels / (fs_quads_results[i]) : -1.0),
-                prim_count, sqrt((double)rgba8_pixels / prim_count), (double)rgba8_pixels / (prim_count * 3));
+         printf("%i: %u total FS invoc, %"PRIu64" FS invoc / %.1f %%, %"PRIu64" IA prims, "
+                "%"PRIu64" clip invoc, %u clip prims, %.2f² avg. prim area, %.1f pix/vert\n",
+                i, total_fs_invoc, stats->fs_invocations,
+                100.0 * stats->fs_invocations / total_fs_invoc,
+                stats->ia_primitives, stats->clip_invocations, clip_prims,
+                sqrt((double)stats->fs_invocations / clip_prims),
+                (double)stats->fs_invocations / (clip_prims * 3));
       }
    }
 
@@ -1357,7 +1363,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    }
 
    /* Free memory. */
-   ctx->wait_idle_before_deallocation(ctx);
+   ctx->wait_for_idle(ctx);
 
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
       if (fbs[f].fb_color_only)
@@ -1384,7 +1390,7 @@ test_pix(api_context *ctx, const char *test_name)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)] = {0};
    static const unsigned sample_counts[] = {1, 2, 4, 8};
-   const bool gather_fs_quad_count = GATHER_FS_QUAD_COUNT;
+   const bool gather_total_fs_invoc = GATHER_TOTAL_FS_INVOC;
 
    printf("Units: %s\n",
           ctx->options.report_bandwidth ? "GB/s" :
@@ -1433,11 +1439,11 @@ test_pix(api_context *ctx, const char *test_name)
       char *fs_image_store = strdup(fs_source);
       char *fs_out_int = strdup(fs_source);
       char *fs_out_uint = strdup(fs_source);
-      char *fs_quad_count = strdup(fs_source);
+      char *fs_count_total_invoc = strdup(fs_source);
       char *fs_image_store_define = strstr(fs_image_store, "#define IMAGE_STORE 0");
       char *fs_out_int_define =     strstr(fs_out_int,     "#define FS_OUTPUT_TYPE 0");
       char *fs_out_uint_define =    strstr(fs_out_uint,    "#define FS_OUTPUT_TYPE 0");
-      char *fs_quad_count_define =  strstr(fs_quad_count,  "#define GATHER_FS_QUAD_COUNT 0");
+      char *fs_total_invoc_define = strstr(fs_count_total_invoc, "#define GATHER_TOTAL_FS_INVOC 0");
 
       assert(fs_image_store_define);
       assert(fs_out_int_define);
@@ -1447,19 +1453,21 @@ test_pix(api_context *ctx, const char *test_name)
       fs_out_int_define[23] = '1';
       fs_out_uint_define[23] = '2';
 
-      if (fs_quad_count_define)
-         fs_quad_count_define[29] = '0' + gather_fs_quad_count;
+      if (fs_total_invoc_define)
+         fs_total_invoc_define[30] = '0' + gather_total_fs_invoc;
 
       compiled_shaders[p].fs_image_store = ctx->create_shader(ctx, fs_image_store, api_shader_fs);
       compiled_shaders[p].fs_out_int = ctx->create_shader(ctx, fs_out_int, api_shader_fs);
       compiled_shaders[p].fs_out_uint = ctx->create_shader(ctx, fs_out_uint, api_shader_fs);
-      if (gather_fs_quad_count)
-         compiled_shaders[p].fs_quad_count = ctx->create_shader(ctx, fs_quad_count, api_shader_fs);
+      if (gather_total_fs_invoc) {
+         compiled_shaders[p].fs_count_total_invoc = ctx->create_shader(ctx, fs_count_total_invoc,
+                                                                       api_shader_fs);
+      }
 
       free(fs_image_store);
       free(fs_out_int);
       free(fs_out_uint);
-      free(fs_quad_count);
+      free(fs_count_total_invoc);
       free(fs_source);
    }
 
@@ -1480,10 +1488,33 @@ test_pix(api_context *ctx, const char *test_name)
    api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
    ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
 
-   api_buffer *fs_quads = NULL;
+   /* Create the buffer for gathering FS invocations including helper invocations. */
+   api_buffer *total_fs_invoc = NULL;
 
-   if (gather_fs_quad_count)
-      fs_quads = ctx->create_buffer(ctx, 4 * 30, api_heap_device, 0);
+   if (gather_total_fs_invoc) {
+      total_fs_invoc = ctx->create_buffer(ctx, 4 * 30, api_heap_device, 0);
+
+      ctx->begin_cmdbuf(ctx, api_queue_gfx);
+      ctx->clear_buffer(ctx, total_fs_invoc, 0, 4, 0);
+      ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+   }
+
+#define RASTER_MAX_INDICES 7000000
+
+   /* Create the index buffer for the raster test. The vertex data is generated
+    * from gl_VertexIndex, but we need an index buffer to force vertex reuse.
+    */
+   api_buffer *raster_indexbuf = ctx->create_buffer(ctx, 4 * RASTER_MAX_INDICES, api_heap_device, 0);
+   uint32_t *indices = malloc(4 * RASTER_MAX_INDICES);
+
+   /* Each strip has 14 triangles, 16 vertices with reuse, and 14*3=42 vertices without reuse. */
+   for (unsigned i = 0, j = 0; i + 41 < RASTER_MAX_INDICES; i += 42, j += 16) {
+      for (unsigned k = 0; k < 42; k++)
+         indices[i + k] = i + k;
+   }
+
+   ctx->upload_buffer_data(ctx, raster_indexbuf, 0, 4 * RASTER_MAX_INDICES, indices);
+   free(indices);
 
    /* Determine the subset to test. */
    int test_flavor = -1;
@@ -1521,16 +1552,24 @@ test_pix(api_context *ctx, const char *test_name)
       unsigned samples = sample_counts[s];
 
       if (ctx->supported_color_sample_counts & samples &&
-          (test_flavor == -1 || (test_flavor == TEST_NORMAL && test_samples == samples)))
-         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, TEST_NORMAL, fs_quads);
+          (test_flavor == -1 || (test_flavor == TEST_NORMAL && test_samples == samples))) {
+         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, TEST_NORMAL, total_fs_invoc,
+                      raster_indexbuf);
+      }
    }
 
-   if (test_flavor == -1 || test_flavor == TEST_MULTIVIEW)
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, fs_quads);
+   if (test_flavor == -1 || test_flavor == TEST_MULTIVIEW) {
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, total_fs_invoc,
+                   raster_indexbuf);
+   }
 
-   if (test_flavor == -1 || test_flavor == TEST_IMAGE_3D)
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, fs_quads);
+   if (test_flavor == -1 || test_flavor == TEST_IMAGE_3D) {
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, total_fs_invoc,
+                   raster_indexbuf);
+   }
 
-   if (test_flavor == -1 || test_flavor == TEST_LINEAR)
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_LINEAR, fs_quads);
+   if (test_flavor == -1 || test_flavor == TEST_LINEAR) {
+      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_LINEAR, total_fs_invoc,
+                   raster_indexbuf);
+   }
 }

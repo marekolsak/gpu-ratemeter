@@ -1196,26 +1196,41 @@ gl_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
    pool->type = type;
    pool->num_written_queries = 0;
    pool->num_queries = num_queries;
-   pool->results = calloc(num_queries, sizeof(uint64_t));
 
    switch (type) {
    case api_query_timestamp:
-      pool->gltarget = GL_TIMESTAMP;
+      pool->num_values = 1;
+      pool->gltargets = calloc(pool->num_values, sizeof(uint64_t));
+      pool->gltargets[0] = GL_TIMESTAMP;
+      pool->results = calloc(num_queries, sizeof(uint64_t));
       break;
-   case api_query_clipper_out_primitives:
-      pool->gltarget = GL_CLIPPING_OUTPUT_PRIMITIVES;
-      break;
-   case api_query_fs_invocations:
-      pool->gltarget = GL_FRAGMENT_SHADER_INVOCATIONS;
+   case api_query_pipeline_statistics:
+      pool->num_values = sizeof(api_pipeline_stat_results) / 8;
+      pool->gltargets = calloc(pool->num_values, sizeof(GLenum));
+      pool->gltargets[offsetof(api_pipeline_stat_results, ia_vertices) / 8] = GL_VERTICES_SUBMITTED;
+      pool->gltargets[offsetof(api_pipeline_stat_results, ia_primitives) / 8] = GL_PRIMITIVES_SUBMITTED;
+      pool->gltargets[offsetof(api_pipeline_stat_results, vs_invocations) / 8] = GL_VERTEX_SHADER_INVOCATIONS;
+      pool->gltargets[offsetof(api_pipeline_stat_results, gs_invocations) / 8] = GL_GEOMETRY_SHADER_INVOCATIONS;
+      pool->gltargets[offsetof(api_pipeline_stat_results, gs_primitives) / 8] = GL_GEOMETRY_SHADER_PRIMITIVES_EMITTED;
+      pool->gltargets[offsetof(api_pipeline_stat_results, clip_invocations) / 8] = GL_CLIPPING_INPUT_PRIMITIVES;
+      pool->gltargets[offsetof(api_pipeline_stat_results, clip_primitives) / 8] = GL_CLIPPING_OUTPUT_PRIMITIVES;
+      pool->gltargets[offsetof(api_pipeline_stat_results, fs_invocations) / 8] = GL_FRAGMENT_SHADER_INVOCATIONS;
+      pool->gltargets[offsetof(api_pipeline_stat_results, tcs_invocations) / 8] = GL_TESS_CONTROL_SHADER_PATCHES;
+      pool->gltargets[offsetof(api_pipeline_stat_results, tes_invocations) / 8] = GL_TESS_EVALUATION_SHADER_INVOCATIONS;
+      pool->gltargets[offsetof(api_pipeline_stat_results, cs_invocations) / 8] = GL_COMPUTE_SHADER_INVOCATIONS;
+      pool->results = calloc(num_queries, sizeof(api_pipeline_stat_results));
       break;
    default:
       error("invalid query type");
    }
 
-   pool->queries = calloc(num_queries, sizeof(GLuint));
-   glCreateQueries(pool->gltarget, num_queries, pool->queries);
-   gl_check_no_error();
+   pool->queries = calloc(num_queries * pool->num_values, sizeof(GLuint));
+   for (unsigned i = 0; i < num_queries; i++) {
+      for (unsigned j = 0; j < pool->num_values; j++)
+         glCreateQueries(pool->gltargets[j], 1, &pool->queries[i * pool->num_values + j]);
+   }
 
+   gl_check_no_error();
    return pool;
 }
 
@@ -1223,14 +1238,11 @@ static void
 gl_begin_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
+   assert(pool->type != api_query_timestamp);
 
-   switch (pool->type) {
-   case api_query_clipper_out_primitives:
-   case api_query_fs_invocations:
-      glBeginQuery(pool->gltarget, pool->queries[pool->num_written_queries]);
-      break;
-   default:
-      error("invalid begin/end query type");
+   for (unsigned i = 0; i < pool->num_values; i++) {
+      glBeginQuery(pool->gltargets[i],
+                   pool->queries[pool->num_written_queries * pool->num_values + i]);
    }
 }
 
@@ -1238,15 +1250,10 @@ static void
 gl_end_next_query(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
+   assert(pool->type != api_query_timestamp);
 
-   switch (pool->type) {
-   case api_query_clipper_out_primitives:
-   case api_query_fs_invocations:
-      glEndQuery(pool->gltarget);
-      break;
-   default:
-      error("invalid begin/end query type");
-   }
+   for (unsigned i = 0; i < pool->num_values; i++)
+      glEndQuery(pool->gltargets[i]);
 
    pool->num_written_queries++;
 }
@@ -1255,15 +1262,21 @@ static void
 gl_write_next_query_value(api_context *ctx, api_query_pool *pool)
 {
    assert(pool->num_written_queries < pool->num_queries);
-   glQueryCounter(pool->queries[pool->num_written_queries], pool->gltarget);
+   assert(pool->type == api_query_timestamp);
+
+   glQueryCounter(pool->queries[pool->num_written_queries], pool->gltargets[0]);
    pool->num_written_queries++;
 }
 
 static void
 gl_get_query_results(api_context *ctx, api_query_pool *pool)
 {
-   for (unsigned i = 0; i < pool->num_written_queries; i++)
-      glGetQueryObjectui64v(pool->queries[i], GL_QUERY_RESULT, &pool->results[i]);
+   for (unsigned i = 0; i < pool->num_written_queries; i++) {
+      for (unsigned j = 0; j < pool->num_values; j++) {
+         glGetQueryObjectui64v(pool->queries[i * pool->num_values + j], GL_QUERY_RESULT,
+                               &pool->results[i * pool->num_values + j]);
+      }
+   }
 
    gl_check_no_error();
    pool->num_read_queries = 0;
@@ -1433,7 +1446,7 @@ gl_create_context(const program_options *options)
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = gl_end_cmdbuf_and_submit;
-   ctx->wait_idle_before_deallocation = gl_wait_idle_before_deallocation;
+   ctx->wait_for_idle = gl_wait_idle_before_deallocation;
 
    ctx->begin_render_pass = gl_begin_render_pass;
    ctx->end_render_pass = gl_end_render_pass;

@@ -279,19 +279,37 @@ typedef struct {
 
 typedef enum {
    api_query_timestamp,
-   api_query_clipper_out_primitives,
-   api_query_fs_invocations,
+   api_query_pipeline_statistics,
 } api_query_type;
+
+typedef struct {
+   uint64_t ia_vertices;
+   uint64_t ia_primitives;
+   uint64_t vs_invocations;
+   uint64_t gs_invocations;
+   uint64_t gs_primitives;
+   uint64_t clip_invocations;
+   uint64_t clip_primitives;
+   uint64_t fs_invocations;
+   uint64_t tcs_invocations;
+   uint64_t tes_invocations;
+   uint64_t cs_invocations;
+} api_pipeline_stat_results;
 
 typedef struct {
    api_query_type type;
    unsigned num_queries;
    unsigned num_written_queries;
    unsigned num_read_queries;
-   uint64_t *results;
+
+   union {
+      uint64_t *results;
+      api_pipeline_stat_results *pipe_stats;
+   };
 
 #ifdef GL_PRIVATE
-   GLenum gltarget;
+   unsigned num_values;
+   GLenum *gltargets;
    GLuint *queries;
 #endif
 
@@ -484,7 +502,7 @@ typedef struct api_context {
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx, unsigned wait_queue_mask,
                                  api_fence *wait_fence, api_fence **signal_fence);
-   void (*wait_idle_before_deallocation)(struct api_context *ctx);
+   void (*wait_for_idle)(struct api_context *ctx);
 
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
    void (*end_render_pass)(struct api_context *ctx);

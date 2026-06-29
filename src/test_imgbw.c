@@ -821,7 +821,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   }
 
                   if (stage == RUN && !unsupported) {
-                     ctx->wait_idle_before_deallocation(ctx);
+                     ctx->wait_for_idle(ctx);
 
                      for (unsigned size_index = 0; size_index <= 1; size_index++) {
                         if (state[size_index].fb)
