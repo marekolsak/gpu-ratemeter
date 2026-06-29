@@ -38,8 +38,10 @@
  * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
+ * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - (maybe) stencil/HiS
+ * - (maybe) using glSubgroupInvocationID instead of gl_HelperInvocation might be better on some HW.
  *
  * prim:
  * - VS + transform feedback
