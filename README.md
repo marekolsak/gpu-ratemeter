@@ -64,15 +64,6 @@ gpu-ratemeter -lean vk.pix
 > The desirable execution time per test is less than 1 minute. Exceeding that for some devices would warrant adding new optional parameters that would help reduce it. Pipeline object creation can also be distributed across all CPU cores (the `pix` test on Vulkan already does that).
 
 
-# How It Works
-
-- Results are calculated from GPU timestamps.
-- Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. It's recommended to use a power profile that keeps the frequency constant.
-- % progress is printed while building pipelines and executing subtests. Results are only printed at the end (unless a specific test has multiple stages).
-- The app is windowless and doesn't even register with the window system where that's possible.
-- If needed for debugging or developing new tests/subtests, it can save any rendered image to a PNG and open it in an image viewer.
-
-
 # Tests
 
 ## Graphics Pipeline Tests
@@ -103,6 +94,7 @@ Decoding subtest names:
 - `z_disabled`: the Z test is disabled
 - `a2c`: alpha-to-coverage is enabled
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS
+- `rasterN`: described in a separate subsection (N is the percentage of non-helper FS invocations)
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:
@@ -130,6 +122,42 @@ Optional parameters:
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
+
+#### Rasterizer efficiency subtests
+
+`raster` are subtests executed as part of `pix` that measure how much helper invocations and triangle
+sizes negatively impact pixel throughput and when primitive throughput starts becoming the limiting
+factor. While all other subtests use a single fullscreen triangle and 0 helper invocations,
+the `raster` subtests draw a mesh of equally-sized roughly equilateral triangles where each subtest
+uses a different triangle size. A fullscreen triangle and fullscreen quad subtests are also included.
+
+The pipeline statistics of each subtest are in the table below. (unlike standard pipeline statistics, these also include helper invocations)
+
+| Subtest                       | Total FS invoc. | % non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri |
+|-------------------------------|-----------------|---------------------|--------------|---------------|-------------------|
+| raster100.fullscreen_triangle |         1048576 |             100.0 % |            1 |      1024.00² |         1048576.0 |
+| raster99.8.fullscreen_quad    |         1050624 |              99.8 % |            2 |       724.08² |          524288.0 |
+| raster99.9                    |         1049800 |              99.9 % |            2 |       724.08² |          524288.0 |
+| raster99.6                    |         1053072 |              99.6 % |            6 |       418.05² |          174762.7 |
+| raster99.4                    |         1054384 |              99.4 % |           11 |       308.75² |           95325.1 |
+| raster99.1                    |         1058496 |              99.1 % |           21 |       223.46² |           49932.2 |
+| raster98.7                    |         1062708 |              98.7 % |           40 |       161.91² |           26214.4 |
+| raster98.0                    |         1069924 |              98.0 % |           74 |       119.04² |           14169.9 |
+| raster97.2                    |         1078396 |              97.2 % |          134 |        88.46² |            7825.2 |
+| raster96.3                    |         1088344 |              96.3 % |          226 |        68.12² |            4639.7 |
+| raster94.6                    |         1108172 |              94.6 % |          456 |        47.95² |            2299.5 |
+| raster93.0                    |         1128072 |              93.0 % |          800 |        36.20² |            1310.7 |
+| raster89.8                    |         1167704 |              89.8 % |         1728 |        24.63² |             606.8 |
+| raster84.1                    |         1247160 |              84.1 % |         4720 |        14.90² |             222.2 |
+| raster81.5                    |         1286492 |              81.5 % |         6722 |        12.49² |             156.0 |
+| raster76.8                    |         1366140 |              76.8 % |        11906 |         9.38² |              88.1 |
+| raster72.5                    |         1445360 |              72.5 % |        18408 |         7.55² |              57.0 |
+| raster68.8                    |         1524564 |              68.8 % |        26508 |         6.29² |              39.6 |
+| raster62.3                    |         1682720 |              62.3 % |        46874 |         4.73² |              22.4 |
+| raster57.0                    |         1840632 |              57.0 % |        73008 |         3.79² |              14.4 |
+| raster52.5                    |         1998232 |              52.5 % |       105282 |         3.16² |              10.0 |
+| raster45.3                    |         2313032 |              45.3 % |       186502 |         2.37² |               5.6 |
+| raster39.9                    |         2626632 |              39.9 % |       290786 |         1.90² |               3.6 |
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
@@ -285,3 +313,12 @@ Run `sudo umr --gui &`, select your GPU in the tab at the top, and then select t
 Since constant frequencies defeat power optimizations and can cause more heat to be generated, the firmware may change the profile back to `auto` if temperatures exceed safe limits. This will be immediately visible in the real time frequency chart on the Power tab.
 
 Get `umr` here: https://gitlab.freedesktop.org/tomstdenis/umr
+
+
+# How It Works
+
+- GPU timestamps are used for measurements.
+- Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. It's recommended to use a power profile that keeps the frequency constant.
+- % progress is printed while building pipelines and executing subtests. Results are only printed at the end (unless a specific test has multiple stages).
+- The app is windowless and doesn't even register with the window system where that's possible.
+- If needed for debugging or developing new tests/subtests, it can save any rendered image to a PNG and open it in an image viewer.

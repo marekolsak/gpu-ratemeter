@@ -708,41 +708,42 @@ static const pipeline_info pipelines[] = {
    VRS(0), /* helper_invoc=0 */
    VRS(1), /* helper_invoc=1 */
 
-   /* To gather statistics:
-    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean -rdna4ts -maxvalidresult=4000 -maxrate=128 -freq=2488 -subset=1 -filter=raster gl.pix
+   /* To gather statistics on AMD (they are incorrect by default due to using clip_invocation instead of clip_primitives):
+    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean -subset=1 -filter=raster gl.pix
     *
     * There must be a multiple of 7 quads (14 triangles, 16 vertices) per row unless there is only
     * 1 row. If there are multiple meshes, the number of rows per mesh must be even. The number of
-    * meshes in the X axis must be a power of two, and non-zero also indicates that it's a raster
-    * subtest.
-    *
-    * Triangle and quad tests should set rows_per_mesh=0, and then quads_per_row identifies
-    * the subtest.
-    *
-    * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshes_x)
-    */
-   RASTER(.fullscreen_triangle, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_TRIANGLE, 0, 1),
-   RASTER(.fullscreen_quad, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_QUAD, 0, 1),
-   RASTER(99.8, 1, 1, 1),    /*  0: 262756 total FS invoc, 262144 FS invoc / 99.8 %, 2 visible triangles, 362.04² avg. prim area, 131072.0 pix/prim */
-   RASTER(99.2, 7, 2, 1),    /*  1: 264388 total FS invoc, 262144 FS invoc / 99.2 %, 6 visible triangles, 209.02² avg. prim area, 43690.7 pix/prim */
-   RASTER(98.9, 7, 3, 1),    /*  2: 265048 total FS invoc, 262144 FS invoc / 98.9 %, 11 visible triangles, 154.37² avg. prim area, 23831.3 pix/prim */
-   RASTER(98.1, 7, 5, 1),    /*  3: 267104 total FS invoc, 262144 FS invoc / 98.1 %, 21 visible triangles, 111.73² avg. prim area, 12483.0 pix/prim */
-   RASTER(97.4, 7, 7, 1),    /*  4: 269216 total FS invoc, 262144 FS invoc / 97.4 %, 40 visible triangles, 80.95² avg. prim area, 6553.6 pix/prim */
-   RASTER(96.1, 14, 10, 1),  /*  5: 272796 total FS invoc, 262144 FS invoc / 96.1 %, 74 visible triangles, 59.52² avg. prim area, 3542.5 pix/prim */
-   RASTER(94.6, 14, 14, 1),  /*  6: 277028 total FS invoc, 262144 FS invoc / 94.6 %, 134 visible triangles, 44.23² avg. prim area, 1956.3 pix/prim */
-   RASTER(93.0, 14, 20, 1),  /*  7: 282024 total FS invoc, 262144 FS invoc / 93.0 %, 226 visible triangles, 34.06² avg. prim area, 1159.9 pix/prim */
-   RASTER(89.8, 21, 30, 1),  /*  8: 291848 total FS invoc, 262144 FS invoc / 89.8 %, 456 visible triangles, 23.98² avg. prim area, 574.9 pix/prim */
-   RASTER(86.9, 14, 20, 2),  /*  9: 301796 total FS invoc, 262144 FS invoc / 86.9 %, 800 visible triangles, 18.10² avg. prim area, 327.7 pix/prim */
-   RASTER(81.5, 21, 30, 2),  /* 10: 321532 total FS invoc, 262144 FS invoc / 81.5 %, 1728 visible triangles, 12.32² avg. prim area, 151.7 pix/prim */
-   RASTER(72.5, 35, 50, 2),  /* 11: 361336 total FS invoc, 262144 FS invoc / 72.5 %, 4720 visible triangles, 7.45² avg. prim area, 55.5 pix/prim */
-   RASTER(68.8, 21, 30, 4),  /* 12: 380952 total FS invoc, 262144 FS invoc / 68.8 %, 6722 visible triangles, 6.24² avg. prim area, 39.0 pix/prim */
-   RASTER(62.3, 14, 20, 8),  /* 13: 420684 total FS invoc, 262144 FS invoc / 62.3 %, 11906 visible triangles, 4.69² avg. prim area, 22.0 pix/prim */
-   RASTER(57.0, 35, 50, 4),  /* 14: 460172 total FS invoc, 262144 FS invoc / 57.0 %, 18408 visible triangles, 3.77² avg. prim area, 14.2 pix/prim */
-   RASTER(52.5, 21, 30, 8),  /* 15: 499532 total FS invoc, 262144 FS invoc / 52.5 %, 26508 visible triangles, 3.14² avg. prim area, 9.9 pix/prim */
-   RASTER(45.3, 14, 20, 16), /* 16: 578192 total FS invoc, 262144 FS invoc / 45.3 %, 46874 visible triangles, 2.36² avg. prim area, 5.6 pix/prim */
-   RASTER(39.9, 35, 50, 8),  /* 17: 656636 total FS invoc, 262144 FS invoc / 39.9 %, 73008 visible triangles, 1.89² avg. prim area, 3.6 pix/prim */
-   RASTER(35.7, 21, 30, 16), /* 18: 734832 total FS invoc, 262144 FS invoc / 35.7 %, 105282 visible triangles, 1.58² avg. prim area, 2.5 pix/prim */
-   RASTER(29.6, 14, 20, 32), /* 19: 886064 total FS invoc, 262144 FS invoc / 29.6 %, 186502 visible triangles, 1.19² avg. prim area, 1.4 pix/prim */
+    * meshes in the X axis must be a power of two, and a non-zero number of meshes also indiates
+    * that it's a raster subest.
+   *
+    * Triangle and quad tests should set rows_per_mesh=0, and then quads_per_row identfies
+    * the subest.
+   *
+    * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshs_x)
+   */
+   RASTER(100.fullscreen_triangle, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_TRIANGLE, 0, 1),
+   RASTER(99.8.fullscreen_quad, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_QUAD, 0, 1),
+   RASTER(99.9, 1, 1, 1),
+   RASTER(99.6, 7, 2, 1),
+   RASTER(99.4, 7, 3, 1),
+   RASTER(99.1, 7, 5, 1),
+   RASTER(98.7, 7, 7, 1),
+   RASTER(98.0, 14, 10, 1),
+   RASTER(97.2, 14, 14, 1),
+   RASTER(96.3, 14, 20, 1),
+   RASTER(94.6, 21, 30, 1),
+   RASTER(93.0, 14, 20, 2),
+   RASTER(89.8, 21, 30, 2),
+   RASTER(84.1, 35, 50, 2),
+   RASTER(81.5, 21, 30, 4),
+   RASTER(76.8, 14, 20, 8),
+   RASTER(72.5, 35, 50, 4),
+   RASTER(68.8, 21, 30, 8),
+   RASTER(62.3, 14, 20, 16),
+   RASTER(57.0, 35, 50, 8),
+   RASTER(52.5, 21, 30, 16),
+   RASTER(45.3, 14, 20, 32),
+   RASTER(39.9, 35, 50, 16),
 
    /* Constant fill. */
    INPUTS(0, "", "", 0, "", ""),
@@ -1033,7 +1034,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       VkFormat format = formats[f].format;
 
       unsigned fb_size = 1024;
-      unsigned fb_raster_size = fb_size / 2; /* raster tests use the same size for all formats */
+      unsigned fb_raster_size = fb_size; /* raster tests use the same size for all formats */
       unsigned pix_size = format ? get_pixel_size_from_format(format) : 0;
 
       /* Scale the framebuffer size up or down depending on bpp and samples to normalize
@@ -1173,6 +1174,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       ctx->create_query_pool(ctx, num_pipelines * num_formats * 2, api_query_timestamp);
    api_query_pool *pipe_stats = NULL;
 
+   const char *raster_names[30] = {0};
    if (raster_gather_total_fs_invoc)
       pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
 
@@ -1243,6 +1245,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             ctx->end_next_query(ctx, pipe_stats);
             ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
+            raster_names[pipe_stats->num_written_queries - 1] = pipelines[p].name1;
             raster_gathered_total_fs_invoc = true;
          }
 
@@ -1303,6 +1306,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       ctx->get_buffer_data(ctx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
       ctx->get_query_results(ctx, pipe_stats);
 
+      printf("| Subtest                       | Total FS invoc. | %% non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri |\n");
+      printf("|-------------------------------|-----------------|---------------------|--------------|---------------|-------------------|\n");
+
       for (unsigned i = 0; i < num_raster_gather_tests; i++) {
          unsigned total_fs_invoc = total_fs_invoc_results[i];
          api_pipeline_stat_results *stats = &pipe_stats->pipe_stats[i];
@@ -1311,14 +1317,22 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
           * clip_primitives is wrong RDNA 4. All other HW should use clip_primitives here,
           * but this stat gathering is only for test debugging, so it doesn't matter.
           */
+         double non_helpers_percent = 100.0 * stats->fs_invocations / total_fs_invoc;
          uint64_t clip_prims = stats->clip_invocations;
+         double pix_per_tri = (double)stats->fs_invocations / clip_prims;
 
-         printf("%2i: %u total FS invoc, %"PRIu64" FS invoc / %.1f %%, "
-                "%"PRIu64" visible triangles, %.2f² avg. prim area, %.1f pix/prim\n",
-                i, total_fs_invoc, stats->fs_invocations,
-                100.0 * stats->fs_invocations / total_fs_invoc, clip_prims,
-                sqrt((double)stats->fs_invocations / clip_prims),
-                (double)stats->fs_invocations / clip_prims);
+         char name[64];
+         snprintf(name, sizeof(name), "%s", raster_names[i] + 7);
+
+         if (i) {
+            char percent[16];
+            snprintf(percent, sizeof(percent), "%.1f", non_helpers_percent);
+            memcpy(name, percent, strlen(percent));
+         }
+
+         printf("| raster%-23s | %15u | %17.1f %% | %12"PRIu64" | %12.2f² | %17.1f |\n",
+                name, total_fs_invoc, non_helpers_percent, clip_prims, sqrt(pix_per_tri),
+                pix_per_tri);
       }
    }
 
@@ -1538,7 +1552,7 @@ test_pix(api_context *ctx, const char *test_name)
     *
     * Each strip has 14 triangles, 16 vertices with reuse, and 42 indices.
     */
-   const unsigned raster_max_indices = 7000000;
+   const unsigned raster_max_indices = 14000000;
    const unsigned raster_indexbuf_size = raster_max_indices * 4;
    const unsigned indices_per_quad = 6;
    const unsigned quads_per_strip = 7;
