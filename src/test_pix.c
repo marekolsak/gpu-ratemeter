@@ -31,8 +31,6 @@ typedef struct {
 
    const char *vs_source;
    const char *fs_source;
-   const char *vs_source_prefix; /* TODO: move most shader code here from the ugly macros */
-   const char *fs_source_prefix;
 
    int reserved_for_static_assert;
 
@@ -44,15 +42,18 @@ typedef struct {
    } raster;
 } pipeline_info;
 
-#define SHADER_HEADER \
-   "#version 460\n" \
-   "#ifndef VULKAN \n" \
-   "#define gl_VertexIndex (gl_VertexID + gl_BaseVertex) \n" \
+static const char *vs_shared_code =
+   "#version 460\n"
+   "#ifndef VULKAN \n"
+   "#define gl_VertexIndex (gl_VertexID + gl_BaseVertex) \n"
    "#endif \n"
+   "\n";
+
+static const char *fs_shared_code =
+   "#version 460\n"
+   "\n";
 
 #define FS_SHADER_HEADER \
-   SHADER_HEADER \
-   "\n" \
    "#define IMAGE_STORE 0 \n" /* 0 is replaced by 1 during compilation */ \
    "#define FS_OUTPUT_TYPE 0 \n" /* 0=float, 1=int, 2=uint, replaced during compilation */ \
    "#define HAS_VRS 0 \n" \
@@ -123,7 +124,6 @@ typedef struct {
                            "                                                vec2( 0,  3), "z", 1); \n"
 
 #define VS_POS_WITH_Z(z) \
-   SHADER_HEADER \
    "void main() {\n" \
    VS_SET_POSITION(z) \
    "}\n"
@@ -138,7 +138,6 @@ typedef struct {
    "", \
    "", \
    \
-   SHADER_HEADER \
    "#if "#num1" > 0 \n" \
    "layout(location = 0) " qual1 " out vec4 var["#num1"]; \n" \
    "#endif \n" \
@@ -284,8 +283,6 @@ typedef struct {
    "   gl_SampleMask[0] = not_helperi; \n" \
    "#endif \n" \
    "}", \
-   NULL, \
-   NULL, \
    \
    STATIC_ASSERT_EXPR(write_color + write_z + write_samplemask + alpha_to_coverage >= (write_color ? 2 : 1)) + \
    STATIC_ASSERT_EXPR(write_color || (!color_disabled && !alpha_to_coverage)) + \
@@ -422,7 +419,7 @@ typedef struct {
     helper_invoc ? ".helper_invoc" : "", \
     "", \
     \
-    VS_POS_WITH_Z(z), \
+   VS_POS_WITH_Z(z), \
     (fs)}
 
 #define FS_EMPTY(helper_invoc) \
@@ -481,7 +478,6 @@ typedef struct {
    VRS_IMPL(2, 2, helper_invoc)
 
 #define VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x) \
-   SHADER_HEADER \
    "layout(location = 0) out float out0; \n" \
    "\n" \
    \
@@ -671,8 +667,6 @@ typedef struct {
    {NAME(".raster" #non_helper_percentage), \
     VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x), \
     FS_RASTER, \
-    NULL, \
-    NULL, \
     0, /* reserved_for_static_assert */ \
     {quads_per_row, rows_per_mesh, num_meshes_x}}
 
@@ -1476,53 +1470,53 @@ test_pix(api_context *ctx, const char *test_name)
           (!ctx->has_vrs && strstr(pipelines[p].fs_source, "gl_ShadingRateEXT")))
          continue;
 
-      compiled_shaders[p].vs = ctx->create_shader(ctx, pipelines[p].vs_source, api_shader_vs);
+      char vs_code[3 * 1024], fs_code[3 * 1024];
+      int len;
 
-      char *fs_source = strdup(pipelines[p].fs_source);
-      char *fs_has_vrs_define = strstr(fs_source, "#define HAS_VRS 0");
-      char *fs_has_fully_covered_define = strstr(fs_source, "#define HAS_FULLY_COVERED 0");
-      char *fs_has_multiview_define = strstr(fs_source, "#define HAS_MULTIVIEW 0");
+      len = snprintf(vs_code, sizeof(vs_code), "%s%s", vs_shared_code, pipelines[p].vs_source);
+      assert(len < sizeof(vs_code) - 1);
+      len = snprintf(fs_code, sizeof(fs_code), "%s%s", fs_shared_code, pipelines[p].fs_source);
+      assert(len < sizeof(fs_code) - 1);
+
+      compiled_shaders[p].vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
+
+      char *fs_has_vrs_define = strstr(fs_code, "#define HAS_VRS 0");
+      char *fs_has_fully_covered_define = strstr(fs_code, "#define HAS_FULLY_COVERED 0");
+      char *fs_has_multiview_define = strstr(fs_code, "#define HAS_MULTIVIEW 0");
 
       assert(fs_has_vrs_define);
       fs_has_vrs_define[16] = ctx->has_vrs ? '1' : '0';
       fs_has_fully_covered_define[26] = ctx->has_fully_covered ? '1' : '0';
       fs_has_multiview_define[22] = ctx->has_multiview ? '1' : '0';
 
-      compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, fs_source, api_shader_fs);
+      compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, fs_code, api_shader_fs);
 
-      char *fs_image_store = strdup(fs_source);
-      char *fs_out_int = strdup(fs_source);
-      char *fs_out_uint = strdup(fs_source);
-      char *fs_count_total_invoc = strdup(fs_source);
-      char *fs_image_store_define = strstr(fs_image_store, "#define IMAGE_STORE 0");
-      char *fs_out_int_define =     strstr(fs_out_int,     "#define FS_OUTPUT_TYPE 0");
-      char *fs_out_uint_define =    strstr(fs_out_uint,    "#define FS_OUTPUT_TYPE 0");
-      char *fs_total_invoc_define = strstr(fs_count_total_invoc, "#define GATHER_TOTAL_FS_INVOC 0");
-
+      char *fs_image_store_define = strstr(fs_code, "#define IMAGE_STORE 0");
       assert(fs_image_store_define);
-      assert(fs_out_int_define);
-      assert(fs_out_uint_define);
-
       fs_image_store_define[20] = '1'; /* change #define IMAGE_STORE to 1 */
-      fs_out_int_define[23] = '1';
-      fs_out_uint_define[23] = '2';
+      compiled_shaders[p].fs_image_store = ctx->create_shader(ctx, fs_code, api_shader_fs);
+      fs_image_store_define[20] = '0'; /* restore */
 
-      if (fs_total_invoc_define)
-         fs_total_invoc_define[30] = '0' + raster_gather_total_fs_invoc;
+      char *fs_output_type_define = strstr(fs_code, "#define FS_OUTPUT_TYPE 0");
+      assert(fs_output_type_define);
+      fs_output_type_define[23] = '1';
+      compiled_shaders[p].fs_out_int = ctx->create_shader(ctx, fs_code, api_shader_fs);
+      fs_output_type_define[23] = '0'; /* restore */
 
-      compiled_shaders[p].fs_image_store = ctx->create_shader(ctx, fs_image_store, api_shader_fs);
-      compiled_shaders[p].fs_out_int = ctx->create_shader(ctx, fs_out_int, api_shader_fs);
-      compiled_shaders[p].fs_out_uint = ctx->create_shader(ctx, fs_out_uint, api_shader_fs);
+      fs_output_type_define[23] = '2';
+      compiled_shaders[p].fs_out_uint = ctx->create_shader(ctx, fs_code, api_shader_fs);
+      fs_output_type_define[23] = '0'; /* restore */
+
       if (raster_gather_total_fs_invoc) {
-         compiled_shaders[p].fs_count_total_invoc = ctx->create_shader(ctx, fs_count_total_invoc,
-                                                                       api_shader_fs);
-      }
+         char *fs_total_invoc_define = strstr(fs_code, "#define GATHER_TOTAL_FS_INVOC 0");
 
-      free(fs_image_store);
-      free(fs_out_int);
-      free(fs_out_uint);
-      free(fs_count_total_invoc);
-      free(fs_source);
+         if (fs_total_invoc_define) {
+            fs_total_invoc_define[30] = '1';
+            compiled_shaders[p].fs_count_total_invoc = ctx->create_shader(ctx, fs_code,
+                                                                          api_shader_fs);
+            fs_total_invoc_define[30] = '0'; /* restore */
+         }
+      }
    }
 
    /* Create an image for image stores. It's a dummy image because we are not measuring memory
