@@ -101,6 +101,40 @@ static const char *fs_shared_code =
    "#endif \n"
    "\n"
 
+   "#if GATHER_TOTAL_FS_INVOC \n"
+   "#ifdef VULKAN \n"
+   "layout(set = 0, binding = 1, std430) buffer Counters { \n"
+   "#else \n"
+   "layout(binding = 0, std430) buffer Counters { \n"
+   "#endif \n"
+   "    uint num_invocations; \n"
+   "}; \n"
+   "\n"
+
+   "bool isFirstNonHelperInvocationInQuad() \n"
+   "{ \n"
+   "    bool pred = !gl_HelperInvocation; \n"
+   "    bool p0 = subgroupQuadBroadcast(pred, 0); \n"
+   "    bool p1 = subgroupQuadBroadcast(pred, 1); \n"
+   "    bool p2 = subgroupQuadBroadcast(pred, 2); \n"
+   "    bool p3 = subgroupQuadBroadcast(pred, 3); \n"
+   " \n"
+   "    uint id = gl_SubgroupInvocationID; \n"
+   "    uint id0 = subgroupQuadBroadcast(id, 0); \n"
+   "    uint id1 = subgroupQuadBroadcast(id, 1); \n"
+   "    uint id2 = subgroupQuadBroadcast(id, 2); \n"
+   "    uint id3 = subgroupQuadBroadcast(id, 3); \n"
+   " \n"
+   "    uint first = p0 ? id0 : \n"
+   "                 p1 ? id1 : \n"
+   "                 p2 ? id2 : \n"
+   "                 p3 ? id3 : 0xffffffffu; \n"
+   " \n"
+   "    return pred && id == first; \n"
+   "} \n"
+   "#endif \n"
+   "\n"
+
    "void store_output_color0(vec4 value) { \n"
    "#if IMAGE_STORE \n"
    /* This is out of bounds on purpose because we want to measure the pixel rate,
@@ -602,43 +636,7 @@ static const char *fs_shared_code =
    "} \n"
 
 #define FS_RASTER \
-   "#if GATHER_TOTAL_FS_INVOC \n" \
-   "#ifdef VULKAN \n" \
-   "layout(set = 0, binding = 1, std430) buffer Counters { \n" \
-   "#else \n" \
-   "layout(binding = 0, std430) buffer Counters { \n" \
-   "#endif \n" \
-   "    uint num_invocations; \n" \
-   "}; \n" \
-   "#endif \n" \
-   "\n" \
-   \
    "layout(location = 0) in float in0; \n" \
-   "\n" \
-   \
-   "#if GATHER_TOTAL_FS_INVOC \n" \
-   "bool isFirstNonHelperInvocationInQuad() \n" \
-   "{ \n" \
-   "    bool pred = !gl_HelperInvocation; \n" \
-   "    bool p0 = subgroupQuadBroadcast(pred, 0); \n" \
-   "    bool p1 = subgroupQuadBroadcast(pred, 1); \n" \
-   "    bool p2 = subgroupQuadBroadcast(pred, 2); \n" \
-   "    bool p3 = subgroupQuadBroadcast(pred, 3); \n" \
-   " \n" \
-   "    uint id = gl_SubgroupInvocationID; \n" \
-   "    uint id0 = subgroupQuadBroadcast(id, 0); \n" \
-   "    uint id1 = subgroupQuadBroadcast(id, 1); \n" \
-   "    uint id2 = subgroupQuadBroadcast(id, 2); \n" \
-   "    uint id3 = subgroupQuadBroadcast(id, 3); \n" \
-   " \n" \
-   "    uint first = p0 ? id0 : \n" \
-   "                 p1 ? id1 : \n" \
-   "                 p2 ? id2 : \n" \
-   "                 p3 ? id3 : 0xffffffffu; \n" \
-   " \n" \
-   "    return pred && id == first; \n" \
-   "} \n" \
-   "#endif \n" \
    "\n" \
    \
    "void main() { \n" \
@@ -935,14 +933,18 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
       /* Skip most subtests for image 3D and linear. */
       if ((test_flavor == TEST_IMAGE_3D || test_flavor == TEST_LINEAR) &&
-          (strstr(pipeline_name, "zbuf") ||
+          (strstr(pipeline_name, "vrs") ||
+           strstr(pipeline_name, "raster") ||
+           strstr(pipeline_name, "zbuf") ||
            strstr(pipeline_name, "output") ||
            strstr(pipeline_name, "face") ||
            strstr(pipeline_name, "fully_covered") ||
            strstr(pipeline_name, "fragpos") ||
            strstr(pipeline_name, "layer") ||
+           strstr(pipeline_name, "primitive_id") ||
            strstr(pipeline_name, "sample") ||
            strstr(pipeline_name, "shading_rate") ||
+           strstr(pipeline_name, "viewport_index") ||
            strstr(pipeline_name, "centroid") ||
            strstr(pipeline_name, "1linear") ||
            (strstr(pipeline_name, "flat") && !strstr(pipeline_name, "1flat")) ||
