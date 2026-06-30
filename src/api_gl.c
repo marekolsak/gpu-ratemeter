@@ -383,10 +383,6 @@ get_gl_type(VkFormat format)
    }
 }
 
-/* TODO: Regenerate GLAD. */
-#define GL_TEXTURE_TILING_EXT             0x9580
-#define GL_LINEAR_TILING_EXT              0x9585
-
 static void
 create_texture(api_context *ctx, api_image *image, GLenum target, VkImageTiling tiling)
 {
