@@ -51,70 +51,69 @@ static const char *vs_shared_code =
 
 static const char *fs_shared_code =
    "#version 460\n"
-   "\n";
-
-#define FS_SHADER_HEADER \
-   "#define IMAGE_STORE 0 \n" /* 0 is replaced by 1 during compilation */ \
-   "#define FS_OUTPUT_TYPE 0 \n" /* 0=float, 1=int, 2=uint, replaced during compilation */ \
-   "#define HAS_VRS 0 \n" \
-   "#define HAS_FULLY_COVERED 0 \n" \
-   "#define HAS_MULTIVIEW 0 \n" \
-   "#define GATHER_TOTAL_FS_INVOC 0 \n" \
-   "\n" \
-   \
-   "#if HAS_VRS \n" \
-   "#extension GL_EXT_fragment_shading_rate : require \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "#if HAS_FULLY_COVERED \n" \
-   "#extension GL_NV_conservative_raster_underestimation : require \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "#if HAS_MULTIVIEW \n" \
-   "#extension GL_EXT_multiview : require \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "#if GATHER_TOTAL_FS_INVOC \n" \
-   "#extension GL_KHR_shader_subgroup_basic : require \n" \
-   "#extension GL_KHR_shader_subgroup_quad : require \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "#if FS_OUTPUT_TYPE == 0 \n" \
-   "#define FS_OUTPUT_TYPE_NAME vec4 \n" \
-   "#elif FS_OUTPUT_TYPE == 1 \n" \
-   "#define FS_OUTPUT_TYPE_NAME ivec4 \n" \
-   "#elif FS_OUTPUT_TYPE == 2 \n" \
-   "#define FS_OUTPUT_TYPE_NAME uvec4 \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "#if IMAGE_STORE \n" \
-   "   #ifdef VULKAN \n" \
-   "      layout(set = 0, binding = 0) writeonly uniform image2D image; \n" \
-   "   #else \n" \
-   "      layout(location = 0) writeonly uniform image2D image; \n" \
-   "   #endif \n" \
-   "#else \n" \
-   "   layout(location = 0) out FS_OUTPUT_TYPE_NAME fs_out; \n" \
-   "#endif \n" \
-   "\n" \
-   \
-   "void store_output_color0(vec4 value) { \n" \
-   "#if IMAGE_STORE \n" \
-   /* This is out of bounds on purpose because we want to measure the pixel rate, */ \
-   /* not memory throughput. */ \
-   "   imageStore(image, ivec2(32, 32), value); \n" \
-   "#elif FS_OUTPUT_TYPE == 0 \n" \
-   "   fs_out = value; \n" \
-   "#else \n" \
-   "   fs_out = FS_OUTPUT_TYPE_NAME(value * 127); \n" \
-   "#endif \n" \
-   "} \n" \
    "\n"
+   "#define IMAGE_STORE 0 \n" /* 0 is replaced by 1 during compilation */
+   "#define FS_OUTPUT_TYPE 0 \n" /* 0=float, 1=int, 2=uint, replaced during compilation */
+   "#define HAS_VRS 0 \n"
+   "#define HAS_FULLY_COVERED 0 \n"
+   "#define HAS_MULTIVIEW 0 \n"
+   "#define GATHER_TOTAL_FS_INVOC 0 \n"
+   "\n"
+
+   "#if HAS_VRS \n"
+   "#extension GL_EXT_fragment_shading_rate : require \n"
+   "#endif \n"
+   "\n"
+
+   "#if HAS_FULLY_COVERED \n"
+   "#extension GL_NV_conservative_raster_underestimation : require \n"
+   "#endif \n"
+   "\n"
+
+   "#if HAS_MULTIVIEW \n"
+   "#extension GL_EXT_multiview : require \n"
+   "#endif \n"
+   "\n"
+
+   "#if GATHER_TOTAL_FS_INVOC \n"
+   "#extension GL_KHR_shader_subgroup_basic : require \n"
+   "#extension GL_KHR_shader_subgroup_quad : require \n"
+   "#endif \n"
+   "\n"
+
+   "#if FS_OUTPUT_TYPE == 0 \n"
+   "#define FS_OUTPUT_TYPE_NAME vec4 \n"
+   "#elif FS_OUTPUT_TYPE == 1 \n"
+   "#define FS_OUTPUT_TYPE_NAME ivec4 \n"
+   "#elif FS_OUTPUT_TYPE == 2 \n"
+   "#define FS_OUTPUT_TYPE_NAME uvec4 \n"
+   "#endif \n"
+   "\n"
+
+   "#if IMAGE_STORE \n"
+   "   #ifdef VULKAN \n"
+   "      layout(set = 0, binding = 0) writeonly uniform image2D image; \n"
+   "   #else \n"
+   "      layout(location = 0) writeonly uniform image2D image; \n"
+   "   #endif \n"
+   "#else \n"
+   "   layout(location = 0) out FS_OUTPUT_TYPE_NAME fs_out; \n"
+   "#endif \n"
+   "\n"
+
+   "void store_output_color0(vec4 value) { \n"
+   "#if IMAGE_STORE \n"
+   /* This is out of bounds on purpose because we want to measure the pixel rate,
+    * not memory throughput.
+    */
+   "   imageStore(image, ivec2(32, 32), value); \n"
+   "#elif FS_OUTPUT_TYPE == 0 \n"
+   "   fs_out = value; \n"
+   "#else \n"
+   "   fs_out = FS_OUTPUT_TYPE_NAME(value * 127); \n"
+   "#endif \n"
+   "} \n"
+   "\n";
 
 /* This is one triangle that fills the whole screen. Drawing 2 triangles would make the GPU less
  * efficient along the diagonal edge, which does skew results noticably.
@@ -166,7 +165,6 @@ static const char *fs_shared_code =
    VS_SET_POSITION("0") \
    "}\n", \
    \
-   FS_SHADER_HEADER \
    "#if "#num1" > 0 \n" \
    "layout(location = 0) " qual1 " in vec4 var["#num1"]; \n" \
    "#endif \n" \
@@ -261,7 +259,6 @@ static const char *fs_shared_code =
    \
    VS_POS_ONLY,\
    \
-   FS_SHADER_HEADER \
    "void main() {\n" \
    "#if "#helper_invoc" \n" \
    "   float not_helperf = float(!gl_HelperInvocation); \n" \
@@ -369,7 +366,6 @@ static const char *fs_shared_code =
  * coarse shading disabled, and that's why these tests have variants with gl_HelperInvocation.
  */
 #define FS_WRITE_COLOR_CONST(helper_invoc, x, y, z, w) \
-   FS_SHADER_HEADER \
    "void main() {\n" \
    "#if "#helper_invoc" \n" \
    "   bool helper = gl_HelperInvocation; \n" \
@@ -424,18 +420,15 @@ static const char *fs_shared_code =
 
 #define FS_EMPTY(helper_invoc) \
    (helper_invoc ? NULL : \
-      FS_SHADER_HEADER \
       "void main() {}")
 
 #define FS_DISCARD(helper_invoc) \
    (helper_invoc ? \
-      FS_SHADER_HEADER \
       "void main() {\n" \
       "   if (!gl_HelperInvocation) \n" \
       "      discard; \n" \
       "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n" \
       "}" : \
-      FS_SHADER_HEADER \
       "void main() {\n" \
       "   discard; \n" \
       "   store_output_color0(vec4(0.1, 0.2, 0.3, 0.4));\n" \
@@ -443,12 +436,10 @@ static const char *fs_shared_code =
 
 #define FS_DISCARD_NO_OUTPUT(helper_invoc) \
    (helper_invoc ? \
-      FS_SHADER_HEADER \
       "void main() {\n" \
       "   if (!gl_HelperInvocation) \n" \
       "      discard; \n" \
       "}" : \
-      FS_SHADER_HEADER \
       "void main() {\n" \
       "   discard; \n" \
       "}")
@@ -611,9 +602,6 @@ static const char *fs_shared_code =
    "} \n"
 
 #define FS_RASTER \
-   FS_SHADER_HEADER \
-   "\n" \
-   \
    "#if GATHER_TOTAL_FS_INVOC \n" \
    "#ifdef VULKAN \n" \
    "layout(set = 0, binding = 1, std430) buffer Counters { \n" \
