@@ -94,7 +94,7 @@ Decoding subtest names:
 - `z_disabled`: the Z test is disabled
 - `a2c`: alpha-to-coverage is enabled
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS
-- `rasterN`: described in a separate subsection (N is the percentage of non-helper FS invocations)
+- `rasterN`: fill the screen with triangles of a specific size; N is the percentage of non-helper FS invocations relating to the size of triangles, see the description in the subsection below
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:
@@ -132,7 +132,7 @@ the `raster` subtests draw a mesh of equally-sized roughly equilateral triangles
 subtest decreases the triangle size and increases the number of triangles to always fill the whole screen.
 A fullscreen triangle and fullscreen quad subtests are also included for reference.
 
-The pipeline statistics of each subtest are in the table below. (unlike standard pipeline statistics, these also include helper invocations)
+The pipeline statistics of each subtest are in the table below. Unlike standard pipeline statistics, these also include helper invocations.
 
 | Subtest                       | Total FS invoc. | % non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri | Avg. FS invoc. / tri |
 |-------------------------------|-----------------|---------------------|--------------|---------------|-------------------|----------------------|
@@ -159,9 +159,10 @@ The pipeline statistics of each subtest are in the table below. (unlike standard
 | raster52.5                    |         1998232 |              52.5 % |       105282 |         3.16² |              10.0 |                 19.0 |
 | raster45.3                    |         2313032 |              45.3 % |       186502 |         2.37² |               5.6 |                 12.4 |
 | raster39.9                    |         2626632 |              39.9 % |       290786 |         1.90² |               3.6 |                  9.0 |
+
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
-Same as `pix`, but it prints the memory bandwidth in GB/s instead of samples/clock. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
+Same as `pix`, but it prints the memory bandwidth in GB/s instead of samples/clock. This can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
 
 ### `prim`: Primitive Throughput (primitives/clock)
 
