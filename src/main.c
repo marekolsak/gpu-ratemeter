@@ -35,7 +35,6 @@
  *
  * latency:
  * - instruction fetch (jump chasing)
- * - to remove LSB masking, add -bda as alternative to SSBOs
  *
  * pix:
  * - (maybe) VK_NV_fill_rectangle as a raster subtest

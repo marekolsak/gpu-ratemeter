@@ -193,10 +193,13 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
                                        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                       (ctx->has_xfb ? VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT : 0) |
+                                       (ctx->has_xfb ?
+                                          VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT : 0) |
                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                       VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
+                                       VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
+                                       (ctx->has_buffer_device_address ?
+                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : 0),
                            },
                            NULL, &buf->buffer));
 
@@ -222,6 +225,11 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
       vk_check(vkAllocateMemory(ctx->device,
                                 &(VkMemoryAllocateInfo) {
                                    .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                   .pNext = &(VkMemoryAllocateFlagsInfo){
+                                      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
+                                      .flags = ctx->has_buffer_device_address ?
+                                                   VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT :0,
+                                   },
                                    .allocationSize = sparse_block_size ? sparse_block_size : reqs.size,
                                    .memoryTypeIndex = mem_type_index,
                                 },
@@ -245,6 +253,15 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
 
       if (heap == api_heap_device)
          atomic_fetch_add(&ctx->device_mem_usage_mb, reqs.size >> 20);
+   }
+
+   if (ctx->has_buffer_device_address) {
+      buf->device_address =
+         vkGetBufferDeviceAddress(ctx->device,
+                                  &(VkBufferDeviceAddressInfo){
+                                     .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                                     .buffer = buf->buffer,
+                                  });
    }
 
    return buf;

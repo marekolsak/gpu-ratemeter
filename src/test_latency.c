@@ -48,11 +48,10 @@ static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections,
                                 bool shared_memory)
 {
-   char source[3200];
+   char source[3600];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
-
                       "#define CLOCK_BITS %u \n"
                       "#define SPACING %u \n"
                       "#define MAX_UINTS %uu \n"
@@ -61,15 +60,17 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "#define QUALIFIER %s \n"
                       "#define SHARED_MEMORY %u \n"
                       "#define SHARED_MEMORY_INT8 (%u != 0) \n"
+                      "#define USE_BDA %u \n"
                       "\n"
 
                       "#if SHARED_MEMORY_INT8 \n"
                       "   #define OFFSET_TYPE               uint8_t \n"
-                      "   #define OFFSET_INIT_DIVISOR       4 \n"
                       "   #define OFFSET_TO_ELEMENT_DIVISOR 1 \n"
+                      "#elif USE_BDA \n"
+                      "   #define OFFSET_TYPE               uint64_t \n"
+                      "   #define OFFSET_TO_ELEMENT_DIVISOR err \n"
                       "#else \n"
                       "   #define OFFSET_TYPE               uint \n"
-                      "   #define OFFSET_INIT_DIVISOR       1 \n"
                       "   #define OFFSET_TO_ELEMENT_DIVISOR 4 \n"
                       "#endif \n"
                       "\n"
@@ -83,8 +84,13 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
 
                       "#extension GL_ARB_shader_clock : require \n"
                       "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
+
                       "#if SHARED_MEMORY_INT8 \n"
                       "#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require \n"
+                      "#endif \n"
+
+                      "#if USE_BDA \n"
+                      "#extension GL_EXT_buffer_reference : require \n"
                       "#endif \n"
                       "\n"
 
@@ -105,6 +111,13 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "layout(set = 0, binding = 0, std430) readonly restrict QUALIFIER buffer B0 { \n"
                       "   OFFSET_TYPE offsets[MAX_UINTS]; \n"
                       "} jumpbuf; \n"
+                      "\n"
+
+                      "#if USE_BDA \n"
+                      "layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict buffer bda_buffer { \n"
+                      "    uint64_t addr; \n"
+                      "}; \n"
+                      "#endif \n"
                       "\n"
 
                       "layout(set = 0, binding = 1, std430) buffer B1 { \n"
@@ -132,19 +145,36 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * (SHARED_MEMORY_INT8 ? 1 : SPACING); \n"
                       "\n"
 
-                      "#if SHARED_MEMORY \n"
-                      /* Copy the offsets from memory to shared memory to initialize it. */
-                      "   for (int i = 0; i < shared_offsets.length(); i++) \n"
-                      "      shared_offsets[i] = OFFSET_TYPE(jumpbuf.offsets[i] / OFFSET_INIT_DIVISOR); \n"
-                      "#else \n"
-                      /* Warm up the caches by executing all indirections. */
-                      "   uint warmup_offset = jumpbuf.offsets[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      warmup_offset = jumpbuf.offsets[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "#if USE_BDA \n"
+                      "   uint64_t start_addr = jumpbuf.offsets[start_offset / 8]; \n"
                       "#endif \n"
                       "\n"
 
+                      "#if SHARED_MEMORY \n"
+                      /* Copy the offsets from memory to shared memory to initialize it. */
+                      "   for (int i = 0; i < shared_offsets.length(); i++) \n"
+                      "      shared_offsets[i] = OFFSET_TYPE(jumpbuf.offsets[i] / 4); \n"
+                      "\n"
                       "   OFFSET_TYPE offset = OFFSETS[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+
+                      "#elif USE_BDA \n"
+                      /* Warm up caches by executing all indirections. */
+                      "   uint64_t warmup_addr = start_addr; \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
+                      "      warmup_addr = bda_buffer(warmup_addr).addr; \n"
+                      "\n"
+                      "   uint64_t addr = bda_buffer(start_addr).addr; \n"
+
+                      "#else \n"
+                      /* Warm up caches by executing all indirections. */
+                      "   uint warmup_offset = jumpbuf.offsets[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
+                      "      warmup_offset = jumpbuf.offsets[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "\n"
+                      "   OFFSET_TYPE offset = OFFSETS[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "#endif \n"
+                      "\n"
+
                       "   uint64_t accum = 0; \n"
                       "   uint64_t start = clockARB(); \n"
                       "\n"
@@ -154,7 +184,11 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
                       "\n"
                       "      for (int j = 0; j < num; j++) \n"
+                      "#if USE_BDA \n"
+                      "         addr = bda_buffer(addr).addr; \n"
+                      "#else \n"
                       "         offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "#endif \n"
                       "\n"
                       "      uint64_t end = clockARB(); \n"
                       "      accum += subtract(end, start); \n"
@@ -162,20 +196,28 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "   } \n"
                       "#else \n"
                       "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
+                      "#if USE_BDA \n"
+                      "      addr = bda_buffer(addr).addr; \n"
+                      "#else \n"
                       "      offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
+                      "#endif \n"
                       "#endif \n"
                       "\n"
 
                       "   accum += subtract(clockARB(), start); \n"
                       "   result.clock_cycles = accum; \n"
 
-                      /* Also store the offset to make the indirections not dead. */
+                      /* Store the last offset to make the indirections not dead code. */
+                      "#if USE_BDA \n"
+                      "   result.last_offset = addr; \n"
+                      "#else \n"
                       "   result.last_offset = offset; \n"
+                      "#endif \n"
                       "} \n",
                       ctx->options.clock_bits, get_spacing(ctx, shared_memory),
                       (unsigned)ctx->options.max_size / 4, uniform ? "true" : "false",
                       num_indirections, coherent ? "coherent" : "", shared_memory,
-                      shared_memory && ctx->options.int8);
+                      shared_memory && ctx->options.int8, ctx->options.bda && !shared_memory);
    assert(len < ARRAY_SIZE(source));
 
    return ctx->create_shader(ctx, source, api_shader_cs);
@@ -280,22 +322,34 @@ set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsig
 {
    unsigned spacing = get_spacing(ctx, shared_memory);
    uint32_t *sequence = state->sequence_tmp;
-   uint32_t *mem = state->jump_buf_data;
 
-   assert(spacing % 4 == 0);
+   assert(spacing % (shared_memory ? 4 : 8) == 0);
    assert(size % spacing == 0);
    unsigned n = size / spacing;
 
    generate_sequence(sequence, 0, n);
 
+   uint32_t *mem = state->jump_buf_data;
    memset(mem, 0, size);
 
-   for (unsigned i = 0; i < n - 1; i++)
-      mem[sequence[i] * spacing / 4] = sequence[i + 1] * spacing;
+   if (ctx->options.bda && !shared_memory) {
+      uint64_t *mem64 = (uint64_t*)mem;
+      assert(buf->device_address);
 
-   /* Close the circle. */
-   mem[(n - 1) * spacing / 4] = 0;
+      for (unsigned i = 0; i < n - 1; i++)
+         mem64[sequence[i] * spacing / 8] = buf->device_address + sequence[i + 1] * spacing;
 
+      /* Close the circle. */
+      mem64[(n - 1) * spacing / 8] = buf->device_address;
+   } else {
+      for (unsigned i = 0; i < n - 1; i++)
+         mem[sequence[i] * spacing / 4] = sequence[i + 1] * spacing;
+
+      /* Close the circle. */
+      mem[(n - 1) * spacing / 4] = 0;
+   }
+
+   assert(size <= buf->size);
    ctx->upload_buffer_data(ctx, buf, 0, size, mem);
 }
 
@@ -329,7 +383,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 
       /* Initialize the rest. */
       state->num_tests = 0;
-      assert(ctx->options.spacing % 4 == 0);
+      assert(ctx->options.spacing % 8 == 0);
       state->sequence_tmp = (uint32_t*)malloc(ctx->options.max_size / (ctx->options.spacing / 4));
       state->jump_buf_data = (uint32_t*)malloc(ctx->options.max_size);
 
@@ -509,12 +563,12 @@ test_latency(api_context *ctx, const char *test_name)
             "Required parameters:\n"
             "   -spacing=N        The spacing between addresses in bytes (e.g. 64).\n"
             "                     It should be <= cache line size to get valid results.\n"
-            "   -maxsize=N[KMGT]  The maximum tested buffer size (e.g. 32M), it should be\n"
-            "                     slightly greater than the last level cache size.\n");
+            "   -maxsize=N[KMGT]  The maximum tested buffer size (e.g. 32M), it would\n"
+            "                     ideally be greater than the last level cache size.\n");
    }
 
-   if (ctx->options.spacing < 4 || !IS_POT(ctx->options.spacing))
-      error("Spacing must be >= 4 and a power of two.");
+   if (ctx->options.spacing < 8 || !IS_POT(ctx->options.spacing))
+      error("Spacing must be >= 8 and a power of two.");
 
    const unsigned min_indirections = 1024;
    unsigned num_indirections = ctx->options.max_size / ctx->options.spacing;

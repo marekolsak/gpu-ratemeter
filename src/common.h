@@ -64,6 +64,7 @@ typedef struct {
    uint64_t size;
    api_heap_type heap;
    unsigned sparse_block_size;
+   uint64_t device_address;
 
 #ifdef GL_PRIVATE
    GLuint id;

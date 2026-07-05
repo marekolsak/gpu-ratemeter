@@ -201,6 +201,8 @@ Buffers of different sizes are completely traversed via load indirections in a m
 The results are printed for each tested buffer size. Each printed latency should exactly correspond to the latency of the last cache level that can hold
 the buffer of that size.
 
+If the shader compiler inserts ALU instructions between load-use and load-issue, the measured latencies will include the cost of those extra instructions. Looking at the shader disassembly is recommended to see what is actually being measured.
+
 Required parameters:
 - `-maxsize=N`: The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
 Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
@@ -212,11 +214,12 @@ If spacing > cache line size, the latency of tested buffer sizes will no longer 
 is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
 
 Optional parameters:
-- `int8`: Use 8-bit addresses for shared memory tests. (this may report more accurate latency on some drivers)
-- `clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
+- `-bda`: Use buffer device addresses instead of storage buffers to traverse the buffer.  (this may report more accurate latencies on some drivers)
+- `-int8`: Use 8-bit addresses for shared memory tests. (this may report more accurate latencies on some drivers)
+- `-clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
 (it must be set to 20 for RDNA 2 and 3)
-- `sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.
-- `sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
+- `-sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.
+- `-sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
 
 Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
