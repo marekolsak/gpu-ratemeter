@@ -1212,7 +1212,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          assert(num_raster_vertices * 4 < raster_indexbuf->size);
 
-         if (raster_gather_total_fs_invoc && raster && !raster_gathered_total_fs_invoc &&
+         if (raster && raster_gather_total_fs_invoc && !raster_gathered_total_fs_invoc &&
              fbs[f].colorbuf_raster && !format_is_integer(fbs[f].colorbuf_raster->format)) {
             ctx->wait_for_idle(ctx);
             ctx->set_storage_buffer_descriptor(ctx, desc_set, 0, total_fs_invoc,
@@ -1228,7 +1228,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                       .fb = fbs[f].pipelines[p]->desc.fb,
                                    });
-            ctx->draw(ctx, &(api_draw_desc){.indexed = raster,
+            ctx->draw(ctx, &(api_draw_desc){.indexed = true,
                                             .count = num_raster_vertices,
                                             .instance_count = 1});
             ctx->end_render_pass(ctx);
@@ -1241,11 +1241,11 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
+         /* Bind states for the command buffer. */
          if (!formats[f].format)
             ctx->bind_descriptor_set(ctx, desc_set);
          if (raster)
             ctx->bind_index_buffer(ctx, raster_indexbuf);
-
          ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
 
          /* Render pass for the warm-up. */
@@ -1385,8 +1385,10 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          }
 
          api_framebuffer *fb = raster ? fbs[f].fb_color_only_raster : fbs[f].fb_color_only;
-         uint64_t num_units = (uint64_t)fb->width * fb->height * samples *
+         uint64_t num_units = (uint64_t)fb->width * fb->height *
                               NUM_FULLSCREEN_DRAWS;
+         if (ctx->options.samplerate)
+            num_units *= samples;
          if (ctx->options.report_bandwidth)
             num_units *= get_pixel_size_from_format(formats[f].format);
 

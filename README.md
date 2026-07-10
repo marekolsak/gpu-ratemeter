@@ -4,7 +4,7 @@
 
 This is a command-line microbenchmark that measures the performance of various features of GPUs through APIs, and how well different GPUs, APIs, and API translation and forwarding layers do well against each other.
 
-It reports GPU performance in terms of pixels per clock (samples per clock), primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to gather how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
+It reports GPU performance in terms of pixels per clock, samples per clock, primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to gather how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
 This app enables developers to evaluate observed GPU performance across all those pieces of SW on the same hardware, and to precisely identify the root causes of inefficiencies. Examples of possible comparisons:
 
@@ -47,9 +47,11 @@ The following APIs are supported:
 Optional parameters common to all tests:
 - `-device=N`: the device index of the device to use (default: 0), Vulkan only
 - `-no-validator`: disable the Vulkan validation layer (enabled by default)
-- `-freq=N`: the GPU frequency in MHz, which causes results to be reported in units/clock instead of billion units/second (ignored when reporting bandwidth or latency)
-- `-maxrate=N`: the maximum rate in units/clock, which causes results to be reported as % of the maximum rate instead of units/clock (ignored when reporting bandwidth or latency)
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
+
+Optional parameters common to "performance per clock" tests:
+- `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported
+- `-maxrate=N`: if set, this number converts perf/clock to perf/clock % of N, e.g. results are reported as N -> 100, 2*N -> 200, N/4 -> 25; this makes perf/clock results more readable since 100% is easier to read than a HW-specific number corresponding to 100%
 
 Examples:
 
@@ -68,7 +70,7 @@ gpu-ratemeter -lean vk.pix
 
 ## Graphics Pipeline Tests
 
-### `pix`: Pixel Throughput (samples/clock)
+### `pix`: Pixel Throughput (pixels/clock)
 
 Each column is a different color buffer format except for the first column, which tests a fragment shader with only an out-of-range image store (no color buffer is present in this case).
 
@@ -117,10 +119,11 @@ Decoding subtest names:
   - `Nlinear`: N inputs with linear (`noperspective`) interpolation at center
 
 Optional parameters:
-- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
+- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
+- `-samplerate`: report samples/clock instead of pixels/clock
 - `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
 
 #### Rasterizer efficiency subtests
@@ -162,7 +165,7 @@ The pipeline statistics of each subtest are in the table below. Unlike standard 
 
 ### `pixbw`: Color Buffer Write Bandwidth (GB/s)
 
-Same as `pix`, but it prints the memory bandwidth in GB/s instead of samples/clock. This can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
+Same as `pix`, but it prints the memory bandwidth in GB/s instead of pixels/clock. This can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
 
 ### `prim`: Primitive Throughput (primitives/clock)
 

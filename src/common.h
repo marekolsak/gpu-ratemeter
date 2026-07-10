@@ -352,6 +352,7 @@ typedef struct {
    bool lean;
    bool no_validator;
    bool rdna4_timestamp_wa;
+   bool samplerate;
    bool sparse_bound;
    bool sparse_unbound;
    bool transfer;
