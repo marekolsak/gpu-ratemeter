@@ -72,16 +72,16 @@ gpu-ratemeter -lean vk.pix
 
 |              | OpenGL | Vulkan |
 |--------------|-------:|-------:|
-| *Graphics Pipeline Tests*      |
+| **Graphics Pipeline Tests**    |
 | `pix`        | **✓**  | **✓**  |
 | `pixbw`      | **✓**  | **✓**  |
 | `prim`       | **✓**  | **✓**  |
-| *Shader Tests*                 |
+| **Shader Tests**               |
 | `latency`    |        | **✓**  |
-| *Resource Operation Tests*     |
+| **Resource Operation Tests**   |
 | `bufbw`      | **✓**  | **✓**  |
 | `imgbw`      | **✓**  | **✓**  |
-| *Miscellaneous Tests*          |
+| **Miscellaneous Tests**        |
 | `sparsebind` |        | **✓**  |
 
 
