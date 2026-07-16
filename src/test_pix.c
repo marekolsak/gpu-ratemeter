@@ -1113,7 +1113,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          if (colormask_x && format_get_num_channels(format) == 1)
             continue;
 
-         if ((pipeline_desc.blend_src_color || pipeline_desc.blend_src_alpha) &&
+         if ((pipeline_desc.blend_src_color || pipeline_desc.blend_src_alpha ||
+              pipeline_desc.alpha_to_coverage) &&
              format_is_integer(format))
             continue;
 
