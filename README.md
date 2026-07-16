@@ -68,6 +68,23 @@ gpu-ratemeter -lean vk.pix
 
 # Tests
 
+### API Support
+
+|              | OpenGL | Vulkan |
+|--------------|-------:|-------:|
+| *Graphics Pipeline Tests*      |
+| `pix`        | **✓**  | **✓**  |
+| `pixbw`      | **✓**  | **✓**  |
+| `prim`       | **✓**  | **✓**  |
+| *Shader Tests*                 |
+| `latency`    |        | **✓**  |
+| *Resource Operation Tests*     |
+| `bufbw`      | **✓**  | **✓**  |
+| `imgbw`      | **✓**  | **✓**  |
+| *Miscellaneous Tests*          |
+| `sparsebind` |        | **✓**  |
+
+
 ## Graphics Pipeline Tests
 
 ### `pix`: Pixel Throughput (pixels/clock)
@@ -237,8 +254,6 @@ Decoding subtest names:
 - `hostmem_coherent`: the traversed buffer is in host-coherent host memory uncached by the CPU (VK_AMD_device_coherent_memory or equivalent is required)
 - `shared`: the traversed buffer is in shared memory
 
-Only Vulkan is supported.
-
 
 ## Resource Operation Tests
 
@@ -262,9 +277,6 @@ Optional parameters:
 
 WIP (functionally mostly finished, try it)
 
-Optional parameters:
-- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
-
 
 ## Miscellaneous Tests
 
@@ -286,8 +298,6 @@ Decoding subtest names:
 - `sizeNm`: the buffer has N MB
 - `blockNk`: each sparse block has N KB
 - `start_bound`: the subtest starts with all sparse blocks bound (`bind_one` never has this, `unbind_one` always has this)
-
-Only Vulkan is supported.
 
 
 # How to Build
