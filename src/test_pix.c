@@ -1070,8 +1070,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       }
    }
 
-   printf("GPU memory allocated for %s: %u MB\n", prefix, ctx->device_mem_usage_mb);
-   printf("Building pipelines for %s ...", prefix);
+   printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
+   printf("Building pipelines for %s.%s ...", test_name, prefix);
 
    /* Create pipelines. */
    unsigned num_visited_pipelines = 0;
@@ -1169,7 +1169,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    if (raster_gather_total_fs_invoc)
       pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
 
-   printf("Executing tests for %s ...", prefix);
+   printf("Executing tests ...");
 
    bool raster_dumped_images = false;
 

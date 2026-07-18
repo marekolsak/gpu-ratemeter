@@ -37,7 +37,7 @@
  * - instruction fetch (jump chasing)
  *
  * pix:
- * - test layer output with 2 layers
+ * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
