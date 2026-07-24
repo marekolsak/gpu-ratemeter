@@ -1205,7 +1205,6 @@ int GLAD_GL_ARB_sparse_buffer = 0;
 int GLAD_GL_EXT_memory_object = 0;
 int GLAD_GL_EXT_mesh_shader = 0;
 int GLAD_GL_KHR_shader_subgroup = 0;
-int GLAD_GL_MESA_texture_tiling_linear = 0;
 int GLAD_GL_OVR_multiview = 0;
 int GLAD_GL_OVR_multiview2 = 0;
 PFNGLUNIFORM1I64ARBPROC glad_glUniform1i64ARB = NULL;
@@ -2470,7 +2469,6 @@ static int find_extensionsGL(void) {
 	GLAD_GL_EXT_memory_object = has_ext("GL_EXT_memory_object");
 	GLAD_GL_EXT_mesh_shader = has_ext("GL_EXT_mesh_shader");
 	GLAD_GL_KHR_shader_subgroup = has_ext("GL_KHR_shader_subgroup");
-	GLAD_GL_MESA_texture_tiling_linear = has_ext("GL_MESA_texture_tiling_linear");
 	GLAD_GL_OVR_multiview = has_ext("GL_OVR_multiview");
 	GLAD_GL_OVR_multiview2 = has_ext("GL_OVR_multiview2");
 	free_exts();

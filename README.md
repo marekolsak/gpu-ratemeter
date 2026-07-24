@@ -138,6 +138,7 @@ Decoding subtest names:
 Optional parameters:
 - `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 - `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
+- `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-samplerate`: report samples/clock instead of pixels/clock

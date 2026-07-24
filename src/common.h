@@ -348,6 +348,7 @@ typedef struct {
    /* Bool options.*/
    bool bda;
    bool compute;
+   bool gl_tiling_linear;
    bool int8;
    bool lean;
    bool no_validator;

@@ -135,6 +135,7 @@ typedef struct {
 static const option_desc option_list[] = {
    {OPTION_BOOL, "-bda", offsetof(program_options, bda)},
    {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
+   {OPTION_BOOL, "-gl-tiling-linear", offsetof(program_options, gl_tiling_linear)},
    {OPTION_BOOL, "-int8", offsetof(program_options, int8)},
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},

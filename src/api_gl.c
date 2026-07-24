@@ -3,6 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200112L /* for setenv() in stdlib.h */
+#endif
+
 #include <assert.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -1284,6 +1288,14 @@ gl_create_context(const program_options *options)
    api_context *ctx = calloc(1, sizeof(api_context));
    ctx->options = *options;
 
+   if (options->gl_tiling_linear) {
+#if _POSIX_C_SOURCE >= 200112L
+      setenv("MESA_DEBUG", "api-tiling-linear", true);
+#else
+      error("-gl-tiling-linear is unsupported on this system.");
+#endif
+   }
+
    /* Create an EGL context. */
    EGLint count, major, minor;
    EGLDisplay egl_dpy;
@@ -1363,7 +1375,7 @@ gl_create_context(const program_options *options)
    ctx->has_blit_image_msaa = true;
    ctx->has_buffer_device_address = false;
    ctx->has_clear_image_region = true;
-   ctx->has_image_tiling_linear = GLAD_GL_MESA_texture_tiling_linear;
+   ctx->has_image_tiling_linear = options->gl_tiling_linear;
    ctx->has_resolve_image_yflip = true;
    ctx->has_shader_int8 = false;
    ctx->has_shader_int64 = GLAD_GL_ARB_gpu_shader_int64;
