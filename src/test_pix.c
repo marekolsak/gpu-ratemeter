@@ -997,11 +997,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    unsigned num_formats = 0;
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
-      assert(formats[f].format < ARRAY_SIZE(ctx->fb_format_supported));
+      assert(!formats[f].format || format_is_valid(formats[f].format));
+      assert(formats[f].format < ARRAY_SIZE(ctx->fb_format_sample_count_support));
 
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
-          !ctx->fb_format_supported[formats[f].format] ||
+          !(ctx->fb_format_sample_count_support[formats[f].format] & samples) ||
           !check_filter_string(ctx->options.format, formats[f].name)) {
          fbs[f].skip = true;
          continue;
@@ -1438,9 +1439,12 @@ test_pix(api_context *ctx, const char *test_name)
 
    printf("Units: %s\n",
           ctx->options.report_bandwidth ? "GB/s" :
-          ctx->options.max_rate ? "% of the maximum pixel rate, multiplied by the number of MSAA samples" :
-          ctx->options.freq_mhz ? "pixels/clock (no MSAA) or samples/clock (MSAA)" :
-                                  "billion pixels/second (no MSAA) or billion samples/second (MSAA)");
+          ctx->options.max_rate ? (ctx->options.samplerate ? "% of the specified pixel rate, multiplied by the number of MSAA samples" :
+                                                             "% of the specified pixel rate") :
+          ctx->options.freq_mhz ? (ctx->options.samplerate ? "pixels/clock (no MSAA) or samples/clock (MSAA)" :
+                                                             "pixels/clock" ) :
+                                  (ctx->options.samplerate ? "billion pixels/second (no MSAA) or billion samples/second (MSAA)" :
+                                                             "billion pixels/second"));
 
    puts("Compiling shaders...");
 

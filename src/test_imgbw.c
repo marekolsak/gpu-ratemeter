@@ -409,13 +409,15 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
             continue;
 
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
-            if (!ctx->fb_format_supported[formats[format_index].format])
-               continue;
+            assert(format_is_valid(formats[format_index].format));
 
             if (test_index == TEST_RESOLVE && format_is_integer(formats[format_index].format))
                continue;
 
             for (unsigned samples = 1; samples <= 8; samples *= 2) {
+               if (!(ctx->fb_format_sample_count_support[formats[format_index].format] & samples))
+                  continue;
+
                if (samples >= 2 && img_type != VK_IMAGE_TYPE_2D)
                   continue;
 

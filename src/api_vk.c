@@ -2641,16 +2641,35 @@ vk_create_context(const program_options *options)
       ctx->sparse_buffer_alignment = sparse_buf_mem_req.memoryRequirements.alignment;
    }
 
-   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_supported); i++) {
+   /* Format support. */
+   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_sample_count_support); i++) {
       if (!format_is_valid(i))
          continue;
 
       VkFormatProperties format_props = {0};
       vkGetPhysicalDeviceFormatProperties(physical_device, i, &format_props);
 
-      ctx->fb_format_supported[i] = format_props.optimalTilingFeatures &
-                                    (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+      if (!(format_props.optimalTilingFeatures & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                                  VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)))
+         continue;
+
+      VkImageFormatProperties2 image_format_props = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
+      };
+
+      vk_check(vkGetPhysicalDeviceImageFormatProperties2(
+                  physical_device,
+                  &(VkPhysicalDeviceImageFormatInfo2) {
+                     .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+                     .format = i,
+                     .type = VK_IMAGE_TYPE_2D,
+                     .tiling = VK_IMAGE_TILING_OPTIMAL,
+                     .usage = format_is_depth_or_stencil(i) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
+                                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                  },
+                  &image_format_props));
+
+      ctx->fb_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
    }
 
    /* Set up the GLSL compiler. */

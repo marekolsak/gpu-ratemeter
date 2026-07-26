@@ -393,6 +393,8 @@ typedef enum {
 #define api_wait_sparse       (1 << api_queue_sparse)
 #define api_wait_all_queues   ((1 << api_num_queues) - 1)
 
+#define FORMAT_COUNT (VK_FORMAT_D32_SFLOAT_S8_UINT + 1)
+
 typedef struct api_context {
    program_options options;
 
@@ -425,7 +427,8 @@ typedef struct api_context {
    unsigned max_uniform_buffer_range;
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
-   bool fb_format_supported[VK_FORMAT_D32_SFLOAT_S8_UINT + 1];
+   VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
+
 
    /* Dynamic info. */
    uint32_t device_mem_usage_mb;

@@ -1401,24 +1401,8 @@ gl_create_context(const program_options *options)
    if (GLAD_GL_ARB_sparse_buffer)
       glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
 
-   /* Get color sample counts. */
-   int num_sample_counts;
-   int sample_counts[16];
-
-   glGetInternalformativ(GL_RENDERBUFFER, GL_RGBA8, GL_NUM_SAMPLE_COUNTS, 1, &num_sample_counts);
-   if (num_sample_counts > 16)
-      num_sample_counts = 16;
-
-   glGetInternalformativ(GL_RENDERBUFFER, GL_RGBA8, GL_SAMPLES, num_sample_counts, sample_counts);
-
-   ctx->supported_color_sample_counts |= VK_SAMPLE_COUNT_1_BIT;
-
-   for (int i = 0; i < num_sample_counts; i++) {
-      if (IS_POT(sample_counts[i]))
-         ctx->supported_color_sample_counts |= sample_counts[i];
-   }
-
-   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_supported); i++) {
+   /* Format support. */
+   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_sample_count_support); i++) {
       if (!format_is_valid(i))
          continue;
 
@@ -1427,8 +1411,29 @@ gl_create_context(const program_options *options)
 
       glGetInternalformativ(GL_TEXTURE_2D, internalformat, GL_FRAMEBUFFER_RENDERABLE, 1,
                             &fb_supported);
-      ctx->fb_format_supported[i] = fb_supported;
+      if (!fb_supported)
+         continue;
+
+      ctx->fb_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT;
+
+      int num_sample_counts;
+      int sample_counts[16];
+
+      glGetInternalformativ(GL_RENDERBUFFER, internalformat, GL_NUM_SAMPLE_COUNTS, 1,
+                            &num_sample_counts);
+      if (num_sample_counts > 16)
+         num_sample_counts = 16;
+
+      glGetInternalformativ(GL_RENDERBUFFER, internalformat, GL_SAMPLES, num_sample_counts,
+                            sample_counts);
+
+      for (int i = 0; i < num_sample_counts; i++) {
+         if (IS_POT(sample_counts[i]))
+            ctx->fb_format_sample_count_support[i] |= sample_counts[i];
+      }
    }
+
+   ctx->supported_color_sample_counts = ctx->fb_format_sample_count_support[VK_FORMAT_R8G8B8A8_UNORM];
 
    /* Set callbacks. */
    ctx->destroy_context = NULL;
