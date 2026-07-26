@@ -409,6 +409,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
             continue;
 
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
+            if (!ctx->fb_format_supported[formats[format_index].format])
+               continue;
+
             if (test_index == TEST_RESOLVE && format_is_integer(formats[format_index].format))
                continue;
 

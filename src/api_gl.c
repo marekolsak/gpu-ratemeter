@@ -221,6 +221,11 @@ get_gl_internalformat(VkFormat format)
    case VK_FORMAT_D32_SFLOAT:
       return GL_DEPTH_COMPONENT32F;
 
+   /* These don't exist in GL. */
+   case VK_FORMAT_A2B10G10R10_SNORM_PACK32:
+   case VK_FORMAT_A2B10G10R10_SINT_PACK32:
+      return 0;
+
    default:
       error("get_gl_internalformat: unexpected image format %u", format);
       return 0;
@@ -1411,6 +1416,18 @@ gl_create_context(const program_options *options)
    for (int i = 0; i < num_sample_counts; i++) {
       if (IS_POT(sample_counts[i]))
          ctx->supported_color_sample_counts |= sample_counts[i];
+   }
+
+   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_supported); i++) {
+      if (!format_is_valid(i))
+         continue;
+
+      GLenum internalformat = get_gl_internalformat(i);
+      GLint fb_supported = false;
+
+      glGetInternalformativ(GL_TEXTURE_2D, internalformat, GL_FRAMEBUFFER_RENDERABLE, 1,
+                            &fb_supported);
+      ctx->fb_format_supported[i] = fb_supported;
    }
 
    /* Set callbacks. */

@@ -997,9 +997,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
    unsigned num_formats = 0;
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {
+      assert(formats[f].format < ARRAY_SIZE(ctx->fb_format_supported));
+
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
-          (!check_filter_string(ctx->options.format, formats[f].name))) {
+          !ctx->fb_format_supported[formats[f].format] ||
+          !check_filter_string(ctx->options.format, formats[f].name)) {
          fbs[f].skip = true;
          continue;
       }
@@ -1620,6 +1623,9 @@ test_pix(api_context *ctx, const char *test_name)
          test_flavor = TEST_LINEAR;
          test_samples = 1;
       }
+
+      if (test_flavor == -1)
+         error("-subset: invalid value");
    }
 
    /* Run tests. */

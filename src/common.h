@@ -425,6 +425,7 @@ typedef struct api_context {
    unsigned max_uniform_buffer_range;
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
+   bool fb_format_supported[VK_FORMAT_D32_SFLOAT_S8_UINT + 1];
 
    /* Dynamic info. */
    uint32_t device_mem_usage_mb;
@@ -608,6 +609,7 @@ bool format_is_integer(VkFormat format);
 bool format_is_sint(VkFormat format);
 unsigned format_get_num_channels(VkFormat format);
 bool format_is_depth_or_stencil(VkFormat format);
+bool format_is_valid(VkFormat format);
 unsigned get_next_power_of_two(unsigned x);
 uint16_t float_to_half(float val);
 unsigned bitcount(unsigned n);

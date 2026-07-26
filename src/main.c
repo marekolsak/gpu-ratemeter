@@ -28,6 +28,8 @@
  *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer
  * - resolve:
  *    - pResolveAttachments via a render pass
+ * - copies:
+ *    - DXTC formats
  * - 2D array images
  * - Z/S?
  * - VK_KHR_copy_memory_indirect

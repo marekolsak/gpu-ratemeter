@@ -2641,6 +2641,18 @@ vk_create_context(const program_options *options)
       ctx->sparse_buffer_alignment = sparse_buf_mem_req.memoryRequirements.alignment;
    }
 
+   for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_supported); i++) {
+      if (!format_is_valid(i))
+         continue;
+
+      VkFormatProperties format_props = {0};
+      vkGetPhysicalDeviceFormatProperties(physical_device, i, &format_props);
+
+      ctx->fb_format_supported[i] = format_props.optimalTilingFeatures &
+                                    (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+   }
+
    /* Set up the GLSL compiler. */
    shaderc_compile_options_set_target_env(ctx->glsl_compiler_options, shaderc_target_env_vulkan,
                                           shaderc_env_version_vulkan_1_3);
