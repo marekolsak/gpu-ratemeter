@@ -1,5 +1,7 @@
 [[_TOC_]]
 
+The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-ratemeter.
+
 # Introduction and Project Vision
 
 This is a command-line microbenchmark that measures the performance of various features of GPUs through APIs, and how well different GPUs, APIs, and API translation and forwarding layers do well against each other.
