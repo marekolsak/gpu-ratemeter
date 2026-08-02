@@ -1,4 +1,5 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  * SPDX-License-Identifier: MIT
  */
 
