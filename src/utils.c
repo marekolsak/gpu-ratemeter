@@ -694,9 +694,9 @@ heap_to_string(api_heap_type heap)
 {
    static const char *table[] = {
       [api_heap_device] = "devmem",
-      [api_heap_device_coherent_amd] = "devmem_coherent",
+      [api_heap_device_coherent_amd] = "devmem_coherent_amd",
       [api_heap_host_uncached] = "hostmem",
-      [api_heap_host_uncached_coherent_amd] = "hostmem_coherent",
+      [api_heap_host_uncached_coherent_amd] = "hostmem_coherent_amd",
       [api_heap_host_cached] = "hostmem_cached",
    };
 

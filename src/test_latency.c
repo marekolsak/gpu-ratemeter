@@ -114,7 +114,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "\n"
 
                       "#if USE_BDA \n"
-                      "layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict buffer bda_buffer { \n"
+                      "layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict QUALIFIER buffer bda_buffer { \n"
                       "    uint64_t addr; \n"
                       "}; \n"
                       "#endif \n"
@@ -423,7 +423,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
       }
    }
 
-   const unsigned name_indent = 50;
+   const unsigned name_indent = 52;
    const unsigned max_digits = 6;
 
    if (stage == REPORT) {
