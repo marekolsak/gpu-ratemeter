@@ -1088,6 +1088,29 @@ gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
 }
 
 static void
+gl_barrier_buffers(api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                   uint64_t *offset_size_pairs, bool after_shader_writes)
+{
+   /* GL only needs barriers after shader writes. */
+   if (!after_shader_writes)
+      return;
+
+   glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT |
+                   GL_ELEMENT_ARRAY_BARRIER_BIT |
+                   GL_UNIFORM_BARRIER_BIT |
+                   GL_TEXTURE_FETCH_BARRIER_BIT |
+                   GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+                   GL_COMMAND_BARRIER_BIT |
+                   GL_PIXEL_BUFFER_BARRIER_BIT |
+                   GL_BUFFER_UPDATE_BARRIER_BIT |
+                   GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT |
+                   GL_TRANSFORM_FEEDBACK_BARRIER_BIT |
+                   GL_ATOMIC_COUNTER_BARRIER_BIT |
+                   GL_SHADER_STORAGE_BARRIER_BIT |
+                   GL_QUERY_BUFFER_BARRIER_BIT);
+}
+
+static void
 gl_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(queue == api_queue_gfx);
@@ -1473,6 +1496,8 @@ gl_create_context(const program_options *options)
    ctx->create_pipeline = gl_create_pipeline;
    ctx->destroy_pipeline = gl_destroy_pipeline;
    ctx->bind_pipeline = gl_bind_pipeline;
+
+   ctx->barrier_buffers = gl_barrier_buffers;
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = gl_end_cmdbuf_and_submit;

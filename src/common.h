@@ -511,8 +511,8 @@ typedef struct api_context {
    void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
-   void (*pipeline_barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
-                                    uint64_t *offset_size_pairs, bool after_shader_writes);
+   void (*barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                           uint64_t *offset_size_pairs, bool after_shader_writes);
 
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx, unsigned wait_queue_mask,
