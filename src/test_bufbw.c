@@ -115,6 +115,15 @@ enum test_stage {
    REPORT,
 };
 
+typedef struct {
+   unsigned num_tests;
+   api_query_pool *timestamps;
+   api_queue_type queue;
+   api_buffer *devmem0;
+   api_buffer *devmem1;
+   api_buffer *hostmem;
+} test_state;
+
 static unsigned
 next_size(unsigned size)
 {
@@ -125,9 +134,7 @@ next_size(unsigned size)
 }
 
 static void
-run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_pool *timestamps,
-    unsigned *num_tests, api_queue_type queue, api_buffer *devmem0, api_buffer *devmem1,
-    api_buffer *hostmem)
+run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *state)
 {
    const unsigned name_indent = 60;
 
@@ -156,14 +163,14 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_po
             if (dst_heap_index == 1 && src_heap_index == 1)
                continue;
 
-            api_buffer *dst = dst_heap_index == 0 ? devmem0 : hostmem;
-            api_buffer *src = is_copy ? (src_heap_index == 0 ? devmem1 : hostmem) : NULL;
+            api_buffer *dst = dst_heap_index == 0 ? state->devmem0 : state->hostmem;
+            api_buffer *src = is_copy ? (src_heap_index == 0 ? state->devmem1 : state->hostmem) : NULL;
 
             assert(dst);
             assert(!src || src != dst);
             bool uses_hostmem = dst->heap != api_heap_device || (src && src->heap != api_heap_device);
 
-            if (!ctx->has_heap[api_heap_host_uncached] && (dst == hostmem || src == hostmem))
+            if (!ctx->has_heap[api_heap_host_uncached] && (dst == state->hostmem || src == state->hostmem))
                continue;
 
             for (unsigned traversal = 0; traversal < NUM_TRAVERSAL_TYPES; traversal++) {
@@ -206,18 +213,18 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_po
                      }
 
                      if (stage == COUNT_TESTS)
-                        (*num_tests)++;
+                        state->num_tests++;
 
                      const unsigned execution_size = EXECUTION_SIZE / (uses_hostmem ? HOSTMEM_TEST_REDUCTION : 1);
                      const unsigned num_runs = MAX2(MIN2(execution_size / size, MAX_RUNS), 1);
                      const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                      if (stage == RUN) {
-                        ctx->begin_cmdbuf(ctx, queue);
+                        ctx->begin_cmdbuf(ctx, state->queue);
 
                         for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
                            if (iter == num_warmup_runs)
-                              ctx->write_next_query_value(ctx, timestamps);
+                              ctx->write_next_query_value(ctx, state->timestamps);
 
                            if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
                                (is_copy && cycled_offset_base + test_src_offset + size > src->size))
@@ -254,7 +261,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_po
                            }
                         }
 
-                        ctx->write_next_query_value(ctx, timestamps);
+                        ctx->write_next_query_value(ctx, state->timestamps);
                         ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                      }
 
@@ -265,11 +272,11 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_po
                          */
                         uint64_t num_bytes = (uint64_t)size * num_runs *
                                              (is_copy && dst_heap_index == src_heap_index ? 2 : 1);
-                        print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
+                        print_throughput_from_next_timestamps(ctx, state->timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
                      }
 
                      if (stage == RUN)
-                        print_progress(*num_tests, &num_visited_tests, 20);
+                        print_progress(state->num_tests, &num_visited_tests, 20);
                   }
 
                   if (stage == REPORT)
@@ -298,26 +305,26 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 
+   test_state state = {0};
+
    /* Create buffers. */
    /* We allocate enough memory and cycle through the whole range to prevent caching. */
    unsigned buf_size = 2 * MAX_SIZE + 256;
-   api_buffer *devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
-   api_buffer *devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
-   api_buffer *hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
+   state.devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   state.devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   state.hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
 
-   unsigned num_tests = 0;
-   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests, queue, devmem0, devmem1, hostmem);
+   run(ctx, test_name, COUNT_TESTS, &state);
 
    /* Create timestamp queries. */
-   api_query_pool *timestamps =
-      ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
+   state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
-   run(ctx, test_name, RUN, timestamps, &num_tests, queue, devmem0, devmem1, hostmem);
+   run(ctx, test_name, RUN, &state);
    puts("");
 
-   ctx->get_query_results(ctx, timestamps);
+   ctx->get_query_results(ctx, state.timestamps);
 
    puts("Units: GB/s");
-   run(ctx, test_name, REPORT, timestamps, &num_tests, queue, devmem0, devmem1, hostmem);
+   run(ctx, test_name, REPORT, &state);
 }
