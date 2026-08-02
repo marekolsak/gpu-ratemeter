@@ -28,11 +28,9 @@
 #define MAX_ALIGNMENT      (64 * 1024)
 
 enum {
-   TEST_FILL_DEVMEM,
-   TEST_FILL_HOSTMEM,
-   TEST_COPY_DEVMEM_TO_DEVMEM,
-   TEST_COPY_DEVMEM_TO_HOSTMEM,
-   TEST_COPY_HOSTMEM_TO_DEVMEM,
+   TEST_FILL,
+   TEST_COPY,
+   TEST_COPY_INDIRECT,
    NUM_TESTS,
 };
 
@@ -147,133 +145,137 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_po
    }
 
    unsigned num_visited_tests = 0;
+   const unsigned num_test_types = 2;
 
    /* Run tests. */
-   for (unsigned test_flavor = 0; test_flavor < NUM_TESTS; test_flavor++) {
-      bool is_copy = test_flavor >= TEST_COPY_DEVMEM_TO_DEVMEM;
-      api_buffer *dst = test_flavor == TEST_FILL_DEVMEM ||
-                        test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ||
-                        test_flavor == TEST_COPY_HOSTMEM_TO_DEVMEM ? devmem0 :
-                        test_flavor == TEST_FILL_HOSTMEM ||
-                        test_flavor == TEST_COPY_DEVMEM_TO_HOSTMEM ? hostmem : NULL;
-      api_buffer *src = test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ||
-                        test_flavor == TEST_COPY_DEVMEM_TO_HOSTMEM ? devmem1 :
-                        test_flavor == TEST_COPY_HOSTMEM_TO_DEVMEM ? hostmem : NULL;
-      assert(dst);
-      assert(!src || src != dst);
-      bool uses_hostmem = dst->heap != api_heap_device || (src && src->heap != api_heap_device);
+   for (unsigned test_type = 0; test_type < num_test_types; test_type++) {
+      bool is_copy = test_type != TEST_FILL;
 
-      if (!ctx->has_heap[api_heap_host_uncached] && (dst == hostmem || src == hostmem))
-         continue;
-
-      for (unsigned traversal = 0; traversal < NUM_TRAVERSAL_TYPES; traversal++) {
-         unsigned cycled_offset_base = 0;
-
-         for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
-            unsigned test_src_offset = align_info[align].src_offset;
-            unsigned test_dst_offset = align_info[align].dst_offset;
-
-            /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
-            if (test_src_offset && test_src_offset < 4)
-               test_src_offset += 4;
-            if (test_dst_offset && test_dst_offset < 4)
-               test_dst_offset += 4;
-
-            if (!is_copy && (test_src_offset != 0 || test_dst_offset % 4))
+      for (unsigned src_heap_index = 0; src_heap_index < (is_copy ? 2 : 1); src_heap_index++) {
+         for (unsigned dst_heap_index = 0; dst_heap_index < 2; dst_heap_index++) {
+            if (dst_heap_index == 1 && src_heap_index == 1)
                continue;
 
-            if (stage == REPORT) {
-               char name[1024];
+            api_buffer *dst = dst_heap_index == 0 ? devmem0 : hostmem;
+            api_buffer *src = is_copy ? (src_heap_index == 0 ? devmem1 : hostmem) : NULL;
 
-               snprintf(name, sizeof(name), "%s.%s.%s%s%s.%s.%s",
-                        test_name, is_copy ? "copy" : "fill",
-                        is_copy ? heap_to_string(src->heap) : "",
-                        is_copy ? "_to_" : "",
-                        heap_to_string(dst->heap),
-                        traversal == HIT ? "hit" :
-                        traversal == MISS ? "miss" : "miss_no_barrier",
-                        align_info[align].string);
-               printf("%-*s", name_indent, name);
-            }
+            assert(dst);
+            assert(!src || src != dst);
+            bool uses_hostmem = dst->heap != api_heap_device || (src && src->heap != api_heap_device);
 
-            for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
-               /* Don't test large sizes with host memory because it can be too slow. */
-               if ((size > MAX_SIZE / HOSTMEM_TEST_REDUCTION && uses_hostmem) ||
-                   (traversal == MISS_NO_BARRIER && ctx->buffer_barrier_has_gl_semantics)) {
-                  if (stage == REPORT)
-                     printf(",%8s", "n/a");
-                  continue;
-               }
+            if (!ctx->has_heap[api_heap_host_uncached] && (dst == hostmem || src == hostmem))
+               continue;
 
-               if (stage == COUNT_TESTS)
-                  (*num_tests)++;
+            for (unsigned traversal = 0; traversal < NUM_TRAVERSAL_TYPES; traversal++) {
+               unsigned cycled_offset_base = 0;
 
-               const unsigned execution_size = EXECUTION_SIZE / (uses_hostmem ? HOSTMEM_TEST_REDUCTION : 1);
-               const unsigned num_runs = MAX2(MIN2(execution_size / size, MAX_RUNS), 1);
-               const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
+               for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
+                  unsigned test_src_offset = align_info[align].src_offset;
+                  unsigned test_dst_offset = align_info[align].dst_offset;
 
-               if (stage == RUN) {
-                  ctx->begin_cmdbuf(ctx, queue);
+                  /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
+                  if (test_src_offset && test_src_offset < 4)
+                     test_src_offset += 4;
+                  if (test_dst_offset && test_dst_offset < 4)
+                     test_dst_offset += 4;
 
-                  for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
-                     if (iter == num_warmup_runs)
-                        ctx->write_next_query_value(ctx, timestamps);
+                  if (!is_copy && (test_src_offset != 0 || test_dst_offset % 4))
+                     continue;
 
-                     if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
-                         (is_copy && cycled_offset_base + test_src_offset + size > src->size))
-                        cycled_offset_base = 0;
+                  if (stage == REPORT) {
+                     char name[1024];
 
-                     assert(cycled_offset_base + test_dst_offset + size <= dst->size);
-                     assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
-                     assert(cycled_offset_base % MAX_ALIGNMENT == 0);
-
-                     uint64_t dst_offset = cycled_offset_base + test_dst_offset;
-
-                     if (is_copy) {
-                        uint64_t src_offset = cycled_offset_base + test_src_offset;
-
-                        ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
-
-                        if (traversal != MISS_NO_BARRIER) {
-                           ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
-                                                (uint64_t[]){src_offset, size, dst_offset, size}, false);
-                        }
-                     } else {
-                        ctx->clear_buffer(ctx, dst, dst_offset, size, 0x23456789);
-
-                        if (traversal != MISS_NO_BARRIER)
-                           ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
-                     }
-
-                     if (traversal != HIT) {
-                        /* Use a different portion of the buffers for each test, so that they don't just
-                         * stay in the cache.
-                         */
-                        cycled_offset_base += size;
-                        cycled_offset_base = ALIGN_POT(cycled_offset_base, MAX_ALIGNMENT);
-                     }
+                     snprintf(name, sizeof(name), "%s.%s.%s%s%s.%s.%s",
+                              test_name, is_copy ? "copy" : "fill",
+                              is_copy ? heap_to_string(src->heap) : "",
+                              is_copy ? "_to_" : "",
+                              heap_to_string(dst->heap),
+                              traversal == HIT ? "hit" :
+                              traversal == MISS ? "miss" : "miss_no_barrier",
+                              align_info[align].string);
+                     printf("%-*s", name_indent, name);
                   }
 
-                  ctx->write_next_query_value(ctx, timestamps);
-                  ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
-               }
+                  for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
+                     /* Don't test large sizes with host memory because it can be too slow. */
+                     if ((size > MAX_SIZE / HOSTMEM_TEST_REDUCTION && uses_hostmem) ||
+                         (traversal == MISS_NO_BARRIER && ctx->buffer_barrier_has_gl_semantics)) {
+                        if (stage == REPORT)
+                           printf(",%8s", "n/a");
+                        continue;
+                     }
 
-               if (stage == REPORT) {
-                  /* When copying from DEVMEM to DEVMEM, we put 2x demand on DEVMEM bandwidth, and when
-                   * copying between DEVMEM and HOSTMEM, we put only 1x demand on each, so only double
-                   * the size for DEVMEM->DEVMEM copies to use the real DEVMEM bandwidth usage.
-                   */
-                  uint64_t num_bytes = (uint64_t)size * num_runs *
-                                       (test_flavor == TEST_COPY_DEVMEM_TO_DEVMEM ? 2 : 1);
-                  print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
-               }
+                     if (stage == COUNT_TESTS)
+                        (*num_tests)++;
 
-               if (stage == RUN)
-                  print_progress(*num_tests, &num_visited_tests, 20);
+                     const unsigned execution_size = EXECUTION_SIZE / (uses_hostmem ? HOSTMEM_TEST_REDUCTION : 1);
+                     const unsigned num_runs = MAX2(MIN2(execution_size / size, MAX_RUNS), 1);
+                     const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
+
+                     if (stage == RUN) {
+                        ctx->begin_cmdbuf(ctx, queue);
+
+                        for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
+                           if (iter == num_warmup_runs)
+                              ctx->write_next_query_value(ctx, timestamps);
+
+                           if ((cycled_offset_base + test_dst_offset + size > dst->size) ||
+                               (is_copy && cycled_offset_base + test_src_offset + size > src->size))
+                              cycled_offset_base = 0;
+
+                           assert(cycled_offset_base + test_dst_offset + size <= dst->size);
+                           assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
+                           assert(cycled_offset_base % MAX_ALIGNMENT == 0);
+
+                           uint64_t dst_offset = cycled_offset_base + test_dst_offset;
+
+                           if (is_copy) {
+                              uint64_t src_offset = cycled_offset_base + test_src_offset;
+
+                              ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
+
+                              if (traversal != MISS_NO_BARRIER) {
+                                 ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
+                                                      (uint64_t[]){src_offset, size, dst_offset, size}, false);
+                              }
+                           } else {
+                              ctx->clear_buffer(ctx, dst, dst_offset, size, 0x23456789);
+
+                              if (traversal != MISS_NO_BARRIER)
+                                 ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
+                           }
+
+                           if (traversal != HIT) {
+                              /* Use a different portion of the buffers for each test, so that they don't just
+                               * stay in the cache.
+                               */
+                              cycled_offset_base += size;
+                              cycled_offset_base = ALIGN_POT(cycled_offset_base, MAX_ALIGNMENT);
+                           }
+                        }
+
+                        ctx->write_next_query_value(ctx, timestamps);
+                        ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+                     }
+
+                     if (stage == REPORT) {
+                        /* When copying from DEVMEM to DEVMEM, we put 2x demand on DEVMEM bandwidth, and when
+                         * copying between DEVMEM and HOSTMEM, we put only 1x demand on each, so only double
+                         * the size for DEVMEM->DEVMEM copies to use the real DEVMEM bandwidth usage.
+                         */
+                        uint64_t num_bytes = (uint64_t)size * num_runs *
+                                             (is_copy && dst_heap_index == src_heap_index ? 2 : 1);
+                        print_throughput_from_next_timestamps(ctx, timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
+                     }
+
+                     if (stage == RUN)
+                        print_progress(*num_tests, &num_visited_tests, 20);
+                  }
+
+                  if (stage == REPORT)
+                     puts("");
+               }
             }
-
-            if (stage == REPORT)
-               puts("");
          }
       }
    }
