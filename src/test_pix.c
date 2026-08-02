@@ -1544,6 +1544,7 @@ test_pix(api_context *ctx, const char *test_name)
 
       ctx->begin_cmdbuf(ctx, api_queue_gfx);
       ctx->clear_buffer(ctx, total_fs_invoc, 0, 4, 0);
+      ctx->barrier_buffers(ctx, 1, &total_fs_invoc, (uint64_t[]){0, 4}, false);
       ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
    }
 

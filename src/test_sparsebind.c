@@ -138,8 +138,10 @@ run_one(api_context *ctx, api_query_pool *timestamps, test_flags flags,
       if (cmdbuf_option != CMDBUF_NONE) {
          ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
-         if (cmdbuf_option == CMDBUF_SIMPLE)
+         if (cmdbuf_option == CMDBUF_SIMPLE) {
             ctx->clear_buffer(ctx, buf, 0, 64, 0);
+            ctx->barrier_buffers(ctx, 1, &buf, (uint64_t[]){0, 64}, false);
+         }
 
          ctx->end_cmdbuf_and_submit(ctx, 0, fence, NULL);
       }

@@ -226,15 +226,17 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                      assert(!is_copy || cycled_offset_base + test_src_offset + size <= src->size);
                      assert(cycled_offset_base % MAX_ALIGNMENT == 0);
 
+                     uint64_t dst_offset = cycled_offset_base + test_dst_offset;
+
                      if (is_copy) {
                         uint64_t src_offset = cycled_offset_base + test_src_offset;
-                        uint64_t dst_offset = cycled_offset_base + test_dst_offset;
+
                         ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
                         ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
                                              (uint64_t[]){src_offset, size, dst_offset, size}, false);
                      } else {
-                        ctx->clear_buffer(ctx, dst, cycled_offset_base + test_dst_offset,
-                                          size, 0x23456789);
+                        ctx->clear_buffer(ctx, dst, dst_offset, size, 0x23456789);
+                        ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
                      }
 
                      if (!cached) {

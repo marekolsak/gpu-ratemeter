@@ -330,7 +330,6 @@ static void
 vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
 {
    vkCmdFillBuffer(ctx->current_cmd_buffer, buf->buffer, offset, size, value);
-   vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
 }
 
 static void
