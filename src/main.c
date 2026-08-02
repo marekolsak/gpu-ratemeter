@@ -32,6 +32,7 @@
  * - Z/S?
  * - VK_KHR_copy_memory_indirect
  * - transfer queue
+ * - buffer-to-image, image-to-buffer
  *
  * latency:
  * - instruction fetch (jump chasing)
@@ -133,7 +134,6 @@ typedef struct {
 } option_desc;
 
 static const option_desc option_list[] = {
-   {OPTION_BOOL, "-barrier", offsetof(program_options, barrier)},
    {OPTION_BOOL, "-bda", offsetof(program_options, bda)},
    {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
    {OPTION_BOOL, "-gl-tiling-linear", offsetof(program_options, gl_tiling_linear)},

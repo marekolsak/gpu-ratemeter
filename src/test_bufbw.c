@@ -36,12 +36,11 @@ enum {
    NUM_TESTS,
 };
 
-static const char *test_strings[] = {
-   [TEST_FILL_DEVMEM] = "fill.devmem",
-   [TEST_FILL_HOSTMEM] = "fill.hostmem",
-   [TEST_COPY_DEVMEM_TO_DEVMEM] = "copy.devmem_to_devmem",
-   [TEST_COPY_DEVMEM_TO_HOSTMEM] = "copy.devmem_to_hostmem",
-   [TEST_COPY_HOSTMEM_TO_DEVMEM] = "copy.hostmem_to_devmem",
+enum {
+   HIT,
+   MISS,
+   MISS_NO_BARRIER,
+   NUM_TRAVERSAL_TYPES,
 };
 
 enum {
@@ -131,7 +130,7 @@ static void
 run(api_context *ctx, const char *test_name, enum test_stage stage,
     api_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
 {
-   const unsigned name_indent = 53;
+   const unsigned name_indent = 60;
 
    if (stage == REPORT) {
       printf("%-*s", name_indent, "Allocation size");
@@ -173,7 +172,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
       if (!ctx->has_heap[api_heap_host_uncached] && (dst == hostmem || src == hostmem))
          continue;
 
-      for (unsigned cached = 0; cached < 2; cached ++) {
+      for (unsigned traversal = 0; traversal < NUM_TRAVERSAL_TYPES; traversal++) {
          unsigned cycled_offset_base = 0;
 
          for (unsigned align = 0; align < NUM_ALIGNMENTS; align++) {
@@ -192,15 +191,21 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
             if (stage == REPORT) {
                char name[1024];
 
-               snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
-                        test_strings[test_flavor], cached ? "hit" : "miss",
+               snprintf(name, sizeof(name), "%s.%s.%s%s%s.%s.%s",
+                        test_name, is_copy ? "copy" : "fill",
+                        is_copy ? heap_to_string(src->heap) : "",
+                        is_copy ? "_to_" : "",
+                        heap_to_string(dst->heap),
+                        traversal == HIT ? "hit" :
+                        traversal == MISS ? "miss" : "miss_no_barrier",
                         align_info[align].string);
                printf("%-*s", name_indent, name);
             }
 
             for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
                /* Don't test large sizes with host memory because it can be too slow. */
-               if (size > MAX_SIZE / HOSTMEM_TEST_REDUCTION && uses_hostmem) {
+               if ((size > MAX_SIZE / HOSTMEM_TEST_REDUCTION && uses_hostmem) ||
+                   (traversal == MISS_NO_BARRIER && ctx->buffer_barrier_has_gl_semantics)) {
                   if (stage == REPORT)
                      printf(",%8s", "n/a");
                   continue;
@@ -235,18 +240,18 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
 
                         ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
 
-                        if (ctx->options.barrier) {
+                        if (traversal != MISS_NO_BARRIER) {
                            ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
                                                 (uint64_t[]){src_offset, size, dst_offset, size}, false);
                         }
                      } else {
                         ctx->clear_buffer(ctx, dst, dst_offset, size, 0x23456789);
 
-                        if (ctx->options.barrier)
+                        if (traversal != MISS_NO_BARRIER)
                            ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
                      }
 
-                     if (!cached) {
+                     if (traversal != HIT) {
                         /* Use a different portion of the buffers for each test, so that they don't just
                          * stay in the cache.
                          */
@@ -294,9 +299,6 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    if (!ctx->has_queue[queue])
       error("%s queue support is required.", queue_to_string(queue));
-
-   if (ctx->options.barrier && ctx->buffer_barrier_has_gl_semantics)
-      error("The API doesn't have a barrier call affecting buffer fills and copies.");
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 

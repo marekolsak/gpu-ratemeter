@@ -270,14 +270,14 @@ Each column is the size passed to the fill or copy buffer call.
 Decoding subtest names:
 - `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
 - `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
-- `miss`, `hit`: whether cache miss or cache hit bandwidth is being tested (cache misses are guaranteed only if the last level cache is <= 256 MB)
+- `hit`: whether the cache hit bandwidth is tested by repeating the same operation on the same buffer range
+- `miss`: whether the cache miss bandwidth is tested by increasing the buffer offset monotonically and wrapping at 512 MB (cache misses are guaranteed only if the last level cache is smaller than that)
+- `miss_no_barrier`: whether the cache miss bandwidth is tested as above, and also there is no barrier between individual operations; this is only executed for APIs that require explicit barriers at fill and copy operations
 - `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
-- `barrier`: a pipeline buffer barrier is inserted after every operation (n/a to APIs that don't have such a barrier)
 
 Optional parameters:
-- `-barrier`: Onsert a barrier after every fill and copy. (the API must have such a barrier)
 - `-compute`: Execute on the compute queue.
 - `-transfer`: Execute on the transfer queue.
 

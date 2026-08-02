@@ -355,7 +355,6 @@ typedef struct {
 
    /* All other options have test-specific meaning. */
    /* Bool options. */
-   bool barrier;
    bool bda;
    bool compute;
    bool gl_tiling_linear;
