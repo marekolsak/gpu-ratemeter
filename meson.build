@@ -1,4 +1,5 @@
 # Copyright 2026 Advanced Micro Devices, Inc.
+# Copyright 2026 Valve Corporation
 # SPDX-License-Identifier: MIT
 
 project('gpu-ratemeter', ['c', 'cpp'], version : '0.1', license : 'MIT',
@@ -29,6 +30,10 @@ gpu_ratemeter_files = files(
   'src/glad/glad.c',
   'src/glad/glad.h',
   'src/glad/khrplatform.h',
+
+  'src/extras/fast_urem_by_const.h',
+  'src/extras/hash_table.c',
+  'src/extras/hash_table.h',
 
   'src/api_d3d11.c',
   'src/api_d3d12.c',
