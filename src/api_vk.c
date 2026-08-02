@@ -1882,19 +1882,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
-   vkCmdCopyBuffer2(ctx->current_cmd_buffer,
-                    &(VkCopyBufferInfo2) {
-                       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-                       .srcBuffer = staging->buffer,
-                       .dstBuffer = buf->buffer,
-                       .regionCount = 1,
-                       .pRegions = &(VkBufferCopy2) {
-                          .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-                          .srcOffset = 0,
-                          .dstOffset = offset,
-                          .size = size,
-                       },
-                    });
+   vk_copy_buffer(ctx, buf, staging, offset, 0, size);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
@@ -1906,19 +1894,7 @@ vk_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t 
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
-   vkCmdCopyBuffer2(ctx->current_cmd_buffer,
-                    &(VkCopyBufferInfo2) {
-                       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-                       .srcBuffer = buf->buffer,
-                       .dstBuffer = staging->buffer,
-                       .regionCount = 1,
-                       .pRegions = &(VkBufferCopy2) {
-                          .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-                          .srcOffset = offset,
-                          .dstOffset = 0,
-                          .size = size,
-                       },
-                    });
+   vk_copy_buffer(ctx, staging, buf, 0, offset, size);
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
