@@ -646,6 +646,7 @@ unsigned bitcount(unsigned n);
 unsigned logbase2(unsigned n);
 const char *heap_to_string(api_heap_type heap);
 const char *queue_to_string(api_queue_type queue);
+uint32_t fnv1a_hash(const void *data, size_t size);
 
 #ifdef __cplusplus
 }

@@ -715,3 +715,17 @@ queue_to_string(api_queue_type queue)
 
    return table[queue];
 }
+
+uint32_t
+fnv1a_hash(const void *data, size_t size)
+{
+    const unsigned char *bytes = data;
+    uint32_t hash = UINT32_C(2166136261);
+
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= UINT32_C(16777619);
+    }
+
+    return hash;
+}
