@@ -1,4 +1,5 @@
 /* Copyright 2026 Advanced Micro Devices, Inc.
+ * Copyright 2026 Valve Corporation
  *
  * For code from vkcube:
  *    Copyright (c) 2012 Arvin Schnell <arvin.schnell@gmail.com>
