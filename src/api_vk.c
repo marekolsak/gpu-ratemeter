@@ -1922,33 +1922,12 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                                         api_heap_host_cached);
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
-   vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-   vk_image_layout_transition(ctx, staging, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-   vkCmdBlitImage2(ctx->current_cmd_buffer,
-                   &(VkBlitImageInfo2) {
-                      .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
-                      .srcImage = image->image,
-                      .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                      .dstImage = staging->image,
-                      .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                      .regionCount = 1,
-                      .pRegions = &(VkImageBlit2) {
-                         .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-                         .srcSubresource = (VkImageSubresourceLayers) {
-                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                            .baseArrayLayer = image->type == VK_IMAGE_TYPE_2D ? layer : 0,
-                            .layerCount = 1,
-                         },
-                         .srcOffsets = {{0, 0, image->type == VK_IMAGE_TYPE_3D ? layer : 0},
-                                        {image->width, image->height, 1}},
-                         .dstSubresource = (VkImageSubresourceLayers) {
-                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                            .layerCount = 1,
-                         },
-                         .dstOffsets = {{0, 0, 0}, {image->width, image->height, 1}},
-                      },
-                  });
+   vk_blit_image(ctx, &(api_blit_desc){
+                    .dst = staging,
+                    .src = image,
+                    .dst_box = {0, 0, 0, image->width, image->height, 1},
+                    .src_box = {0, 0, layer, image->width, image->height, 1},
+                 });
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
