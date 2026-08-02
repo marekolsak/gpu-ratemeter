@@ -566,6 +566,32 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
    assert(!format_is_depth_or_stencil(desc->src->format));
    assert(!format_is_depth_or_stencil(desc->dst->format));
 
+   bool src_is_3d = desc->src->type == VK_IMAGE_TYPE_3D;
+   bool dst_is_3d = desc->dst->type == VK_IMAGE_TYPE_3D;
+
+   unsigned src_base_layer = src_is_3d ? 0 : desc->src_box.z;
+   unsigned src_layer_count = src_is_3d ? 1 : desc->src_box.depth;
+   unsigned dst_base_layer = dst_is_3d ? 0 : desc->dst_box.z;
+   unsigned dst_layer_count = dst_is_3d ? 1 : desc->dst_box.depth;
+
+   unsigned src_z = src_is_3d ? desc->src_box.z : 0;
+   unsigned src_depth = src_is_3d ? desc->src_box.depth : 1;
+   unsigned dst_z = dst_is_3d ? desc->dst_box.z : 0;
+   unsigned dst_depth = dst_is_3d ? desc->dst_box.depth : 1;
+
+   VkImageSubresourceLayers src_subresource = {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .mipLevel = 0,
+      .baseArrayLayer = src_base_layer,
+      .layerCount = src_layer_count,
+   };
+   VkImageSubresourceLayers dst_subresource = {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .mipLevel = 0,
+      .baseArrayLayer = dst_base_layer,
+      .layerCount = dst_layer_count,
+   };
+
    vk_image_layout_transition(ctx, desc->src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
    vk_image_layout_transition(ctx, desc->dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -588,17 +614,11 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                             .regionCount = 1,
                             .pRegions = &(VkImageResolve2){
                                .sType = VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2,
-                               .srcSubresource = (VkImageSubresourceLayers) {
-                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .layerCount = desc->src->layer_count,
-                               },
-                               .srcOffset = {desc->src_box.x, desc->src_box.y, desc->src_box.z},
-                               .dstSubresource = (VkImageSubresourceLayers) {
-                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .layerCount = desc->dst->layer_count,
-                               },
-                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
-                               .extent = {desc->dst_box.width, desc->dst_box.height, desc->dst_box.depth},
+                               .srcSubresource = src_subresource,
+                               .srcOffset = {desc->src_box.x, desc->src_box.y, src_z},
+                               .dstSubresource = dst_subresource,
+                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, dst_z},
+                               .extent = {desc->dst_box.width, desc->dst_box.height, dst_depth},
                             },
                          });
       } else {
@@ -612,17 +632,11 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                             .regionCount = 1,
                             .pRegions = &(VkImageCopy2){
                                .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
-                               .srcSubresource = (VkImageSubresourceLayers) {
-                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .layerCount = desc->src->layer_count,
-                               },
-                               .srcOffset = {desc->src_box.x, desc->src_box.y, desc->src_box.z},
-                               .dstSubresource = (VkImageSubresourceLayers) {
-                                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .layerCount = desc->dst->layer_count,
-                               },
-                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
-                               .extent = {desc->dst_box.width, desc->dst_box.height, desc->dst_box.depth},
+                               .srcSubresource = src_subresource,
+                               .srcOffset = {desc->src_box.x, desc->src_box.y, src_z},
+                               .dstSubresource = dst_subresource,
+                               .dstOffset = {desc->dst_box.x, desc->dst_box.y, dst_z},
+                               .extent = {desc->dst_box.width, desc->dst_box.height, dst_depth},
                             },
                          });
       }
@@ -636,22 +650,16 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                          .regionCount = 1,
                          .pRegions = &(VkImageBlit2){
                             .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
-                            .srcSubresource = (VkImageSubresourceLayers) {
-                               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                               .layerCount = desc->src->layer_count,
-                            },
-                            .srcOffsets = {{desc->src_box.x, desc->src_box.y, desc->src_box.z},
+                            .srcSubresource = src_subresource,
+                            .srcOffsets = {{desc->src_box.x, desc->src_box.y, src_z},
                                            {desc->src_box.x + desc->src_box.width,
                                             desc->src_box.y + desc->src_box.height,
-                                            desc->src_box.z + desc->src_box.depth}},
-                            .dstSubresource = (VkImageSubresourceLayers) {
-                               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                               .layerCount = desc->dst->layer_count,
-                            },
-                            .dstOffsets = {{desc->dst_box.x, desc->dst_box.y, desc->dst_box.z},
+                                            src_z + src_depth}},
+                            .dstSubresource = dst_subresource,
+                            .dstOffsets = {{desc->dst_box.x, desc->dst_box.y, dst_z},
                                            {desc->dst_box.x + desc->dst_box.width,
                                             desc->dst_box.y + desc->dst_box.height,
-                                            desc->dst_box.z + desc->dst_box.depth}},
+                                            dst_z + dst_depth}},
                          },
                          .filter = desc->linear_filter ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
                      });
