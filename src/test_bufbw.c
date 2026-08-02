@@ -4,9 +4,11 @@
 
 #include <assert.h>
 #include <stdio.h>
-#include <strings.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
+#include "extras/hash_table.h"
 
 #define MIN_SIZE                 512
 #define MAX_SIZE                 (256 * 1024 * 1024)
@@ -116,13 +118,29 @@ enum test_stage {
 };
 
 typedef struct {
-   unsigned num_tests;
-   api_query_pool *timestamps;
-   api_queue_type queue;
-   api_buffer *devmem0;
-   api_buffer *devmem1;
-   api_buffer *hostmem;
-} test_state;
+   uint64_t dst_address;
+   uint64_t src_address;
+   unsigned size;
+} indirect_params;
+
+static uint32_t
+indirect_params_hash(const void *key)
+{
+   return fnv1a_hash(key, sizeof(indirect_params));
+}
+
+static bool
+indirect_params_equal(const void *a, const void *b)
+{
+   return !memcmp(a, b, sizeof(indirect_params));
+}
+
+static void
+param_info_entry_delete(struct hash_entry *entry)
+{
+   free((void*)entry->key);
+   free(entry->data);
+}
 
 static unsigned
 next_size(unsigned size)
@@ -133,10 +151,21 @@ next_size(unsigned size)
    return ALIGN_POT((unsigned)(size * SIZE_STEP_MUL), 1 << order);
 }
 
+typedef struct {
+   unsigned num_tests;
+   api_query_pool *timestamps;
+   api_queue_type queue;
+   api_buffer *devmem0;
+   api_buffer *devmem1;
+   api_buffer *hostmem;
+   api_buffer *indirect;
+   struct hash_table indirect_params_ht;
+} test_state;
+
 static void
 run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *state)
 {
-   const unsigned name_indent = 60;
+   const unsigned name_indent = 70;
 
    if (stage == REPORT) {
       printf("%-*s", name_indent, "Allocation size");
@@ -151,11 +180,38 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
       printf("\n");
    }
 
+   const bool has_indirect = ctx->queue_has_copy_memory_indirect[state->queue];
+   const unsigned num_test_types = 2 + has_indirect;
    unsigned num_visited_tests = 0;
-   const unsigned num_test_types = 2;
 
    /* Run tests. */
    for (unsigned test_type = 0; test_type < num_test_types; test_type++) {
+      /* Upload the indirect buffer and set indirect buffer addresses in the hash table before
+       * the first indirect test.
+       */
+      if (stage == RUN && test_type == TEST_COPY_INDIRECT) {
+         unsigned num_entries = _mesa_hash_table_num_entries(&state->indirect_params_ht);
+         unsigned buf_size = num_entries * 24;
+         uint64_t *indirect_data = malloc(buf_size);
+
+         state->indirect = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+
+         unsigned i = 0;
+         hash_table_foreach(&state->indirect_params_ht, entry) {
+            const indirect_params *params = entry->key;
+
+            indirect_data[i * 3 + 0] = params->src_address;
+            indirect_data[i * 3 + 1] = params->dst_address;
+            indirect_data[i * 3 + 2] = params->size;
+
+            *(uint64_t*)entry->data = state->indirect->device_address + i * 24;
+            i++;
+         }
+
+         ctx->upload_buffer_data(ctx, state->indirect, 0, buf_size, indirect_data);
+         free(indirect_data);
+      }
+
       bool is_copy = test_type != TEST_FILL;
 
       for (unsigned src_heap_index = 0; src_heap_index < (is_copy ? 2 : 1); src_heap_index++) {
@@ -193,7 +249,10 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
                      char name[1024];
 
                      snprintf(name, sizeof(name), "%s.%s.%s%s%s.%s.%s",
-                              test_name, is_copy ? "copy" : "fill",
+                              test_name,
+                              test_type == TEST_FILL ? "fill" :
+                              test_type == TEST_COPY ? "copy" :
+                              test_type == TEST_COPY_INDIRECT ? "copy_indirect" : "(error)",
                               is_copy ? heap_to_string(src->heap) : "",
                               is_copy ? "_to_" : "",
                               heap_to_string(dst->heap),
@@ -239,7 +298,43 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
                            if (is_copy) {
                               uint64_t src_offset = cycled_offset_base + test_src_offset;
 
-                              ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
+                              indirect_params params = {
+                                 .dst_address = dst->device_address + dst_offset,
+                                 .src_address = src->device_address + src_offset,
+                                 .size = size,
+                              };
+
+                              if (test_type == TEST_COPY_INDIRECT) {
+                                 /* Look up the indirect buffer address from the hash table. */
+                                 struct hash_entry *entry =
+                                    _mesa_hash_table_search(&state->indirect_params_ht, &params);
+                                 assert(entry);
+
+                                 uint64_t indirect_address = *(uint64_t*)entry->data;
+                                 assert(indirect_address);
+
+                                 ctx->copy_memory_indirect(ctx, 1, indirect_address, 24,
+                                                           dst->heap == api_heap_device ?
+                                                              VK_ADDRESS_COPY_DEVICE_LOCAL_BIT_KHR : 0,
+                                                           src->heap == api_heap_device ?
+                                                              VK_ADDRESS_COPY_DEVICE_LOCAL_BIT_KHR : 0);
+                              } else {
+                                 ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
+
+                                 if (has_indirect) {
+                                    /* Populate the hash table with entries.
+                                     * The indirect buffer will be allocated and the hash table will
+                                     * be populated with correct addresses before the first indirect test.
+                                     */
+                                    indirect_params *key = malloc(sizeof(params));
+                                    uint64_t *address = malloc(sizeof(uint64_t));
+
+                                    *key = params;
+                                    *address = 0;
+
+                                    _mesa_hash_table_insert(&state->indirect_params_ht, key, address);
+                                 }
+                              }
 
                               if (traversal != MISS_NO_BARRIER) {
                                  ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
@@ -314,6 +409,8 @@ test_bufbw(api_context *ctx, const char *test_name)
    state.devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
    state.hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
 
+   _mesa_hash_table_init(&state.indirect_params_ht, indirect_params_hash, indirect_params_equal);
+
    run(ctx, test_name, COUNT_TESTS, &state);
 
    /* Create timestamp queries. */
@@ -327,4 +424,6 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    puts("Units: GB/s");
    run(ctx, test_name, REPORT, &state);
+
+   _mesa_hash_table_fini(&state.indirect_params_ht, param_info_entry_delete);
 }

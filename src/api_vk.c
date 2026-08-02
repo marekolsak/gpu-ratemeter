@@ -352,7 +352,7 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
 }
 
 static void
-vk_copy_memory_indirect(struct api_context *ctx, unsigned num_copies, api_buffer *indirect,
+vk_copy_memory_indirect(struct api_context *ctx, unsigned num_copies, uint64_t indirect_address,
                         unsigned stride, VkAddressCopyFlagsKHR dst_flags,
                         VkAddressCopyFlagsKHR src_flags)
 {
@@ -363,7 +363,7 @@ vk_copy_memory_indirect(struct api_context *ctx, unsigned num_copies, api_buffer
                                       .dstCopyFlags = dst_flags,
                                       .copyCount = num_copies,
                                       .copyAddressRange = {
-                                         .address = indirect->device_address,
+                                         .address = indirect_address,
                                          .size = num_copies * stride,
                                          .stride = stride,
                                       },

@@ -459,9 +459,9 @@ typedef struct api_context {
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
-   void (*copy_memory_indirect)(struct api_context *ctx, unsigned num_copies, api_buffer *indirect,
-                                unsigned stride, VkAddressCopyFlagsKHR dst_flags,
-                                VkAddressCopyFlagsKHR src_flags);
+   void (*copy_memory_indirect)(struct api_context *ctx, unsigned num_copies,
+                                uint64_t indirect_address, unsigned stride,
+                                VkAddressCopyFlagsKHR dst_flags, VkAddressCopyFlagsKHR src_flags);
    void (*buffer_bind_sparse)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, bool bind, api_queue_type queue,
                               api_fence *wait_fence, api_fence **signal_fence);

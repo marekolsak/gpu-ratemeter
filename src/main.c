@@ -18,9 +18,6 @@
  * - DX12
  * - DX11
  *
- * bufbw:
- * - VK_KHR_copy_memory_indirect
- *
  * imgbw:
  * - write README
  * - clears:

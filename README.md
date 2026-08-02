@@ -268,7 +268,7 @@ Decoding subtest names:
 Each column is the size passed to the fill or copy buffer call.
 
 Decoding subtest names:
-- `fill`, `copy`: the operation is "fill buffer" or "copy buffer"
+- `fill`, `copy`, `copy_indirect`: the operation is "fill buffer", "copy buffer", or "copy memory indirect"
 - `devmem`, `hostmem`: indicating that the buffer is allocated either in device local memory or host memory
 - `hit`: whether the cache hit bandwidth is tested by repeating the same operation on the same buffer range
 - `miss`: whether the cache miss bandwidth is tested by increasing the buffer offset monotonically and wrapping at 512 MB (cache misses are guaranteed only if the last level cache is smaller than that)
