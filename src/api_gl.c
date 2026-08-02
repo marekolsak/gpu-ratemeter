@@ -68,7 +68,7 @@ gl_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
 }
 
 static void
-gl_destroy_buffer(struct api_context *ctx, api_buffer *buf)
+gl_destroy_buffer(api_context *ctx, api_buffer *buf)
 {
    glDeleteBuffers(1, &buf->id);
 

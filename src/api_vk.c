@@ -284,8 +284,8 @@ vk_destroy_buffer(api_context *ctx, api_buffer *buf)
 }
 
 static void
-vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers,
-                            api_buffer **buffers, uint64_t *offsets, uint64_t *sizes)
+vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                            uint64_t *offset_size_pairs, bool after_shader_writes)
 {
    VkBufferMemoryBarrier2 *barriers = alloca(sizeof(barriers[0]) * num_buffers);
 
@@ -296,10 +296,6 @@ vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers,
       if (ctx->current_queue == api_queue_gfx || ctx->current_queue == api_queue_compute) {
          access |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
                    VK_ACCESS_2_UNIFORM_READ_BIT |
-                   VK_ACCESS_2_SHADER_READ_BIT |
-                   VK_ACCESS_2_SHADER_WRITE_BIT |
-                   VK_ACCESS_2_MEMORY_READ_BIT |
-                   VK_ACCESS_2_MEMORY_WRITE_BIT |
                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
                    VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
                    VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
@@ -318,8 +314,8 @@ vk_pipeline_barrier_buffers(api_context *ctx, unsigned num_buffers,
                     .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                     .dstAccessMask = access,
                     .buffer = buffers[i]->buffer,
-                    .offset = offsets[i],
-                    .size = sizes[i],
+                    .offset = offset_size_pairs[i * 2],
+                    .size = offset_size_pairs[i * 2 + 1],
       };
    }
 
@@ -334,7 +330,7 @@ static void
 vk_clear_buffer(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, uint32_t value)
 {
    vkCmdFillBuffer(ctx->current_cmd_buffer, buf->buffer, offset, size, value);
-   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
 }
 
 static void
@@ -355,7 +351,7 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                        },
                     });
    vk_pipeline_barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
-                               (uint64_t[2]){src_offset, dst_offset}, (uint64_t[2]){size, size});
+                               (uint64_t[]){src_offset, size, dst_offset, size}, false);
 }
 
 static api_fence *
@@ -1516,12 +1512,6 @@ vk_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
 }
 
 static void
-vk_pipeline_barrier_buffer(struct api_context *ctx, api_buffer *buf)
-{
-   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[1]){0}, (uint64_t[1]){buf->size});
-}
-
-static void
 vk_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(ctx->current_cmd_buffer == NULL);
@@ -1894,7 +1884,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
    vkUnmapMemory(ctx->device, *staging->mem);
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
-   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
                     &(VkCopyBufferInfo2) {
                        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
@@ -1908,18 +1898,17 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
                           .size = size,
                        },
                     });
-   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
 static void
-vk_get_buffer_data(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
-                   void *data)
+vk_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, void *data)
 {
    api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_cached, 0);
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
-   vk_pipeline_barrier_buffers(ctx, 1, &buf, &offset, &size);
+   vk_pipeline_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vkCmdCopyBuffer2(ctx->current_cmd_buffer,
                     &(VkCopyBufferInfo2) {
                        .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
@@ -2727,7 +2716,7 @@ vk_create_context(const program_options *options)
    ctx->destroy_compute_pipeline = vk_destroy_compute_pipeline;
    ctx->bind_compute_pipeline = vk_bind_compute_pipeline;
    ctx->dispatch = vk_dispatch;
-   ctx->pipeline_barrier_buffer = vk_pipeline_barrier_buffer;
+   ctx->pipeline_barrier_buffers = vk_pipeline_barrier_buffers;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;

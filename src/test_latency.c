@@ -497,7 +497,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                      assert(state->pipelines[shared_memory][uniform][coherent]);
                      ctx->bind_compute_pipeline(ctx, state->pipelines[shared_memory][uniform][coherent]);
                      ctx->dispatch(ctx, 1, 1, 1);
-                     ctx->pipeline_barrier_buffer(ctx, state->result_buf);
+                     ctx->pipeline_barrier_buffers(ctx, 1, &state->result_buf,
+                                                   (uint64_t[]){0, state->result_buf->size}, true);
                      ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                      break;
 

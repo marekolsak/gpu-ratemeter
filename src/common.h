@@ -3,6 +3,14 @@
  * SPDX-License-Identifier: MIT
  */
 
+/* This is a central and only header file of the project defining the API abstraction/interface
+ * that all tests use. The interface is modeled around Vulkan concepts and uses Vulkan enums where
+ * convenient.
+ *
+ * GL_PRIVATE, VK_PRIVATE, and similar #ifdef sections contain private members of the respective
+ * API backends.
+ */
+
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -25,7 +33,7 @@ extern "C" {
 #define MIN2(a, b)                  ((a) < (b) ? (a) : (b))
 #define MAX2(a, b)                  ((a) > (b) ? (a) : (b))
 
-/* Return a base 2 logarithm of a power of two as a constant expression if n is a constant
+/* Return a base 2 logarithm of a 32-bit power of two as a constant expression if n is a constant
  * expression.
  */
 #define LOG2_POT(n) ( \
@@ -429,7 +437,6 @@ typedef struct api_context {
    VkSampleCountFlags supported_color_sample_counts;
    VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
 
-
    /* Dynamic info. */
    uint32_t device_mem_usage_mb;
 
@@ -504,7 +511,8 @@ typedef struct api_context {
    void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
-   void (*pipeline_barrier_buffer)(struct api_context *ctx, api_buffer *buf);
+   void (*pipeline_barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                                    uint64_t *offset_size_pairs, bool after_shader_writes);
 
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx, unsigned wait_queue_mask,
