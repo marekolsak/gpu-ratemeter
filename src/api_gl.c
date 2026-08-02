@@ -877,10 +877,10 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
    }
 }
 
-static api_pipeline *
-gl_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
+static api_gfx_pipeline *
+gl_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
 {
-   api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
+   api_gfx_pipeline *pipeline = calloc(1, sizeof(api_gfx_pipeline));
    pipeline->desc = *desc;
 
    pipeline->prog = glCreateProgram();
@@ -920,7 +920,7 @@ gl_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 }
 
 static void
-gl_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
+gl_destroy_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    assert(ctx->current_pipeline != pipeline);
    glDeleteProgram(pipeline->prog);
@@ -968,7 +968,7 @@ gl_set_current_pipeline_color_depth_masks(api_context *ctx)
 }
 
 static void
-gl_bind_unbind_pipeline(api_context *ctx, api_pipeline *pipeline)
+gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    if (ctx->current_pipeline == pipeline)
       return;
@@ -1081,7 +1081,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_pipeline *pipeline)
 
 
 static void
-gl_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+gl_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    assert(pipeline);
    gl_bind_unbind_pipeline(ctx, pipeline);
@@ -1494,9 +1494,9 @@ gl_create_context(const program_options *options)
    ctx->set_storage_image_descriptors = gl_set_storage_image_descriptors;
    ctx->bind_descriptor_set = gl_bind_descriptor_set;
 
-   ctx->create_pipeline = gl_create_pipeline;
-   ctx->destroy_pipeline = gl_destroy_pipeline;
-   ctx->bind_pipeline = gl_bind_pipeline;
+   ctx->create_gfx_pipeline = gl_create_gfx_pipeline;
+   ctx->destroy_gfx_pipeline = gl_destroy_gfx_pipeline;
+   ctx->bind_gfx_pipeline = gl_bind_gfx_pipeline;
 
    ctx->barrier_buffers = gl_barrier_buffers;
 

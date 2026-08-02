@@ -328,7 +328,7 @@ typedef struct {
 
    api_framebuffer *fb;
    api_descriptor_set_layout *ms_desc_set_layout[MAX_VARYING_SHADERS];
-   api_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
+   api_gfx_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_query_pool *timestamps;
 } test_state;
 
@@ -1307,7 +1307,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    assert(state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->bind_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
+   ctx->bind_gfx_pipeline(ctx, state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings]);
 
    unsigned count = 0;
 
@@ -1398,7 +1398,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
    default:;
    }
 
-   api_pipeline_desc desc = {
+   api_gfx_pipeline_desc desc = {
       .topology = test->geom_style == GEOM_TRI_LIST_REUSE2_INDEXED ||
                   test->geom_style == GEOM_TRI_LIST_REUSE1_INDEXED ||
                   test->geom_style == GEOM_TRI_LIST_REUSE0 ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST :
@@ -1459,7 +1459,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
    }
 
    state->pipelines[test->geom_style][test->cull_method][test->special2][num_varyings] =
-      ctx->create_pipeline(ctx, &desc);
+      ctx->create_gfx_pipeline(ctx, &desc);
 }
 
 static void

@@ -57,10 +57,10 @@ d3d11_create_shader(api_context *ctx, const char *source, api_shader_type type)
    return shader;
 }
 
-static api_pipeline *
-d3d11_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
+static api_gfx_pipeline *
+d3d11_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
 {
-   api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
+   api_gfx_pipeline *pipeline = calloc(1, sizeof(api_gfx_pipeline));
    pipeline->desc = *desc;
 
 
@@ -68,7 +68,7 @@ d3d11_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 }
 
 static void
-d3d11_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+d3d11_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
 }
 
@@ -162,9 +162,9 @@ d3d11_create_context(const program_options *options)
    ctx->create_shader = d3d11_create_shader;
    ctx->destroy_shader = NULL;
 
-   ctx->create_pipeline = d3d11_create_pipeline;
-   ctx->destroy_pipeline = NULL;
-   ctx->bind_pipeline = d3d11_bind_pipeline;
+   ctx->create_gfx_pipeline = d3d11_create_gfx_pipeline;
+   ctx->destroy_gfx_pipeline = NULL;
+   ctx->bind_gfx_pipeline = d3d11_bind_gfx_pipeline;
 
    ctx->begin_cmdbuf = d3d11_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = d3d11_end_cmdbuf_and_submit;

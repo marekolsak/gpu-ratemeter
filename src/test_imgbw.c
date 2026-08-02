@@ -21,7 +21,7 @@ typedef struct {
    api_shader *fs_gradient[5]; /* output format variants */
    api_shader *fs_random[7]; /* output format variants */
 
-   api_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
+   api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
    unsigned num_delete_items;
 } misc_state;
@@ -233,22 +233,22 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
    bool layered = image->depth > 1;
    api_framebuffer *fb = ctx->create_framebuffer(ctx, image, NULL, image->width, image->height,
                                                  image->samples, 0x1);
-   api_pipeline *pipeline =
-      ctx->create_pipeline(ctx,
-                           &(api_pipeline_desc){
-                              .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
-                              .vs = get_passthrough_vs(ctx, state, layered),
-                              .fs = fs,
-                              .vrs_fragment_size = {1, 1},
-                              .samplemask = samplemask,
-                              .colormask = 0xf,
-                              .fb = fb,
-                           });
+   api_gfx_pipeline *pipeline =
+      ctx->create_gfx_pipeline(ctx,
+                               &(api_gfx_pipeline_desc){
+                                  .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                  .vs = get_passthrough_vs(ctx, state, layered),
+                                  .fs = fs,
+                                  .vrs_fragment_size = {1, 1},
+                                  .samplemask = samplemask,
+                                  .colormask = 0xf,
+                                  .fb = fb,
+                               });
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb, .clear = true});
 
-   ctx->bind_pipeline(ctx, pipeline);
+   ctx->bind_gfx_pipeline(ctx, pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
 
    ctx->end_render_pass(ctx);
@@ -837,7 +837,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      }
 
                      for (unsigned i = 0; i < misc_state.num_delete_items; i++) {
-                        ctx->destroy_pipeline(ctx, misc_state.delete_pipelines[i]);
+                        ctx->destroy_gfx_pipeline(ctx, misc_state.delete_pipelines[i]);
                         ctx->destroy_framebuffer(ctx, misc_state.delete_fbs[i]);
                      }
                      misc_state.num_delete_items = 0;

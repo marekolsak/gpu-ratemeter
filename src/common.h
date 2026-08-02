@@ -247,10 +247,10 @@ typedef struct {
    bool blend_src_color;
    bool blend_src_alpha;
    api_framebuffer *fb;
-} api_pipeline_desc;
+} api_gfx_pipeline_desc;
 
 typedef struct {
-   api_pipeline_desc desc;
+   api_gfx_pipeline_desc desc;
 
 #ifdef GL_PRIVATE
    GLenum prim_mode;
@@ -266,7 +266,7 @@ typedef struct {
    VkPipelineColorBlendAttachmentState blend_state;
    VkPipelineFragmentShadingRateStateCreateInfoKHR vrs;
 #endif
-} api_pipeline;
+} api_gfx_pipeline;
 
 typedef struct {
 #ifdef GL_PRIVATE
@@ -446,6 +446,7 @@ typedef struct api_context {
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);
 
+   /* Buffer functions. */
    api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap,
                                 unsigned sparse_block_size);
    void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
@@ -461,6 +462,7 @@ typedef struct api_context {
                               uint64_t size, bool bind, api_queue_type queue,
                               api_fence *wait_fence, api_fence **signal_fence);
 
+   /* Image functions. */
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
                               VkImageTiling tiling, api_heap_type heap);
@@ -473,11 +475,13 @@ typedef struct api_context {
    void (*image_write_png)(struct api_context *ctx, api_image *image, unsigned layer,
                            const char *filename);
 
+   /* Framebuffer functions. */
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                           unsigned width, unsigned height, unsigned samples,
                                           unsigned view_mask);
    void (*destroy_framebuffer)(struct api_context *ctx, api_framebuffer *fb);
 
+   /* Shader and descriptor set layout functions. */
    api_shader *(*create_shader)(struct api_context *ctx, const char *source, api_shader_type type);
    void (*destroy_shader)(struct api_context *ctx, api_shader *shader);
 
@@ -485,6 +489,7 @@ typedef struct api_context {
                                                               const api_descriptor_set_layout_desc *desc);
    void (*destroy_descriptor_set_layout)(struct api_context *ctx, api_descriptor_set_layout *layout);
 
+   /* Descriptor set functions. */
    api_descriptor_set *(*create_descriptor_set)(struct api_context *ctx, api_descriptor_set_layout *layout);
    void (*set_uniform_buffer_descriptor)(struct api_context *ctx, api_descriptor_set *set,
                                          unsigned binding_index, api_buffer *buffer, uint64_t offset,
@@ -505,23 +510,28 @@ typedef struct api_context {
    void (*destroy_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
    void (*bind_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
 
-   api_pipeline *(*create_pipeline)(struct api_context *ctx, const api_pipeline_desc *desc);
-   void (*destroy_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
-   void (*bind_pipeline)(struct api_context *ctx, api_pipeline *pipeline);
+   /* Pipeline functions. */
+   api_gfx_pipeline *(*create_gfx_pipeline)(struct api_context *ctx, const api_gfx_pipeline_desc *desc);
+   void (*destroy_gfx_pipeline)(struct api_context *ctx, api_gfx_pipeline *pipeline);
+   void (*bind_gfx_pipeline)(struct api_context *ctx, api_gfx_pipeline *pipeline);
 
    api_compute_pipeline *(*create_compute_pipeline)(struct api_context *ctx, api_shader *shader,
                                                     api_descriptor_set_layout *layout);
    void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
+
+   /* Compute commands and barriers. */
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
    void (*barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
                            uint64_t *offset_size_pairs, bool after_shader_writes);
 
+   /* Command submission. */
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);
    void (*end_cmdbuf_and_submit)(struct api_context *ctx, unsigned wait_queue_mask,
                                  api_fence *wait_fence, api_fence **signal_fence);
    void (*wait_for_idle)(struct api_context *ctx);
 
+   /* Graphics commands. */
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
    void (*end_render_pass)(struct api_context *ctx);
 
@@ -531,6 +541,7 @@ typedef struct api_context {
 
    void (*driver_workaround)(struct api_context *ctx, driver_wa wa);
 
+   /* Query functions. */
    api_query_pool *(*create_query_pool)(struct api_context *ctx, unsigned num_queries,
                                         api_query_type type);
    void (*begin_next_query)(struct api_context *ctx, api_query_pool *pool);
@@ -540,13 +551,13 @@ typedef struct api_context {
 
    /* Private members. */
 #ifdef GL_PRIVATE
-   api_pipeline *current_pipeline;
+   api_gfx_pipeline *current_pipeline;
    api_framebuffer *fb;
    api_framebuffer *prev_fb;
 #endif
 
 #ifdef VK_PRIVATE
-   api_pipeline *current_pipeline;
+   api_gfx_pipeline *current_pipeline;
 
    /* Device. */
    unsigned num_extensions;

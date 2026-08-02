@@ -185,7 +185,7 @@ test_sanity(api_context *ctx, const char *test_name)
    api_shader *vs = ctx->create_shader(ctx, vs_source, api_shader_vs);
    api_shader *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
 
-   api_pipeline_desc pipeline_desc = {
+   api_gfx_pipeline_desc pipeline_desc = {
       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
       .cull_mode = VK_CULL_MODE_BACK_BIT,
 
@@ -209,7 +209,7 @@ test_sanity(api_context *ctx, const char *test_name)
       .colormask = 0xf,
       .fb = fb,
    };
-   api_pipeline *pipeline = ctx->create_pipeline(ctx, &pipeline_desc);
+   api_gfx_pipeline *pipeline = ctx->create_gfx_pipeline(ctx, &pipeline_desc);
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
@@ -217,7 +217,7 @@ test_sanity(api_context *ctx, const char *test_name)
                              .clear = true,
                              .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
                           });
-   ctx->bind_pipeline(ctx, pipeline);
+   ctx->bind_gfx_pipeline(ctx, pipeline);
    ctx->bind_vertex_buffers(ctx, vb, vb_offsets);
 
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = 1, .first_vertex = 0});

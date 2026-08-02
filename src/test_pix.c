@@ -826,8 +826,8 @@ typedef struct {
    api_framebuffer *fb_color_only; /* there is no color buffer if the format is "imgStore" */
    api_framebuffer *fb_color_only_raster;
    api_framebuffer *fb_color_and_zbuf;
-   api_pipeline *pipelines[ARRAY_SIZE(pipelines)];
-   api_pipeline *pipelines_quad_count[ARRAY_SIZE(pipelines)];
+   api_gfx_pipeline *pipelines[ARRAY_SIZE(pipelines)];
+   api_gfx_pipeline *pipelines_quad_count[ARRAY_SIZE(pipelines)];
 } fb_pipelines;
 
 typedef enum {
@@ -890,7 +890,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
              test_flavor test_flavor, api_buffer *total_fs_invoc, api_buffer *raster_indexbuf)
 {
    fb_pipelines fbs[ARRAY_SIZE(formats)] = {0};
-   api_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
+   api_gfx_pipeline_desc pipeline_descs[ARRAY_SIZE(pipelines)] = {0};
    bool skip_pipeline[ARRAY_SIZE(pipelines)] = {0};
    unsigned num_pipelines = 0;
    const bool multiview = test_flavor == TEST_MULTIVIEW;
@@ -955,7 +955,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
       assert((intptr_t)compiled_shaders[p].vs != 2);
 
-      pipeline_descs[p] = (api_pipeline_desc){
+      pipeline_descs[p] = (api_gfx_pipeline_desc){
          .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
          .cull_mode = cull_back ? VK_CULL_MODE_BACK_BIT : 0,
          .vs = compiled_shaders[p].vs,
@@ -1092,7 +1092,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             continue;
 
          VkFormat format = formats[f].format;
-         api_pipeline_desc pipeline_desc = pipeline_descs[p];
+         api_gfx_pipeline_desc pipeline_desc = pipeline_descs[p];
 
          char pipeline_name[256];
          get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor,
@@ -1152,12 +1152,12 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          assert(pipeline_desc.fs);
          assert(pipeline_desc.fb);
 
-         fbs[f].pipelines[p] = ctx->create_pipeline(ctx, &pipeline_desc);
+         fbs[f].pipelines[p] = ctx->create_gfx_pipeline(ctx, &pipeline_desc);
 
          if (raster_gather_total_fs_invoc && raster && format && !format_is_integer(format)) {
             pipeline_desc.desc_set_layout = desc_set->layout;
             pipeline_desc.fs = compiled_shaders[p].fs_count_total_invoc;
-            fbs[f].pipelines_quad_count[p] = ctx->create_pipeline(ctx, &pipeline_desc);
+            fbs[f].pipelines_quad_count[p] = ctx->create_gfx_pipeline(ctx, &pipeline_desc);
          }
       }
    }
@@ -1228,7 +1228,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             ctx->begin_cmdbuf(ctx, api_queue_gfx);
             ctx->bind_descriptor_set(ctx, desc_set);
             ctx->bind_index_buffer(ctx, raster_indexbuf);
-            ctx->bind_pipeline(ctx, fbs[f].pipelines_quad_count[p]);
+            ctx->bind_gfx_pipeline(ctx, fbs[f].pipelines_quad_count[p]);
             ctx->begin_next_query(ctx, pipe_stats);
             ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                       .fb = fbs[f].pipelines[p]->desc.fb,
@@ -1251,7 +1251,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             ctx->bind_descriptor_set(ctx, desc_set);
          if (raster)
             ctx->bind_index_buffer(ctx, raster_indexbuf);
-         ctx->bind_pipeline(ctx, fbs[f].pipelines[p]);
+         ctx->bind_gfx_pipeline(ctx, fbs[f].pipelines[p]);
 
          /* Render pass for the warm-up. */
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
@@ -1423,9 +1423,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       /* Free pipelines. */
       for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
          if (fbs[f].pipelines[p])
-            ctx->destroy_pipeline(ctx, fbs[f].pipelines[p]);
+            ctx->destroy_gfx_pipeline(ctx, fbs[f].pipelines[p]);
          if (fbs[f].pipelines_quad_count[p])
-            ctx->destroy_pipeline(ctx, fbs[f].pipelines_quad_count[p]);
+            ctx->destroy_gfx_pipeline(ctx, fbs[f].pipelines_quad_count[p]);
       }
    }
 }

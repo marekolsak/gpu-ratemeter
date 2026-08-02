@@ -1102,10 +1102,10 @@ vk_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
                            set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
 }
 
-static api_pipeline *
-vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
+static api_gfx_pipeline *
+vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
 {
-   api_pipeline *pipeline = calloc(1, sizeof(api_pipeline));
+   api_gfx_pipeline *pipeline = calloc(1, sizeof(api_gfx_pipeline));
    pipeline->desc = *desc;
    pipeline->num_vb_desc = desc->num_vb_desc;
 
@@ -1415,7 +1415,7 @@ vk_create_pipeline(api_context *ctx, const api_pipeline_desc *desc)
 }
 
 static void
-vk_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
+vk_destroy_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    if (ctx->options.api_flags & API_VK_GPL) {
       if (pipeline->lib_vi)
@@ -1430,7 +1430,7 @@ vk_destroy_pipeline(api_context *ctx, api_pipeline *pipeline)
 }
 
 static void
-vk_bind_pipeline(api_context *ctx, api_pipeline *pipeline)
+vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    assert(pipeline);
    ctx->current_pipeline = pipeline;
@@ -2673,9 +2673,9 @@ vk_create_context(const program_options *options)
    ctx->set_storage_image_descriptors = vk_set_storage_image_descriptors;
    ctx->bind_descriptor_set = vk_bind_descriptor_set;
 
-   ctx->create_pipeline = vk_create_pipeline;
-   ctx->destroy_pipeline = vk_destroy_pipeline;
-   ctx->bind_pipeline = vk_bind_pipeline;
+   ctx->create_gfx_pipeline = vk_create_gfx_pipeline;
+   ctx->destroy_gfx_pipeline = vk_destroy_gfx_pipeline;
+   ctx->bind_gfx_pipeline = vk_bind_gfx_pipeline;
 
    ctx->create_compute_pipeline = vk_create_compute_pipeline;
    ctx->destroy_compute_pipeline = vk_destroy_compute_pipeline;
