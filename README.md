@@ -4,11 +4,11 @@ The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-rat
 
 # Introduction and Project Vision
 
-This is a command-line microbenchmark that measures the performance of various features of GPUs through APIs, and how well different GPUs, APIs, and API translation and forwarding layers do well against each other.
+This is an engineering-focused non-consumer command-line GPU microbenchmark that measures the performance of various GPU features and specific GPU workloads through APIs and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance. The main goal is to help engineers easily identify inefficiencies in GPUs, driver stacks, and operating systems, and make improvements.
 
-It reports GPU performance in terms of pixels per clock, samples per clock, primitives per clock, draws per clock, rays per clock, memory throughput, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to gather how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
+It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, clocks per draw (TBD), rays per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to determine how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
-This app enables developers to evaluate observed GPU performance across all those pieces of SW on the same hardware, and to precisely identify the root causes of inefficiencies. Examples of possible comparisons:
+Broad support of APIs and API pipeline construction codepaths enables the following comparisons:
 
 - Open source vs closed source driver
 - Windows vs Linux vs Android
@@ -16,16 +16,19 @@ This app enables developers to evaluate observed GPU performance across all thos
 - Vulkan vs DX12 vs VKD3D
 - Vulkan vs DX11 vs DXVK
 - OpenGL in WSL2 vs Vulkan in WSL2 vs DX12
-- Vulkan with graphics pipeline objects vs graphics pipeline libraries and static state vs dynamic state.
+- Vulkan graphics pipeline objects vs graphics pipeline libraries vs shader objects
+- Vulkan static state vs dynamic state
 - VirtIO Native Context vs VirtIO VirGL/Venus vs bare metal
 
-In an ideal world, all APIs and API translation and forwarding layers would provide equivalent performance and achieve the GPU’s expected performance envelope. Because this is rarely true, thorough microbenchmarking is essential.
+In an ideal world, all APIs and API translation and forwarding layers would have equivalent performance on the same HW. Since this is rarely true, a tool like this is essential.
 
 Examples:
 - If one driver achieves 2x pixels/clock at 32 bpp than another, the other driver might not program the HW optimally for 32 bpp.
 - If one driver has 4x higher early depth-test rejection rate than another, HiZ may be disabled for the other driver.
-- If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the driver's blit path may be suboptimal.
-- If pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the driver’s dynamic-state handling may be suboptimal.
+- If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the blit implementation in that driver may be suboptimal.
+- If Vulkan pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the dynamic state handling in that driver may be suboptimal.
+
+While this project is developed to aid Mesa developers, it can be equally useful to GPU vendors for HW and driver validation (both pre-silicon and post-silicon), operating system vendors, and for CI performance regression testing.
 
 
 # How to Run
