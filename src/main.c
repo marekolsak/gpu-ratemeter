@@ -105,11 +105,13 @@ static const struct {
    {"vkld", vk_create_context, API_VK_GPL | API_VK_DYNAMIC_STATE},
 };
 
-static const struct {
+typedef struct {
    const char *name;
    void (*execute)(api_context *ctx, const char *test_name);
    bool report_bandwidth;
-} tests[] = {
+} test_desc;
+
+static const test_desc tests[] = {
    {"bufbw", test_bufbw, true},
    {"imgbw", test_imgbw, true},
    {"latency", test_latency},
@@ -214,24 +216,44 @@ main(int argc, char **argv)
          error("Unknown option: %s", argv[i]);
    }
 
-   api_context *ctx = NULL;
    const char *name = NULL;
 
    if (argc >= 2)
       name = argv[argc - 1];
    else
-      error("Test name missing in parameters");
+      error("The test name is missing in parameters.");
 
-   printf("Test name: %s\n", name);
+   char api[16], test[16], test_name[32];
+   const test_desc *test_desc = NULL;
 
-   char api[16];
-   name = get_substring_before_dot(name, api, sizeof(api));
+   const char *remainder = get_substring_before_dot(name, api, sizeof(api));
+   get_substring_before_dot(remainder, test, sizeof(test));
+   snprintf(test_name, sizeof(test_name), "%s.%s", api, test);
 
+   for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {
+      if (!strcmp(test, tests[i].name)) {
+         test_desc = &tests[i];
+         break;
+      }
+   }
+
+   if (!test_desc)
+      error("Invalid test name or test name missing in parameters: %s", test);
+
+   /* Apply options from the test. */
+   options.report_bandwidth = test_desc->report_bandwidth;
+
+   if (test_desc->execute == test_sparsebind || options.sparse_bound || options.sparse_unbound)
+      options.api_flags |= API_ENABLE_SPARSE_BUFFERS;
+
+   printf("Test name: %s\n", test_name);
    puts("Initializing API...");
+
+   api_context *ctx = NULL;
 
    for (unsigned i = 0; i < ARRAY_SIZE(apis); i++) {
       if (!strcmp(api, apis[i].name)) {
-         options.api_flags = apis[i].api_flags;
+         options.api_flags |= apis[i].api_flags;
          ctx = apis[i].create_context(&options);
          break;
       }
@@ -240,25 +262,8 @@ main(int argc, char **argv)
    if (!ctx)
       error("Invalid API or API selection missing in parameters: %s", api);
 
-   char test[16], test_name[32];
-   get_substring_before_dot(name, test, sizeof(test));
+   puts("Initializing test...");
 
-   snprintf(test_name, sizeof(test_name), "%s.%s", api, test);
-
-   printf("Starting %s...\n", test_name);
-
-   bool executed = false;
-   for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {
-      if (!strcmp(test, tests[i].name)) {
-         ctx->options.report_bandwidth = tests[i].report_bandwidth;
-         tests[i].execute(ctx, test_name);
-         executed = true;
-         break;
-      }
-   }
-
-   if (!executed)
-      error("Invalid test name or test name missing in parameters: %s", test);
-
+   test_desc->execute(ctx, test_name);
    return 0;
 }

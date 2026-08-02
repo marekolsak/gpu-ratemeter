@@ -2262,8 +2262,13 @@ vk_create_context(const program_options *options)
    //require(Vulkan10.features.shaderInt16);
    //require(Vulkan10.features.shaderResourceResidency);
    //require(Vulkan10.features.shaderResourceMinLod);
-   optional(Vulkan10.features.sparseBinding);
-   optional(Vulkan10.features.sparseResidencyBuffer);
+
+   /* Conditionally enabled since this may worsen shader compiler codegen on some HW. */
+   if (ctx->options.api_flags & API_ENABLE_SPARSE_BUFFERS) {
+      optional(Vulkan10.features.sparseBinding);
+      optional(Vulkan10.features.sparseResidencyBuffer);
+   }
+
    //require(Vulkan10.features.sparseResidencyImage2D);
    //require(Vulkan10.features.sparseResidencyImage3D);
    //require(Vulkan10.features.sparseResidency2Samples);

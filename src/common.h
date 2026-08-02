@@ -346,6 +346,7 @@ typedef struct {
 typedef enum {
    API_VK_DYNAMIC_STATE = 1 << 0,
    API_VK_GPL = 1 << 1,
+   API_ENABLE_SPARSE_BUFFERS = 1 << 2,
 } api_flags;
 
 typedef struct {
