@@ -274,8 +274,10 @@ Decoding subtest names:
 - `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
+- `barrier`: a pipeline buffer barrier is inserted after every operation (n/a to APIs that don't have such a barrier)
 
 Optional parameters:
+- `-barrier`: Onsert a barrier after every fill and copy. (the API must have such a barrier)
 - `-compute`: Execute on the compute queue.
 - `-transfer`: Execute on the transfer queue.
 

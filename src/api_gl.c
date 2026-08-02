@@ -1390,6 +1390,7 @@ gl_create_context(const program_options *options)
    ctx->has_heap[api_heap_host_uncached] = true;
    ctx->has_heap[api_heap_host_cached] = true;
    ctx->has_queue[api_queue_gfx] = true;
+   ctx->buffer_barrier_has_gl_semantics = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
 
    unsigned supported_subgroup_ops = 0;

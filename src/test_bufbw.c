@@ -131,8 +131,10 @@ static void
 run(api_context *ctx, const char *test_name, enum test_stage stage,
     api_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
 {
+   const unsigned name_indent = 53;
+
    if (stage == REPORT) {
-      printf("%-53s", "Allocation size");
+      printf("%-*s", name_indent, "Allocation size");
       for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
          if (size >= 4 * 1024 * 1024)
             printf(",%6uMB", size / (1024 * 1024));
@@ -193,7 +195,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
                         test_strings[test_flavor], cached ? "hit" : "miss",
                         align_info[align].string);
-               printf("%-53s", name);
+               printf("%-*s", name_indent, name);
             }
 
             for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
@@ -232,11 +234,16 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
                         uint64_t src_offset = cycled_offset_base + test_src_offset;
 
                         ctx->copy_buffer(ctx, dst, src, dst_offset, src_offset, size);
-                        ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
-                                             (uint64_t[]){src_offset, size, dst_offset, size}, false);
+
+                        if (ctx->options.barrier) {
+                           ctx->barrier_buffers(ctx, 2, (api_buffer*[2]){src, dst},
+                                                (uint64_t[]){src_offset, size, dst_offset, size}, false);
+                        }
                      } else {
                         ctx->clear_buffer(ctx, dst, dst_offset, size, 0x23456789);
-                        ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
+
+                        if (ctx->options.barrier)
+                           ctx->barrier_buffers(ctx, 1, &dst, (uint64_t[]){dst_offset, size}, false);
                      }
 
                      if (!cached) {
@@ -287,6 +294,9 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    if (!ctx->has_queue[queue])
       error("%s queue support is required.", queue_to_string(queue));
+
+   if (ctx->options.barrier && ctx->buffer_barrier_has_gl_semantics)
+      error("The API doesn't have a barrier call affecting buffer fills and copies.");
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 

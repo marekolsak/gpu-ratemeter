@@ -353,7 +353,9 @@ typedef struct {
    api_flags api_flags;
    bool report_bandwidth;
 
-   /* Bool options.*/
+   /* All other options have test-specific meaning. */
+   /* Bool options. */
+   bool barrier;
    bool bda;
    bool compute;
    bool gl_tiling_linear;
@@ -411,6 +413,7 @@ typedef struct api_context {
    bool has_queue[api_num_queues];
    bool allow_parallel_create_shader;
    bool allow_parallel_create_pipeline;
+   bool buffer_barrier_has_gl_semantics;
    double timestamp_period_in_seconds;
 
    /* Feature properties. */
