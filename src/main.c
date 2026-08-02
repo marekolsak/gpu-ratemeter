@@ -30,9 +30,8 @@
  *    - pResolveAttachments via a render pass
  * - 2D array images
  * - Z/S?
- * - VK_KHR_copy_memory_indirect
  * - transfer queue
- * - buffer-to-image, image-to-buffer
+ * - buffer-to-image (including VK_KHR_copy_memory_indirect), image-to-buffer
  *
  * latency:
  * - instruction fetch (jump chasing)

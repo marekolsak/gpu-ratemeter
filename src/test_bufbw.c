@@ -127,8 +127,9 @@ next_size(unsigned size)
 }
 
 static void
-run(api_context *ctx, const char *test_name, enum test_stage stage,
-    api_query_pool *timestamps, unsigned *num_tests, api_queue_type queue)
+run(api_context *ctx, const char *test_name, enum test_stage stage, api_query_pool *timestamps,
+    unsigned *num_tests, api_queue_type queue, api_buffer *devmem0, api_buffer *devmem1,
+    api_buffer *hostmem)
 {
    const unsigned name_indent = 60;
 
@@ -144,13 +145,6 @@ run(api_context *ctx, const char *test_name, enum test_stage stage,
       }
       printf("\n");
    }
-
-   /* Create buffers. */
-   /* We allocate enough memory and cycle through the whole range to prevent caching. */
-   unsigned buf_size = stage == RUN ? 2 * MAX_SIZE + 256 : 1;
-   api_buffer *devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
-   api_buffer *devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
-   api_buffer *hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
 
    unsigned num_visited_tests = 0;
 
@@ -302,19 +296,26 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 
+   /* Create buffers. */
+   /* We allocate enough memory and cycle through the whole range to prevent caching. */
+   unsigned buf_size = 2 * MAX_SIZE + 256;
+   api_buffer *devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   api_buffer *devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
+   api_buffer *hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
+
    unsigned num_tests = 0;
-   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests, queue);
+   run(ctx, test_name, COUNT_TESTS, NULL, &num_tests, queue, devmem0, devmem1, hostmem);
 
    /* Create timestamp queries. */
    api_query_pool *timestamps =
       ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
-   run(ctx, test_name, RUN, timestamps, &num_tests, queue);
+   run(ctx, test_name, RUN, timestamps, &num_tests, queue, devmem0, devmem1, hostmem);
    puts("");
 
    ctx->get_query_results(ctx, timestamps);
 
    puts("Units: GB/s");
-   run(ctx, test_name, REPORT, timestamps, &num_tests, queue);
+   run(ctx, test_name, REPORT, timestamps, &num_tests, queue, devmem0, devmem1, hostmem);
 }
