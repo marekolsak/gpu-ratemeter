@@ -351,6 +351,25 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
                     });
 }
 
+static void
+vk_copy_memory_indirect(struct api_context *ctx, unsigned num_copies, api_buffer *indirect,
+                        unsigned stride, VkAddressCopyFlagsKHR dst_flags,
+                        VkAddressCopyFlagsKHR src_flags)
+{
+   ctx->vkCmdCopyMemoryIndirectKHR(ctx->current_cmd_buffer,
+                                   &(VkCopyMemoryIndirectInfoKHR){
+                                      .sType = VK_STRUCTURE_TYPE_COPY_MEMORY_INDIRECT_INFO_KHR,
+                                      .srcCopyFlags = src_flags,
+                                      .dstCopyFlags = dst_flags,
+                                      .copyCount = num_copies,
+                                      .copyAddressRange = {
+                                         .address = indirect->device_address,
+                                         .size = num_copies * stride,
+                                         .stride = stride,
+                                      },
+                                   });
+}
+
 static api_fence *
 get_latest_fence(api_context *ctx, api_queue_type queue)
 {
@@ -1987,6 +2006,9 @@ vk_create_context(const program_options *options)
    VkPhysicalDeviceSubgroupProperties subgroup_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
    };
+   VkPhysicalDeviceCopyMemoryIndirectPropertiesKHR KHR_copy_memory_indirect_props = {
+     .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_PROPERTIES_KHR,
+   };
    VkPhysicalDeviceConservativeRasterizationPropertiesEXT EXT_conservative_rasterization_props = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT,
    };
@@ -1997,6 +2019,8 @@ vk_create_context(const program_options *options)
    void **pNext = &device_props.pNext;
 
    chain_next(pNext, &subgroup_props);
+   if (has_extension(ctx, VK_KHR_COPY_MEMORY_INDIRECT_EXTENSION_NAME))
+      chain_next(pNext, &KHR_copy_memory_indirect_props);
    if (has_extension(ctx, VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME))
       chain_next(pNext, &EXT_conservative_rasterization_props);
    if (has_extension(ctx, VK_EXT_MESH_SHADER_EXTENSION_NAME))
@@ -2035,6 +2059,12 @@ vk_create_context(const program_options *options)
    };
 
    /* KHR extensions. */
+   VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR KHR_copy_memory_indirect = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_KHR,
+   };
+   VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR enabled_KHR_copy_memory_indirect = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_KHR,
+   };
    VkPhysicalDeviceFragmentShadingRateFeaturesKHR KHR_fragment_shading_rate = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
    };
@@ -2131,6 +2161,7 @@ vk_create_context(const program_options *options)
    chain_features(Vulkan12);
    chain_features(Vulkan13);
 
+   check_add_ext(VK_KHR_COPY_MEMORY_INDIRECT_EXTENSION_NAME, KHR_copy_memory_indirect);
    check_add_ext(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, KHR_fragment_shading_rate);
    check_add_ext(VK_KHR_MAINTENANCE_5_EXTENSION_NAME, KHR_maintenance5);
    check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
@@ -2355,6 +2386,9 @@ vk_create_context(const program_options *options)
    //require(Vulkan13.shaderIntegerDotProduct);
    require(Vulkan13.maintenance4);
 
+   optional(KHR_copy_memory_indirect.indirectMemoryCopy);
+   //optional(KHR_copy_memory_indirect.indirectMemoryToImageCopy);
+
    optional(KHR_fragment_shading_rate.pipelineFragmentShadingRate);
    optional(KHR_fragment_shading_rate.primitiveFragmentShadingRate);
    //optional(KHR_fragment_shading_rate.attachmentFragmentShadingRate);
@@ -2432,26 +2466,28 @@ vk_create_context(const program_options *options)
    /* Get extension functions. */
 #define GET_PROC_ADDR(name) ctx->name = (PFN_##name)vkGetDeviceProcAddr(ctx->device, #name)
 
-   if (EXT_vertex_input_dynamic_state.vertexInputDynamicState)
-      GET_PROC_ADDR(vkCmdSetVertexInputEXT);
-   if (EXT_mesh_shader.meshShader)
-      GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode)
-      GET_PROC_ADDR(vkCmdSetPolygonModeEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples)
-      GET_PROC_ADDR(vkCmdSetRasterizationSamplesEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3SampleMask)
-      GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3AlphaToCoverageEnable)
-      GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEnable)
-      GET_PROC_ADDR(vkCmdSetColorBlendEnableEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEquation)
-      GET_PROC_ADDR(vkCmdSetColorBlendEquationEXT);
-   if (EXT_extended_dynamic_state3.extendedDynamicState3ColorWriteMask)
-      GET_PROC_ADDR(vkCmdSetColorWriteMaskEXT);
-   if (KHR_fragment_shading_rate.pipelineFragmentShadingRate)
+   if (enabled_KHR_copy_memory_indirect.indirectMemoryCopy)
+      GET_PROC_ADDR(vkCmdCopyMemoryIndirectKHR);
+   if (enabled_KHR_fragment_shading_rate.pipelineFragmentShadingRate)
       GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode)
+      GET_PROC_ADDR(vkCmdSetPolygonModeEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples)
+      GET_PROC_ADDR(vkCmdSetRasterizationSamplesEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3SampleMask)
+      GET_PROC_ADDR(vkCmdSetSampleMaskEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3AlphaToCoverageEnable)
+      GET_PROC_ADDR(vkCmdSetAlphaToCoverageEnableEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEnable)
+      GET_PROC_ADDR(vkCmdSetColorBlendEnableEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3ColorBlendEquation)
+      GET_PROC_ADDR(vkCmdSetColorBlendEquationEXT);
+   if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3ColorWriteMask)
+      GET_PROC_ADDR(vkCmdSetColorWriteMaskEXT);
+   if (enabled_EXT_mesh_shader.meshShader)
+      GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
+   if (enabled_EXT_vertex_input_dynamic_state.vertexInputDynamicState)
+      GET_PROC_ADDR(vkCmdSetVertexInputEXT);
 #undef GET_PROC_ADDR
 
    /* Get the queues. */
@@ -2626,6 +2662,22 @@ vk_create_context(const program_options *options)
       ctx->fb_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
    }
 
+   if (KHR_copy_memory_indirect.indirectMemoryCopy) {
+      ctx->queue_has_copy_memory_indirect[api_queue_gfx] =
+         ctx->has_queue[api_queue_gfx] &&
+         KHR_copy_memory_indirect_props.supportedQueues &
+         (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT);
+
+      ctx->queue_has_copy_memory_indirect[api_queue_compute] =
+         ctx->has_queue[api_queue_compute] &&
+         KHR_copy_memory_indirect_props.supportedQueues &
+         (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT);
+
+      ctx->queue_has_copy_memory_indirect[api_queue_transfer] =
+         ctx->has_queue[api_queue_transfer] &&
+         KHR_copy_memory_indirect_props.supportedQueues & VK_QUEUE_TRANSFER_BIT;
+   }
+
    /* Set up the GLSL compiler. */
    shaderc_compile_options_set_target_env(ctx->glsl_compiler_options, shaderc_target_env_vulkan,
                                           shaderc_env_version_vulkan_1_3);
@@ -2648,6 +2700,7 @@ vk_create_context(const program_options *options)
    ctx->get_buffer_data = vk_get_buffer_data;
    ctx->clear_buffer = vk_clear_buffer;
    ctx->copy_buffer = vk_copy_buffer;
+   ctx->copy_memory_indirect = vk_copy_memory_indirect;
    ctx->buffer_bind_sparse = vk_buffer_bind_sparse;
 
    ctx->create_image = vk_create_image;

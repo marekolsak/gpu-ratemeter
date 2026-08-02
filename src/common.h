@@ -439,6 +439,7 @@ typedef struct api_context {
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
    VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
+   bool queue_has_copy_memory_indirect[api_num_queues];
 
    /* Dynamic info. */
    uint32_t device_mem_usage_mb;
@@ -458,6 +459,9 @@ typedef struct api_context {
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
                        uint64_t dst_offset, uint64_t src_offset, uint64_t size);
+   void (*copy_memory_indirect)(struct api_context *ctx, unsigned num_copies, api_buffer *indirect,
+                                unsigned stride, VkAddressCopyFlagsKHR dst_flags,
+                                VkAddressCopyFlagsKHR src_flags);
    void (*buffer_bind_sparse)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, bool bind, api_queue_type queue,
                               api_fence *wait_fence, api_fence **signal_fence);
@@ -568,8 +572,8 @@ typedef struct api_context {
    VkCommandPool cmd_pool[api_num_queues];
 
    /* Extension functions. */
-   PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
-   PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+   PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;
+   PFN_vkCmdSetFragmentShadingRateKHR vkCmdSetFragmentShadingRateKHR;
    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
    PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
    PFN_vkCmdSetSampleMaskEXT vkCmdSetSampleMaskEXT;
@@ -577,7 +581,8 @@ typedef struct api_context {
    PFN_vkCmdSetColorBlendEnableEXT vkCmdSetColorBlendEnableEXT;
    PFN_vkCmdSetColorBlendEquationEXT vkCmdSetColorBlendEquationEXT;
    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
-   PFN_vkCmdSetFragmentShadingRateKHR vkCmdSetFragmentShadingRateKHR;
+   PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
+   PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
 
    /* Command buffers. */
    VkCommandBuffer cmd_buffers[api_num_queues][MAX_COMMAND_BUFFERS];
