@@ -27,6 +27,7 @@
  * - 2D array images
  * - transfer queue
  * - buffer-to-image (including VK_KHR_copy_memory_indirect), image-to-buffer
+ * - no barrier
  *
  * latency:
  * - instruction fetch (jump chasing)

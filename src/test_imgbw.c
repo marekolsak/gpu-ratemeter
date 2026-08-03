@@ -38,6 +38,10 @@
 #define NUM_WARMUP_RUNS    1
 #define NUM_RUNS           4
 
+#define MIN_SIZE           (8 * 1024 * 1024)
+#define MAX_SIZE           (256 * 1024 * 1024)
+#define SIZE_LSHIFT_STEP   5
+
 #define DUMP_IMAGES        0
 
 #define MAX_DELETE_ITEMS   32
@@ -421,7 +425,10 @@ print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned
    const unsigned name_indent = 68;
 
    if (header) {
-      printf("%-*s,%s,%s\n", name_indent, "Size", "small", "LARGE");
+      printf("%-*s", name_indent, "Size");
+      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP)
+         printf(",%8uMB", (unsigned)(size >> 20));
+      puts("");
    } else {
       char name[128];
 
@@ -510,28 +517,32 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      api_image *src;
                      api_image *dst;
                      api_framebuffer *fb;
-                  } state[2] = {0};
+                  } sets[2] = {0};
+                  unsigned num_image_sets = 0;
 
-                  for (unsigned size_index = 0; size_index <= 1; size_index++) {
-                     unsigned mb_size = (size_index ? 256 : 8) * (DUMP_IMAGES ? 16 : 1024) * 1024;
+                  for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
+                     unsigned eff_size = size >> (DUMP_IMAGES ? 4 : 0);
+                     unsigned num_pixels = eff_size / msaa_pix_size;
                      unsigned width = 1, height = 1, depth = 1;
 
-                     /* Determine the size. The footprint must be exactly "mb_size" for 2D and 3D. */
-                     if (img_type == VK_IMAGE_TYPE_1D) {
-                        width = size_index ? 16384 : 2048;
-                     } else if (img_type == VK_IMAGE_TYPE_2D) {
-                        width = height = get_next_power_of_two(sqrt(mb_size / msaa_pix_size));
+                     assert(num_image_sets < ARRAY_SIZE(sets));
 
-                        for (unsigned i = 0; width * height * msaa_pix_size != mb_size; i++) {
+                     /* Determine the size. The final size must be exactly "eff_size" for 2D and 3D. */
+                     if (img_type == VK_IMAGE_TYPE_1D) {
+                        width = (MAX_SIZE / eff_size) * 16384; // TODO: make it a cap
+                     } else if (img_type == VK_IMAGE_TYPE_2D) {
+                        width = height = get_next_power_of_two(sqrt(num_pixels));
+
+                        for (unsigned i = 0; width * height != num_pixels; i++) {
                            if (i % 2 == 1)
                               width /= 2;
                            else
                               height /= 2;
                         }
                      } else if (img_type == VK_IMAGE_TYPE_3D) {
-                        width = height = depth = get_next_power_of_two(pow(mb_size / msaa_pix_size, 0.333333));
+                        width = height = depth = get_next_power_of_two(pow(size / msaa_pix_size, 0.333334));
 
-                        for (unsigned i = 0; width * height * depth * msaa_pix_size != mb_size; i++) {
+                        for (unsigned i = 0; width * height * depth != num_pixels; i++) {
                            if (i % 3 == 2)
                               width /= 2;
                            else if (i % 3 == 1)
@@ -541,9 +552,15 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         }
                      }
 
-                     state[size_index].width = MIN2(width, 16384);
-                     state[size_index].height = MIN2(height, 16384);
-                     state[size_index].depth = MIN2(depth, 16384);
+                     width = MIN2(width, 16384);
+                     height = MIN2(height, 16384);
+                     depth = MIN2(depth, 16384);
+
+                     // TODO: report n/a if the size isn't exact except 1D
+
+                     sets[num_image_sets].width = width;
+                     sets[num_image_sets].height = height;
+                     sets[num_image_sets].depth = depth;
 
                      if (stage == RUN && !unsupported) {
                         unsigned src_samples = samples;
@@ -554,24 +571,23 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
 
                         if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
-                           state[size_index].src =
-                              ctx->create_image(ctx, img_type, formats[format_index].format,
-                                                state[size_index].width, state[size_index].height,
-                                                state[size_index].depth, src_samples, src_tiling,
+                           sets[num_image_sets].src =
+                              ctx->create_image(ctx, img_type, formats[format_index].format, width,
+                                                height, depth, src_samples, src_tiling,
                                                 api_heap_device);
                         }
 
-                        state[size_index].dst =
-                           ctx->create_image(ctx, img_type, formats[format_index].format,
-                                             state[size_index].width, state[size_index].height,
-                                             state[size_index].depth, dst_samples, dst_tiling,
+                        sets[num_image_sets].dst =
+                           ctx->create_image(ctx, img_type, formats[format_index].format, width,
+                                             height, depth, dst_samples, dst_tiling,
                                              api_heap_device);
 
-                        state[size_index].fb =
-                              ctx->create_framebuffer(ctx, state[size_index].dst, NULL,
-                                                      state[size_index].width, state[size_index].height,
-                                                      dst_samples, 0x1);
+                        sets[num_image_sets].fb =
+                           ctx->create_framebuffer(ctx, sets[num_image_sets].dst, NULL,
+                                                   width, height, dst_samples, 0x1);
                      }
+
+                     num_image_sets++;
                   }
 
                   for (unsigned fill_flavor = 0; fill_flavor < NUM_FILLS; fill_flavor++) {
@@ -600,48 +616,48 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 #endif
 
                         if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
-                           for (unsigned size_index = 0; size_index <= 1; size_index++) {
+                           for (unsigned set = 0; set < num_image_sets; set++) {
                               switch (fill_flavor) {
                               case FILL_BLACK:
                               case FILL_SOLID: {
                                  ctx->begin_cmdbuf(ctx, api_queue_gfx);
-                                 ctx->clear_image(ctx, state[size_index].src, NULL, clear_color);
+                                 ctx->clear_image(ctx, sets[set].src, NULL, clear_color);
                                  ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                                  break;
                               }
 
                               case FILL_GRADIENT:
-                                 set_gradient_pixels(ctx, &misc_state, state[size_index].src);
+                                 set_gradient_pixels(ctx, &misc_state, sets[set].src);
                                  break;
 
                               case FILL_RANDOM:
-                                 set_random_pixels(ctx, &misc_state, state[size_index].src, ~0);
+                                 set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
                                  break;
 
                               case FILL_RANDOM_FRAGMENTED2:
                                  assert(samples >= 2);
                                  /* Make all samples equal. */
-                                 set_random_pixels(ctx, &misc_state, state[size_index].src, ~0);
+                                 set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
                                  /* Make sample 0 different. */
-                                 set_random_pixels(ctx, &misc_state, state[size_index].src, 0x1);
+                                 set_random_pixels(ctx, &misc_state, sets[set].src, 0x1);
                                  break;
 
                               case FILL_RANDOM_FRAGMENTED4:
                                  assert(samples >= 4);
                                  /* Make all samples equal. */
-                                 set_random_pixels(ctx, &misc_state, state[size_index].src, ~0);
+                                 set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
                                  /* Make samples 0..2 different. */
                                  for (unsigned i = 0; i <= 2; i++)
-                                    set_random_pixels(ctx, &misc_state, state[size_index].src, 1 << i);
+                                    set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
                                  break;
 
                               case FILL_RANDOM_FRAGMENTED8:
                                  assert(samples == 8);
                                  /* Make all samples equal. */
-                                 set_random_pixels(ctx, &misc_state, state[size_index].src, 0);
+                                 set_random_pixels(ctx, &misc_state, sets[set].src, 0);
                                  /* Make samples 0..6 different. */
                                  for (unsigned i = 0; i <= 6; i++)
-                                    set_random_pixels(ctx, &misc_state, state[size_index].src, 1 << i);
+                                    set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
                                  break;
 
                               default:
@@ -649,7 +665,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               }
 
                               if (DUMP_IMAGES) {
-                                 verify_content(ctx, state[size_index].src, test_index, format_index, layout,
+                                 verify_content(ctx, sets[set].src, test_index, format_index, layout,
                                                 fill_flavor);
                               }
                            }
@@ -683,7 +699,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            report_na = true;
 
                         if (report_na) {
-                           for (unsigned size_index = 0; size_index <= 1; size_index++) {
+                           for (unsigned set = 0; set < num_image_sets; set++) {
                               if (stage == COUNT_TESTS)
                                  (*num_tests)++;
 
@@ -699,16 +715,16 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            continue;
                         }
 
-                        for (unsigned size_index = 0; size_index <= 1; size_index++) {
+                        for (unsigned set = 0; set < num_image_sets; set++) {
                            if (stage == COUNT_TESTS)
                               (*num_tests)++;
 
                            api_image_box src_box = {0}, dst_box = {0};
 
                            /* Determine the box. */
-                           dst_box.width = state[size_index].width;
-                           dst_box.height = state[size_index].height;
-                           dst_box.depth = state[size_index].depth;
+                           dst_box.width = sets[set].width;
+                           dst_box.height = sets[set].height;
+                           dst_box.depth = sets[set].depth;
                            src_box = dst_box;
 
                            switch (box_flavor) {
@@ -772,30 +788,30 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            assert(dst_box.width > 0);
                            assert(dst_box.height > 0);
                            assert(dst_box.depth > 0);
-                           assert(dst_box.x + dst_box.width <= state[size_index].width);
-                           assert(dst_box.y + dst_box.height <= state[size_index].height);
-                           assert(dst_box.z + dst_box.depth <= state[size_index].depth);
+                           assert(dst_box.x + dst_box.width <= sets[set].width);
+                           assert(dst_box.y + dst_box.height <= sets[set].height);
+                           assert(dst_box.z + dst_box.depth <= sets[set].depth);
 
-                           if (state[size_index].src) {
+                           if (sets[set].src) {
                               assert(src_box.width);
                               assert(src_box.height);
                               assert(src_box.depth > 0);
                               if (src_box.width > 0) {
                                  assert(src_box.x >= 0);
-                                 assert(src_box.x + src_box.width <= state[size_index].width);
+                                 assert(src_box.x + src_box.width <= sets[set].width);
                               } else {
                                  assert(src_box.x + src_box.width >= 0);
-                                 assert(src_box.x - 1 < state[size_index].width);
+                                 assert(src_box.x - 1 < sets[set].width);
                               }
                               if (src_box.height > 0) {
                                  assert(src_box.y >= 0);
-                                 assert(src_box.y + src_box.height <= state[size_index].height);
+                                 assert(src_box.y + src_box.height <= sets[set].height);
                               } else {
                                  assert(src_box.y + src_box.height >= 0);
-                                 assert(src_box.y - 1 < state[size_index].height);
+                                 assert(src_box.y - 1 < sets[set].height);
                               }
                               assert(src_box.z >= 0);
-                              assert(src_box.z + src_box.depth <= state[size_index].depth);
+                              assert(src_box.z + src_box.depth <= sets[set].depth);
                            }
 
                            if (stage == RUN) {
@@ -813,7 +829,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  case TEST_CLEAR_FB:
                                     ctx->begin_render_pass(ctx,
                                                            &(api_render_pass_desc) {
-                                                              .fb = state[size_index].fb,
+                                                              .fb = sets[set].fb,
                                                               .clear = true,
                                                               .clear_values.color = *clear_color,
                                                            });
@@ -822,7 +838,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                                  case TEST_CLEAR_IMAGE:
                                     assert(!yflip);
-                                    ctx->clear_image(ctx, state[size_index].dst,
+                                    ctx->clear_image(ctx, sets[set].dst,
                                                      box_flavor == BOX_FULL ? NULL : &dst_box, clear_color);
                                     break;
 
@@ -831,9 +847,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  case TEST_RESOLVE: {
                                     ctx->blit_image(ctx,
                                                     &(api_blit_desc){
-                                                       .dst = state[size_index].dst,
+                                                       .dst = sets[set].dst,
                                                        .dst_box = dst_box,
-                                                       .src = state[size_index].src,
+                                                       .src = sets[set].src,
                                                        .src_box = src_box,
                                                        .is_copy = test_index == TEST_COPY,
                                                     });
@@ -878,12 +894,12 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   if (stage == RUN && !unsupported) {
                      ctx->wait_for_idle(ctx);
 
-                     for (unsigned size_index = 0; size_index <= 1; size_index++) {
-                        if (state[size_index].fb)
-                           ctx->destroy_framebuffer(ctx, state[size_index].fb);
-                        ctx->destroy_image(ctx, state[size_index].dst);
+                     for (unsigned set = 0; set < num_image_sets; set++) {
+                        if (sets[set].fb)
+                           ctx->destroy_framebuffer(ctx, sets[set].fb);
+                        ctx->destroy_image(ctx, sets[set].dst);
                         if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE)
-                           ctx->destroy_image(ctx, state[size_index].src);
+                           ctx->destroy_image(ctx, sets[set].src);
                      }
 
                      for (unsigned i = 0; i < misc_state.num_delete_items; i++) {
