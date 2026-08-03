@@ -38,13 +38,13 @@
 #define NUM_WARMUP_RUNS    1
 #define NUM_RUNS           4
 
-#define MIN_SIZE           (8 * 1024 * 1024)
-#define MAX_SIZE           (256 * 1024 * 1024)
-#define SIZE_LSHIFT_STEP   5
+#define MIN_SIZE           (1 << 17)
+#define MAX_SIZE           (1 << 27)
+#define SIZE_LSHIFT_STEP   2
 
 #define DUMP_IMAGES        0
 
-#define MAX_DELETE_ITEMS   32
+#define MAX_DELETE_ITEMS   96
 
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
@@ -348,20 +348,20 @@ static const char *layout_strings[] = {
 };
 
 enum {
-   BOX_FULL,
-   BOX_FULL_YFLIP,
-   BOX_PARTIAL,
-   BOX_PARTIAL_UNALIGNED,
-   BOX_PARTIAL_UNALIGNED_YFLIP,
-   NUM_BOXES,
+   REGION_FULL,
+   REGION_FULL_YFLIP,
+   REGION_PARTIAL,
+   REGION_PARTIAL_UNALIGNED,
+   REGION_PARTIAL_UNALIGNED_YFLIP,
+   NUM_REGIONS,
 };
 
-static const char *box_strings[] = {
-   [BOX_FULL] = "full",
-   [BOX_FULL_YFLIP] = "yflip",
-   [BOX_PARTIAL] = "partial",
-   [BOX_PARTIAL_UNALIGNED] = "unaligned",
-   [BOX_PARTIAL_UNALIGNED_YFLIP] = "yflip_unaligned",
+static const char *region_strings[] = {
+   [REGION_FULL] = "full",
+   [REGION_FULL_YFLIP] = "yflip",
+   [REGION_PARTIAL] = "partial",
+   [REGION_PARTIAL_UNALIGNED] = "unaligned",
+   [REGION_PARTIAL_UNALIGNED_YFLIP] = "yflip_unaligned",
 };
 
 enum {
@@ -393,7 +393,7 @@ typedef enum {
 
 static void
 verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned format_index,
-               unsigned layout, unsigned fill_flavor)
+               unsigned layout, unsigned fill_option)
 {
    if (image->samples == 1) {
       for (unsigned z = 0; z < image->depth; z++) {
@@ -401,7 +401,7 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
 
          snprintf(filename, sizeof(filename), "%s_%uD_%s_%s_%ux%u_%s_%u.png",
                   test_strings[test_index], image->type + 1, formats[format_index].name,
-                  layout_strings[layout], image->width, image->height, fill_strings[fill_flavor], z);
+                  layout_strings[layout], image->width, image->height, fill_strings[fill_option], z);
 
          ctx->image_write_png(ctx, image, z, filename);
       }
@@ -410,30 +410,33 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
 
 static void
 get_subtest_name(char *out, size_t max_len, unsigned test_index, VkImageType img_type,
-                 unsigned format_index, unsigned samples, unsigned layout, unsigned fill_flavor,
-                 unsigned box_flavor)
+                 unsigned format_index, unsigned samples, unsigned layout, unsigned fill_option,
+                 unsigned region_option)
 {
    snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s%s.region_%s",
             test_strings[test_index], img_type + 1, formats[format_index].name, samples,
-            fill_strings[fill_flavor], layout_strings[layout], box_strings[box_flavor]);
+            fill_strings[fill_option], layout_strings[layout], region_strings[region_option]);
 }
 
 static void
 print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned format_index,
-                unsigned samples, unsigned layout, unsigned fill_flavor, unsigned box_flavor)
+                unsigned samples, unsigned layout, unsigned fill_option, unsigned region_option)
 {
    const unsigned name_indent = 68;
 
    if (header) {
       printf("%-*s", name_indent, "Size");
-      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP)
-         printf(",%8uMB", (unsigned)(size >> 20));
+      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
+         unsigned shift = size >= (1 << 20) ? 20 : 10;
+
+         printf(",%8u%cB", (unsigned)(size >> shift), shift == 20 ? 'M' : 'K');
+      }
       puts("");
    } else {
       char name[128];
 
       get_subtest_name(name, sizeof(name), test_index, img_type, format_index, samples, layout,
-                       fill_flavor, box_flavor);
+                       fill_option, region_option);
       printf("%-*s", name_indent, name);
    }
 }
@@ -455,14 +458,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       for (VkImageType img_type = VK_IMAGE_TYPE_1D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
-         if (test_index == TEST_RESOLVE && img_type != VK_IMAGE_TYPE_2D)
-            continue;
-
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
             assert(format_is_valid(formats[format_index].format));
-
-            if (test_index == TEST_RESOLVE && format_is_integer(formats[format_index].format))
-               continue;
 
             for (unsigned samples = 1; samples <= 8; samples *= 2) {
                if (!(ctx->fb_format_sample_count_support[formats[format_index].format] & samples))
@@ -471,22 +468,28 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                if (samples >= 2 && img_type != VK_IMAGE_TYPE_2D)
                   continue;
 
-               if (test_index == TEST_RESOLVE && samples == 1)
-                  continue;
-
                for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
                   /* Reject invalid combinations. */
                   switch (test_index) {
                   case TEST_CLEAR_FB:
+                     if (layout != LAYOUT_DEFAULT || img_type == VK_IMAGE_TYPE_1D)
+                        continue;
+                     break;
+
                   case TEST_CLEAR_IMAGE:
                   case TEST_BLIT:
-                  case TEST_RESOLVE:
                      if (layout != LAYOUT_DEFAULT)
                         continue;
                      break;
 
+                  case TEST_RESOLVE:
+                     if (layout != LAYOUT_DEFAULT || img_type != VK_IMAGE_TYPE_2D ||
+                         samples == 1 || format_is_integer(formats[format_index].format))
+                        continue;
+                     break;
+
                   case TEST_COPY:
-                     if ((img_type == VK_IMAGE_TYPE_1D || samples >= 2) && layout != LAYOUT_DEFAULT)
+                     if (layout != LAYOUT_DEFAULT && (img_type == VK_IMAGE_TYPE_1D || samples >= 2))
                         continue;
                      break;
                   }
@@ -502,8 +505,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                       !ctx->has_blit_image_3d)
                      unsupported = true;
 
-                  if (test_index == TEST_BLIT && samples > 1 &&
-                      !ctx->has_blit_image_msaa)
+                  if (test_index == TEST_BLIT && samples > 1 && !ctx->has_blit_image_msaa)
                      unsupported = true;
 
                   /* Create textures. */
@@ -517,7 +519,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      api_image *src;
                      api_image *dst;
                      api_framebuffer *fb;
-                  } sets[2] = {0};
+                  } sets[6] = {0};
                   unsigned num_image_sets = 0;
 
                   for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
@@ -590,34 +592,35 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      num_image_sets++;
                   }
 
-                  for (unsigned fill_flavor = 0; fill_flavor < NUM_FILLS; fill_flavor++) {
+                  for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
                      const VkClearColorValue *clear_color =
                         format_is_integer(formats[format_index].format) ?
-                           (fill_flavor == FILL_BLACK ? &black_color_uint : &solid_color_uint) :
-                           (fill_flavor == FILL_BLACK ? &black_color_float : &solid_color_float);
+                           (fill_option == FILL_BLACK ? &black_color_uint : &solid_color_uint) :
+                           (fill_option == FILL_BLACK ? &black_color_float : &solid_color_float);
 
-                     /* Reject invalid combinations. */
+                     /* Reject invalid and less important combinations. */
                      if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_IMAGE) &&
-                         fill_flavor != FILL_SOLID && fill_flavor != FILL_BLACK)
+                         fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                         continue;
 
-                     if ((samples == 1 && fill_flavor >= FILL_RANDOM_FRAGMENTED2) ||
-                         (samples == 2 && fill_flavor >= FILL_RANDOM_FRAGMENTED4) ||
-                         (samples == 4 && fill_flavor >= FILL_RANDOM_FRAGMENTED8))
+                     if ((samples == 1 && fill_option >= FILL_RANDOM_FRAGMENTED2) ||
+                         (samples == 2 && fill_option >= FILL_RANDOM_FRAGMENTED4) ||
+                         (samples == 4 && fill_option >= FILL_RANDOM_FRAGMENTED8))
+                        continue;
+
+                     if (img_type == VK_IMAGE_TYPE_1D &&
+                         fill_option != (test_index == TEST_CLEAR_IMAGE ? FILL_SOLID : FILL_RANDOM))
+                        continue;
+
+                     if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
+                         fill_option != FILL_RANDOM)
                         continue;
 
                      /* Fill the source texture. */
                      if (stage == RUN && !unsupported) {
-#if 0
-                        char name[128];
-                        get_subtest_name(name, sizeof(name), test_index, img_type, format_index,
-                                         samples, layout, fill_flavor, 0);
-                        printf("Executing: %s\n", name);
-#endif
-
                         if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
                            for (unsigned set = 0; set < num_image_sets; set++) {
-                              switch (fill_flavor) {
+                              switch (fill_option) {
                               case FILL_BLACK:
                               case FILL_SOLID: {
                                  ctx->begin_cmdbuf(ctx, api_queue_gfx);
@@ -661,32 +664,44 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  break;
 
                               default:
-                                 error("invalid fill flavor");
+                                 error("invalid fill option");
                               }
 
                               if (DUMP_IMAGES) {
                                  verify_content(ctx, sets[set].src, test_index, format_index, layout,
-                                                fill_flavor);
+                                                fill_option);
                               }
                            }
                         }
                      }
 
-                     for (unsigned box_flavor = 0; box_flavor < NUM_BOXES; box_flavor++) {
-                        bool yflip = box_flavor == BOX_FULL_YFLIP ||
-                                     box_flavor == BOX_PARTIAL_UNALIGNED_YFLIP;
+                     for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
+                        bool yflip = region_option == REGION_FULL_YFLIP ||
+                                     region_option == REGION_PARTIAL_UNALIGNED_YFLIP;
 
                         /* Reject invalid combinations. */
-                        if (test_index == TEST_CLEAR_FB && box_flavor != BOX_FULL)
+                        if (test_index == TEST_CLEAR_FB && region_option != REGION_FULL)
                            continue;
 
-                        if ((test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY ||
-                             img_type == VK_IMAGE_TYPE_1D) && yflip)
+                        if (img_type == VK_IMAGE_TYPE_1D && region_option != REGION_FULL)
                            continue;
+
+                        if (yflip && (test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY ||
+                                      img_type == VK_IMAGE_TYPE_1D))
+                           continue;
+
+                        if (ctx->options.filter) {
+                           char name[128];
+                           get_subtest_name(name, sizeof(name), test_index, img_type, format_index,
+                                            samples, layout, fill_option, region_option);
+
+                           if (!check_filter_string(ctx->options.filter, name))
+                              continue;
+                        }
 
                         if (stage == REPORT) {
                            print_table_row(false, test_index, img_type, format_index, samples,
-                                           layout, fill_flavor, box_flavor);
+                                           layout, fill_option, region_option);
                         }
 
                         bool report_na = unsupported;
@@ -694,7 +709,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         if (test_index == TEST_RESOLVE && yflip && !ctx->has_resolve_image_yflip)
                            report_na = true;
 
-                        if (test_index == TEST_CLEAR_IMAGE && box_flavor != BOX_FULL &&
+                        if (test_index == TEST_CLEAR_IMAGE && region_option != REGION_FULL &&
                             !ctx->has_clear_image_region)
                            report_na = true;
 
@@ -727,24 +742,24 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            dst_box.depth = sets[set].depth;
                            src_box = dst_box;
 
-                           switch (box_flavor) {
-                           case BOX_FULL:
+                           switch (region_option) {
+                           case REGION_FULL:
                               break;
 
-                           case BOX_FULL_YFLIP:
+                           case REGION_FULL_YFLIP:
                               src_box.y = src_box.height;
                               src_box.height = -src_box.height;
                               break;
 
-                           case BOX_PARTIAL:
+                           case REGION_PARTIAL:
                               if (img_type == VK_IMAGE_TYPE_1D) {
                                  dst_box.x = 256;
                                  dst_box.width -= 256;
                               } else if (img_type == VK_IMAGE_TYPE_2D) {
-                                 dst_box.x = 16;
-                                 dst_box.y = 16;
-                                 dst_box.width -= 16;
-                                 dst_box.height -= 16;
+                                 dst_box.x = 8;
+                                 dst_box.y = 8;
+                                 dst_box.width -= 8;
+                                 dst_box.height -= 8;
                               } else {
                                  dst_box.x = 8;
                                  dst_box.y = 8;
@@ -756,8 +771,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               src_box = dst_box;
                               break;
 
-                           case BOX_PARTIAL_UNALIGNED:
-                           case BOX_PARTIAL_UNALIGNED_YFLIP: {
+                           case REGION_PARTIAL_UNALIGNED:
+                           case REGION_PARTIAL_UNALIGNED_YFLIP: {
                               const unsigned off = 13;
                               dst_box.x = off;
                               dst_box.width -= off;
@@ -771,7 +786,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               }
                               src_box = dst_box;
 
-                              if (box_flavor == BOX_PARTIAL_UNALIGNED_YFLIP) {
+                              if (region_option == REGION_PARTIAL_UNALIGNED_YFLIP) {
                                  src_box.y += src_box.height;
                                  src_box.height = -src_box.height;
                               }
@@ -779,7 +794,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            }
 
                            default:
-                              error("invalid box flavor");
+                              error("invalid box option");
                            }
 
                            assert(dst_box.x >= 0);
@@ -839,7 +854,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  case TEST_CLEAR_IMAGE:
                                     assert(!yflip);
                                     ctx->clear_image(ctx, sets[set].dst,
-                                                     box_flavor == BOX_FULL ? NULL : &dst_box, clear_color);
+                                                     region_option == REGION_FULL ? NULL : &dst_box, clear_color);
                                     break;
 
                                  case TEST_COPY:
@@ -857,7 +872,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  }
 
                                  default:
-                                    error("invalid test flavor");
+                                    error("invalid test type");
                                  }
                               }
 

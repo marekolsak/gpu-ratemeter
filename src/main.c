@@ -26,8 +26,9 @@
  *    - vkCmdClearAttachments and scissored glClearBuffer
  * - 2D array images
  * - transfer queue
- * - buffer-to-image (including VK_KHR_copy_memory_indirect), image-to-buffer
- * - no barrier
+ * - buffer-to-image, image-to-buffer
+ * - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
+ * - no barrier, uncached
  *
  * latency:
  * - instruction fetch (jump chasing)
