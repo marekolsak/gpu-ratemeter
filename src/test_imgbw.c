@@ -305,16 +305,11 @@ static struct {
    VkFormat format;
 } formats[] = {
    {"r8",      VK_FORMAT_R8_UNORM},
-   {"r8u",     VK_FORMAT_R8_UINT},
-   {"r16u",    VK_FORMAT_R16_UINT},
+   {"r8g8",    VK_FORMAT_R8G8_UNORM},
    {"r16f",    VK_FORMAT_R16_SFLOAT},
    {"rgba8",   VK_FORMAT_R8G8B8A8_UNORM},
-   {"r32u",    VK_FORMAT_R32_UINT},
    {"r32f",    VK_FORMAT_R32_SFLOAT},
-   {"rg32u",   VK_FORMAT_R32G32_UINT},
-   {"rg32f",   VK_FORMAT_R32G32_SFLOAT},
    {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
-   {"rgba32u", VK_FORMAT_R32G32B32A32_UINT},
    {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
 };
 
@@ -344,8 +339,8 @@ enum {
 
 static const char *layout_strings[] = {
    [LAYOUT_DEFAULT] = "",
-   [LAYOUT_SRC_LINEAR] = ".linear_to_optimal",
-   [LAYOUT_DST_LINEAR] = ".optimal_to_linear",
+   [LAYOUT_SRC_LINEAR] = ".src_linear",
+   [LAYOUT_DST_LINEAR] = ".dst_linear",
 };
 
 enum {
@@ -414,9 +409,9 @@ get_subtest_name(char *out, size_t max_len, unsigned test_index, VkImageType img
                  unsigned format_index, unsigned samples, unsigned layout, unsigned fill_flavor,
                  unsigned box_flavor)
 {
-   snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s.region_%s%s",
+   snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s%s.region_%s",
             test_strings[test_index], img_type + 1, formats[format_index].name, samples,
-            fill_strings[fill_flavor], box_strings[box_flavor], layout_strings[layout]);
+            fill_strings[fill_flavor], layout_strings[layout], box_strings[box_flavor]);
 }
 
 static void
@@ -449,6 +444,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
       print_table_row(true, 0, 0, 0, 0, 0, 0, 0);
 
    misc_state misc_state = {0};
+   unsigned num_visited_tests = 0;
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       for (VkImageType img_type = VK_IMAGE_TYPE_1D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
@@ -691,6 +687,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               if (stage == COUNT_TESTS)
                                  (*num_tests)++;
 
+                              if (stage == RUN)
+                                 print_progress(*num_tests, &num_visited_tests, 20);
+
                               if (stage == REPORT)
                                  printf(",%10s", "n/a");
                            }
@@ -849,6 +848,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               ctx->write_next_query_value(ctx, timestamps);
                               ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                            }
+
+                           if (stage == RUN)
+                              print_progress(*num_tests, &num_visited_tests, 20);
 
                            /* Get results. */
                            if (stage == REPORT) {
