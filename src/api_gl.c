@@ -1443,17 +1443,17 @@ gl_create_context(const program_options *options)
       int num_sample_counts;
       int sample_counts[16];
 
-      glGetInternalformativ(GL_RENDERBUFFER, internalformat, GL_NUM_SAMPLE_COUNTS, 1,
+      glGetInternalformativ(GL_TEXTURE_2D_MULTISAMPLE, internalformat, GL_NUM_SAMPLE_COUNTS, 1,
                             &num_sample_counts);
       if (num_sample_counts > 16)
          num_sample_counts = 16;
 
-      glGetInternalformativ(GL_RENDERBUFFER, internalformat, GL_SAMPLES, num_sample_counts,
+      glGetInternalformativ(GL_TEXTURE_2D_MULTISAMPLE, internalformat, GL_SAMPLES, num_sample_counts,
                             sample_counts);
 
-      for (int i = 0; i < num_sample_counts; i++) {
-         if (IS_POT(sample_counts[i]))
-            ctx->fb_format_sample_count_support[i] |= sample_counts[i];
+      for (int s = 0; s < num_sample_counts; s++) {
+         if (IS_POT(sample_counts[s]))
+            ctx->fb_format_sample_count_support[i] |= sample_counts[s];
       }
    }
 
