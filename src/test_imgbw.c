@@ -319,8 +319,8 @@ static struct {
 };
 
 enum {
-   TEST_FB_CLEAR,
-   TEST_CLEAR,
+   TEST_CLEAR_FB,
+   TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
    TEST_RESOLVE,
@@ -328,8 +328,8 @@ enum {
 };
 
 static const char *test_strings[] = {
-   [TEST_FB_CLEAR] = "fbclear",
-   [TEST_CLEAR] = "cleartex",
+   [TEST_CLEAR_FB] = "clear_fb",
+   [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
    [TEST_RESOLVE] = "resolve",
@@ -421,10 +421,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
     api_query_pool *timestamps)
 {
    if (stage == REPORT) {
-      printf("Op      ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
+      printf("Op          ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
              "   small   ,   LARGE\n");
-      printf("--------,---,-------------------,--,------,------------,-------------,"
-             "-----------,-----------\n");
    }
 
    misc_state misc_state = {0};
@@ -533,7 +531,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                  VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
                         unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
 
-                        if (test_index != TEST_FB_CLEAR && test_index != TEST_CLEAR) {
+                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
                            state[size_index].src =
                               ctx->create_image(ctx, img_type, formats[format_index].format,
                                                 state[size_index].width, state[size_index].height,
@@ -561,7 +559,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            (fill_flavor == FILL_BLACK ? &black_color_float : &solid_color_float);
 
                      /* Reject invalid combinations. */
-                     if ((test_index == TEST_FB_CLEAR || test_index == TEST_CLEAR) &&
+                     if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_IMAGE) &&
                          fill_flavor != FILL_SOLID && fill_flavor != FILL_BLACK)
                         continue;
 
@@ -572,11 +570,11 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      /* Fill the source texture. */
                      if (stage == RUN && !unsupported) {
-                        printf("%s, type=%u, %s, samples=%u, layout=%u, %s\n",
-                               test_strings[test_index], img_type, formats[format_index].name,
+                        printf("%s, %ud, %s, samples=%u, layout=%u, %s\n",
+                               test_strings[test_index], img_type + 1, formats[format_index].name,
                                samples, layout, fill_strings[fill_flavor]);
 
-                        if (test_index != TEST_FB_CLEAR && test_index != TEST_CLEAR) {
+                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
                            for (unsigned size_index = 0; size_index <= 1; size_index++) {
                               switch (fill_flavor) {
                               case FILL_BLACK:
@@ -638,15 +636,15 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                      box_flavor == BOX_PARTIAL_UNALIGNED_YFLIP;
 
                         /* Reject invalid combinations. */
-                        if (test_index == TEST_FB_CLEAR && box_flavor != BOX_FULL)
+                        if (test_index == TEST_CLEAR_FB && box_flavor != BOX_FULL)
                            continue;
 
-                        if ((test_index == TEST_CLEAR || test_index == TEST_COPY ||
+                        if ((test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY ||
                              img_type == VK_IMAGE_TYPE_1D) && yflip)
                            continue;
 
                         if (stage == REPORT) {
-                           printf("%-8s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
+                           printf("%-12s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
                                   test_strings[test_index], img_type + 1,
                                   formats[format_index].name, samples,
                                   layout_strings[layout], fill_strings[fill_flavor],
@@ -660,7 +658,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                             !ctx->has_resolve_image_yflip)
                            report_skip = true;
 
-                        if (test_index == TEST_CLEAR && box_flavor != BOX_FULL &&
+                        if (test_index == TEST_CLEAR_IMAGE && box_flavor != BOX_FULL &&
                             !ctx->has_clear_image_region)
                            report_skip = true;
 
@@ -789,7 +787,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  }
 
                                  switch (test_index) {
-                                 case TEST_FB_CLEAR:
+                                 case TEST_CLEAR_FB:
                                     ctx->begin_render_pass(ctx,
                                                            &(api_render_pass_desc) {
                                                               .fb = state[size_index].fb,
@@ -799,7 +797,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                     ctx->end_render_pass(ctx);
                                     break;
 
-                                 case TEST_CLEAR:
+                                 case TEST_CLEAR_IMAGE:
                                     assert(!yflip);
                                     ctx->clear_image(ctx, state[size_index].dst,
                                                      box_flavor == BOX_FULL ? NULL : &dst_box, clear_color);
@@ -834,7 +832,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                     dst_box.height * dst_box.depth;
                               uint64_t bytes;
 
-                              if (test_index == TEST_FB_CLEAR || test_index == TEST_CLEAR)
+                              if (test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_IMAGE)
                                  bytes = num_pixels * msaa_pix_size;
                               else if (test_index == TEST_RESOLVE)
                                  bytes = num_pixels * (msaa_pix_size + bpe);
@@ -858,7 +856,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         if (state[size_index].fb)
                            ctx->destroy_framebuffer(ctx, state[size_index].fb);
                         ctx->destroy_image(ctx, state[size_index].dst);
-                        if (test_index != TEST_FB_CLEAR && test_index != TEST_CLEAR)
+                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE)
                            ctx->destroy_image(ctx, state[size_index].src);
                      }
 
