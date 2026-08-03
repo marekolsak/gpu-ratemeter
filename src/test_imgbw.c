@@ -516,6 +516,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      unsigned width;
                      unsigned height;
                      unsigned depth;
+                     bool exceeds_limits;
                      api_image *src;
                      api_image *dst;
                      api_framebuffer *fb;
@@ -531,7 +532,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      /* Determine the size. The final size must be exactly "eff_size" for 2D and 3D. */
                      if (img_type == VK_IMAGE_TYPE_1D) {
-                        width = (MAX_SIZE / eff_size) * 16384; // TODO: make it a cap
+                        width = ((double)eff_size / MAX_SIZE) * ctx->max_image_dim_1d;
                      } else if (img_type == VK_IMAGE_TYPE_2D) {
                         width = height = get_next_power_of_two(sqrt(num_pixels));
 
@@ -541,6 +542,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            else
                               height /= 2;
                         }
+
+                        width = MIN2(width, ctx->max_image_dim_2d);
+                        height = MIN2(height, ctx->max_image_dim_2d);
                      } else if (img_type == VK_IMAGE_TYPE_3D) {
                         width = height = depth = get_next_power_of_two(pow(size / msaa_pix_size, 0.333334));
 
@@ -552,19 +556,20 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            else
                               depth /= 2;
                         }
+
+                        width = MIN2(width, ctx->max_image_dim_3d);
+                        height = MIN2(height, ctx->max_image_dim_3d);
+                        depth = MIN2(depth, ctx->max_image_dim_3d);
                      }
-
-                     width = MIN2(width, 16384);
-                     height = MIN2(height, 16384);
-                     depth = MIN2(depth, 16384);
-
-                     // TODO: report n/a if the size isn't exact except 1D
 
                      sets[num_image_sets].width = width;
                      sets[num_image_sets].height = height;
                      sets[num_image_sets].depth = depth;
 
-                     if (stage == RUN && !unsupported) {
+                     if (img_type != VK_IMAGE_TYPE_1D)
+                        sets[num_image_sets].exceeds_limits = width * height * depth != num_pixels;
+
+                     if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
                         unsigned src_samples = samples;
                         unsigned src_tiling = layout == LAYOUT_SRC_LINEAR ?
                                                  VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
@@ -713,26 +718,19 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                             !ctx->has_clear_image_region)
                            report_na = true;
 
-                        if (report_na) {
-                           for (unsigned set = 0; set < num_image_sets; set++) {
-                              if (stage == COUNT_TESTS)
-                                 (*num_tests)++;
+                        for (unsigned set = 0; set < num_image_sets; set++) {
+                           if (stage == COUNT_TESTS)
+                              (*num_tests)++;
 
+                           if (report_na || sets[set].exceeds_limits) {
                               if (stage == RUN)
                                  print_progress(*num_tests, &num_visited_tests, 20);
 
                               if (stage == REPORT)
                                  printf(",%10s", "n/a");
+
+                              continue;
                            }
-
-                           if (stage == REPORT)
-                              printf("\n");
-                           continue;
-                        }
-
-                        for (unsigned set = 0; set < num_image_sets; set++) {
-                           if (stage == COUNT_TESTS)
-                              (*num_tests)++;
 
                            api_image_box src_box = {0}, dst_box = {0};
 
@@ -912,8 +910,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      for (unsigned set = 0; set < num_image_sets; set++) {
                         if (sets[set].fb)
                            ctx->destroy_framebuffer(ctx, sets[set].fb);
-                        ctx->destroy_image(ctx, sets[set].dst);
-                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE)
+                        if (sets[set].dst)
+                           ctx->destroy_image(ctx, sets[set].dst);
+                        if (sets[set].src)
                            ctx->destroy_image(ctx, sets[set].src);
                      }
 

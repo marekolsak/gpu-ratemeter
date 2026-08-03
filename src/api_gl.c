@@ -1416,6 +1416,11 @@ gl_create_context(const program_options *options)
    ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
    ctx->has_xfb = true;
 
+   glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint*)&ctx->max_image_dim_1d);
+   ctx->max_image_dim_2d = ctx->max_image_dim_1d;
+   glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, (GLint*)&ctx->max_image_dim_3d);
+   glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, (GLint*)&ctx->max_image_layers);
+
    if (GLAD_GL_EXT_mesh_shader)
       glGetIntegerv(GL_MAX_MESH_WORK_GROUP_INVOCATIONS_EXT, (int*)&ctx->max_mesh_workgroup_size);
 

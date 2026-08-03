@@ -2655,6 +2655,10 @@ vk_create_context(const program_options *options)
                   (EXT_mesh_shader.meshShader ? EXT_mesh_shader.primitiveFragmentShadingRateMeshShader : true);
    ctx->has_xfb = EXT_transform_feedback.transformFeedback;
 
+   ctx->max_image_dim_1d = device_props.properties.limits.maxImageDimension1D;
+   ctx->max_image_dim_2d = device_props.properties.limits.maxImageDimension2D;
+   ctx->max_image_dim_3d = device_props.properties.limits.maxImageDimension3D;
+   ctx->max_image_layers = device_props.properties.limits.maxImageArrayLayers;
    ctx->max_mesh_workgroup_size = EXT_mesh_shader.meshShader ? EXT_mesh_shader_props.maxMeshWorkGroupInvocations : 0;
    ctx->max_storage_buffer_range = device_props.properties.limits.maxStorageBufferRange;
    ctx->max_uniform_buffer_range = device_props.properties.limits.maxUniformBufferRange;

@@ -443,6 +443,10 @@ typedef struct api_context {
    bool has_vrs;
    bool has_vs_tes_layer_output;
    bool has_xfb;
+   unsigned max_image_dim_1d;
+   unsigned max_image_dim_2d;
+   unsigned max_image_dim_3d;
+   unsigned max_image_layers;
    unsigned max_mesh_workgroup_size; /* 0 = unsupported */
    unsigned max_storage_buffer_range;
    unsigned max_uniform_buffer_range;
