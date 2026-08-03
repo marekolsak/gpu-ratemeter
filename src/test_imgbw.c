@@ -13,7 +13,7 @@
  *
  * clear_image:
  * - gl: glClearTex{Sub}Image
- * - vk: vkCmdClearColorImage
+ * - vk: vkCmdClearColorImage / vkCmdClearDepthStencilImage
  *
  * blit_image - copy:
  * - gl: glCopyImageSubData
@@ -51,8 +51,8 @@
 
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
-   api_shader *fs_gradient[5]; /* output format variants */
-   api_shader *fs_random[7]; /* output format variants */
+   api_shader *fs_gradient[6]; /* output format variants */
+   api_shader *fs_random[8]; /* output format variants */
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
@@ -95,12 +95,19 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
 static api_shader *
 get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
 {
-   bool is_sint = format_is_sint(format);
-   bool is_integer = format_is_integer(format);
-   unsigned chan_size = get_pixel_size_from_format(format) / format_get_num_channels(format);
+   bool is_depth = format_has_depth(format);
+   bool is_stencil = format_has_stencil(format);
+   bool is_sint = !is_depth && format_is_sint(format);
+   bool is_integer = !is_depth && format_is_integer(format);
+   unsigned chan_size = is_depth ? 4 : get_pixel_size_from_format(format) /
+                                       format_get_num_channels(format);
 
-   const char *gradient, *vec_type;
+   const char *gradient, *vec_type, *output;
    unsigned format_index;
+
+   assert(!is_stencil);
+
+   output = is_depth ? "gl_FragDepth" : "fs_out";
 
    /* This fragment shader code generates the gradient pattern. */
    if (is_integer) {
@@ -129,8 +136,8 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
       }
    } else {
       gradient = "mod(gl_FragCoord.x, 256.0) / 256.0";
-      vec_type = "vec4";
-      format_index = 4;
+      vec_type = is_depth ? "float" : "vec4";
+      format_index = is_depth ? 5 : 4;
    }
 
    assert(format_index < ARRAY_SIZE(state->fs_gradient));
@@ -142,26 +149,36 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
    char fs_source[1024];
    snprintf(fs_source, sizeof(fs_source),
             "#version 460 \n"
+            "#define DEPTH %u \n"
+            "#if !DEPTH \n"
             "layout(location = 0) out %s fs_out; \n"
+            "#endif \n"
 
             "void main() { \n"
-            "   fs_out = %s(%s); \n"
+            "   %s = %s(%s); \n"
             "}",
-            vec_type, vec_type, gradient);
+            is_depth, vec_type, output, vec_type, gradient);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
 }
 
 static api_shader *
-get_random_color_fs(api_context *ctx, misc_state *state, VkFormat format)
+get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 {
-   bool is_sint = format_is_sint(format);
-   bool is_integer = format_is_integer(format);
-   unsigned chan_size = get_pixel_size_from_format(format) / format_get_num_channels(format);
+   bool is_depth = format_has_depth(format);
+   bool is_stencil = format_has_stencil(format);
+   bool is_sint = !is_depth && format_is_sint(format);
+   bool is_integer = !is_depth && format_is_integer(format);
+   unsigned chan_size = is_depth ? 4 : get_pixel_size_from_format(format) /
+                                       format_get_num_channels(format);
 
-   const char *rand_color, *vec_type;
+   const char *rand_color, *vec_type, *output;
    unsigned format_index;
+
+   assert(!is_stencil);
+
+   output = is_depth ? "gl_FragDepth" : "fs_out";
 
    /* This fragment shader code generates the gradient pattern. */
    if (is_integer) {
@@ -200,8 +217,8 @@ get_random_color_fs(api_context *ctx, misc_state *state, VkFormat format)
       }
    } else {
       rand_color = "rand_vec4(seed)";
-      vec_type = "vec4";
-      format_index = 6;
+      vec_type = is_depth ? "float" : "vec4";
+      format_index = is_depth ? 7 : 6;
    }
 
    assert(format_index < ARRAY_SIZE(state->fs_random));
@@ -213,7 +230,10 @@ get_random_color_fs(api_context *ctx, misc_state *state, VkFormat format)
    char fs_source[1024];
    snprintf(fs_source, sizeof(fs_source),
             "#version 460 \n"
+            "#define DEPTH %u \n"
+            "#if !DEPTH \n"
             "layout(location = 0) out %s fs_out; \n"
+            "#endif \n"
 
             /* 32-bit avalanche mixer */
             "uint mix32(uint v) \n"
@@ -251,9 +271,9 @@ get_random_color_fs(api_context *ctx, misc_state *state, VkFormat format)
 
             "void main() { \n"
             "   uvec4 seed = uvec4(uint(gl_FragCoord.x), uint(gl_FragCoord.y), gl_Layer, gl_SampleMaskIn[0]); \n"
-            "   fs_out = %s(%s); \n"
+            "   %s = %s(%s); \n"
             "}",
-            vec_type, vec_type, rand_color);
+            is_depth, vec_type, output, vec_type, rand_color);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
@@ -264,8 +284,9 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                 unsigned samplemask)
 {
    bool layered = image->depth > 1;
-   api_framebuffer *fb = ctx->create_framebuffer(ctx, image, NULL, image->width, image->height,
-                                                 image->samples, 0x1);
+   bool is_zs = format_is_depth_or_stencil(image->format);
+   api_framebuffer *fb = ctx->create_framebuffer(ctx, !is_zs ? image : NULL, is_zs ? image : NULL,
+                                                 image->width, image->height, image->samples, 0x1);
    api_gfx_pipeline *pipeline =
       ctx->create_gfx_pipeline(ctx,
                                &(api_gfx_pipeline_desc){
@@ -297,6 +318,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
 static void
 set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image)
 {
+   // TODO: for Z, draw the gradient using the Z position
    generate_pixels(ctx, state, image, get_gradient_fs(ctx, state, image->format),
                    (1 << image->samples) - 1);
 }
@@ -304,12 +326,13 @@ set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image)
 static void
 set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigned samplemask)
 {
-   generate_pixels(ctx, state, image, get_random_color_fs(ctx, state, image->format), samplemask);
+   generate_pixels(ctx, state, image, get_random_pixel_fs(ctx, state, image->format), samplemask);
 }
 
 static struct {
    const char *name;
-   VkFormat format;
+   VkFormat color_format;
+   VkFormat zs_format;
 } formats[] = {
    {"r8",      VK_FORMAT_R8_UNORM},
    {"r8g8",    VK_FORMAT_R8G8_UNORM},
@@ -318,6 +341,8 @@ static struct {
    {"r32f",    VK_FORMAT_R32_SFLOAT},
    {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
    {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
+   {"d32",     0, VK_FORMAT_D32_SFLOAT},
+   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT},
 };
 
 enum {
@@ -331,8 +356,8 @@ enum {
 };
 
 static const char *test_strings[] = {
-   [TEST_CLEAR_FB] = "clear_fb",
-   [TEST_CLEAR_ATTACHMENTS] = "clear_att",
+   [TEST_CLEAR_FB] = "clear_framebuffer",
+   [TEST_CLEAR_ATTACHMENTS] = "clear_attachments",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
@@ -470,16 +495,33 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
-            assert(format_is_valid(formats[format_index].format));
+            assert(!formats[format_index].color_format ||
+                   format_is_valid(formats[format_index].color_format));
+            assert(!formats[format_index].zs_format ||
+                   format_is_valid(formats[format_index].zs_format));
+
+            bool multiple_attachments = formats[format_index].color_format &&
+                                        formats[format_index].zs_format;
 
             for (unsigned samples = 1; samples <= 8; samples *= 2) {
-               if (!(ctx->fb_format_sample_count_support[formats[format_index].format] & samples))
+               if (ctx->fb_format_sample_count_support[formats[format_index].color_format] &&
+                   !(ctx->fb_format_sample_count_support[formats[format_index].color_format] & samples))
                   continue;
 
-               if (samples >= 2 && img_type != VK_IMAGE_TYPE_2D)
+               if (ctx->fb_format_sample_count_support[formats[format_index].zs_format] &&
+                   !(ctx->fb_format_sample_count_support[formats[format_index].zs_format] & samples))
+                  continue;
+
+               if ((samples >= 2 && img_type != VK_IMAGE_TYPE_2D) ||
+                   ((multiple_attachments || formats[format_index].zs_format) &&
+                    img_type == VK_IMAGE_TYPE_3D))
                   continue;
 
                for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
+                  if ((multiple_attachments || formats[format_index].zs_format) &&
+                      layout != LAYOUT_DEFAULT)
+                     continue;
+
                   /* Reject invalid combinations. */
                   switch (test_index) {
                   case TEST_CLEAR_FB:
@@ -490,18 +532,20 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                   case TEST_CLEAR_IMAGE:
                   case TEST_BLIT:
-                     if (layout != LAYOUT_DEFAULT)
+                     if (layout != LAYOUT_DEFAULT || multiple_attachments)
                         continue;
                      break;
 
                   case TEST_RESOLVE:
                      if (layout != LAYOUT_DEFAULT || img_type != VK_IMAGE_TYPE_2D ||
-                         samples == 1 || format_is_integer(formats[format_index].format))
+                         samples == 1 || multiple_attachments ||
+                         (formats[format_index].color_format &&
+                          format_is_integer(formats[format_index].color_format)))
                         continue;
                      break;
 
                   case TEST_COPY:
-                     if (layout != LAYOUT_DEFAULT && samples >= 2)
+                     if ((layout != LAYOUT_DEFAULT && samples >= 2) || multiple_attachments)
                         continue;
                      break;
                   }
@@ -517,12 +561,27 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                       !ctx->has_blit_image_3d)
                      unsupported = true;
 
+                  if (test_index == TEST_BLIT && formats[format_index].zs_format &&
+                      !ctx->has_blit_image_zs)
+                     unsupported = true;
+
+                  if (test_index == TEST_RESOLVE && formats[format_index].zs_format &&
+                      !ctx->has_depth_msaa_resolve)
+                     unsupported = true;
+
                   if (test_index == TEST_BLIT && samples > 1 && !ctx->has_blit_image_msaa)
                      unsupported = true;
 
                   /* Create textures. */
-                  unsigned bpe = get_pixel_size_from_format(formats[format_index].format);
-                  unsigned msaa_pix_size = bpe * samples;
+                  unsigned bpe_color =
+                     formats[format_index].color_format ?
+                           get_pixel_size_from_format(formats[format_index].color_format) : 0;
+                  unsigned bpe_zs =
+                     formats[format_index].zs_format ?
+                           get_pixel_size_from_format(formats[format_index].zs_format) : 0;
+                  unsigned bpe_total = bpe_color + bpe_zs;
+                  unsigned msaa_bpe_total = bpe_total * samples;
+                  assert(msaa_bpe_total);
 
                   struct {
                      unsigned width;
@@ -532,13 +591,15 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      bool exceeds_limits;
                      api_image *src;
                      api_image *dst;
+                     api_image *dst_color;
+                     api_image *dst_zs;
                      api_framebuffer *fb;
                   } sets[6] = {0};
                   unsigned num_image_sets = 0;
 
                   for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
                      unsigned eff_size = size >> (DEBUG_DUMP_IMAGES ? 4 : 0);
-                     unsigned num_pixels = eff_size / msaa_pix_size;
+                     unsigned num_pixels = eff_size / msaa_bpe_total;
                      unsigned width = 1, height = 1, depth = 1;
 
                      assert(num_image_sets < ARRAY_SIZE(sets));
@@ -557,7 +618,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         width = MIN2(width, ctx->max_image_dim_2d);
                         height = MIN2(height, ctx->max_image_dim_2d);
                      } else if (img_type == VK_IMAGE_TYPE_3D) {
-                        width = height = depth = get_next_power_of_two(pow(size / msaa_pix_size, 0.333334));
+                        width = height = depth = get_next_power_of_two(pow(size / bpe_total, 0.333334));
 
                         for (unsigned i = 0; width * height * depth != num_pixels; i++) {
                            if (i % 3 == 2)
@@ -588,36 +649,52 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
 
                         if (!is_clear) {
+                           assert(!multiple_attachments);
+
                            sets[num_image_sets].src =
-                              ctx->create_image(ctx, img_type, formats[format_index].format, width,
-                                                height, depth, src_samples, src_tiling,
+                              ctx->create_image(ctx, img_type,
+                                                formats[format_index].color_format ?
+                                                   formats[format_index].color_format :
+                                                   formats[format_index].zs_format, width, height,
+                                                depth, src_samples, src_tiling, api_heap_device);
+                        }
+
+                        if (formats[format_index].color_format) {
+                           sets[num_image_sets].dst_color =
+                              ctx->create_image(ctx, img_type, formats[format_index].color_format, width,
+                                                height, depth, dst_samples, dst_tiling,
                                                 api_heap_device);
                         }
 
-                        sets[num_image_sets].dst =
-                           ctx->create_image(ctx, img_type, formats[format_index].format, width,
-                                             height, depth, dst_samples, dst_tiling,
-                                             api_heap_device);
+                        if (formats[format_index].zs_format) {
+                           sets[num_image_sets].dst_zs =
+                              ctx->create_image(ctx, img_type, formats[format_index].zs_format, width,
+                                                height, depth, dst_samples, dst_tiling,
+                                                api_heap_device);
+                        }
+
+                        if (!multiple_attachments) {
+                           sets[num_image_sets].dst = sets[num_image_sets].dst_color ?
+                                                         sets[num_image_sets].dst_color :
+                                                         sets[num_image_sets].dst_zs;
+                        }
 
                         sets[num_image_sets].fb =
-                           ctx->create_framebuffer(ctx, sets[num_image_sets].dst, NULL,
-                                                   width, height, dst_samples, 0x1);
+                           ctx->create_framebuffer(ctx, sets[num_image_sets].dst_color,
+                                                   sets[num_image_sets].dst_zs, width, height,
+                                                   dst_samples, 0x1);
                      }
 
                      num_image_sets++;
                   }
 
                   for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
-                     const VkClearColorValue *clear_color =
-                        format_is_integer(formats[format_index].format) ?
-                           (fill_option == FILL_BLACK ? &black_color_uint : &solid_color_uint) :
-                           (fill_option == FILL_BLACK ? &black_color_float : &solid_color_float);
-
                      /* Reject invalid and less important combinations. */
                      if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                         continue;
 
-                     if ((samples == 1 && fill_option >= FILL_RANDOM_FRAGMENTED2) ||
+                     if (((samples == 1 || formats[format_index].zs_format) &&
+                          fill_option >= FILL_RANDOM_FRAGMENTED2) ||
                          (samples == 2 && fill_option >= FILL_RANDOM_FRAGMENTED4) ||
                          (samples == 4 && fill_option >= FILL_RANDOM_FRAGMENTED8))
                         continue;
@@ -625,6 +702,20 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
                          fill_option != FILL_RANDOM)
                         continue;
+
+                     api_clear_values clear_values = {0};
+
+                     if (formats[format_index].color_format) {
+                        clear_values.color =
+                           format_is_integer(formats[format_index].color_format) ?
+                              (fill_option == FILL_BLACK ? black_color_uint : solid_color_uint) :
+                              (fill_option == FILL_BLACK ? black_color_float : solid_color_float);
+                     }
+
+                     if (formats[format_index].zs_format) {
+                        clear_values.zs.depth = fill_option == FILL_BLACK ? 1 : 0.4;
+                        clear_values.zs.stencil = fill_option == FILL_BLACK ? 0 : 0x55;
+                     }
 
                      /* Fill the source texture. */
                      if (stage == RUN && !unsupported) {
@@ -634,7 +725,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               case FILL_BLACK:
                               case FILL_SOLID: {
                                  ctx->begin_cmdbuf(ctx, api_queue_gfx);
-                                 ctx->clear_image(ctx, sets[set].src, NULL, clear_color);
+                                 ctx->clear_image(ctx, sets[set].src, NULL, &clear_values);
                                  ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                                  break;
                               }
@@ -826,8 +917,11 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            if (stage == RUN) {
                               ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
-                              if (test_index == TEST_CLEAR_ATTACHMENTS)
-                                 ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = sets[set].fb});
+                              if (test_index == TEST_CLEAR_ATTACHMENTS) {
+                                 ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                                                           .fb = sets[set].fb
+                                                        });
+                              }
 
                               /* Run tests. */
                               for (unsigned i = 0; i < num_warmup_runs + num_runs; i++) {
@@ -839,8 +933,11 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                     ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
                                     ctx->write_next_query_value(ctx, timestamps);
 
-                                    if (test_index == TEST_CLEAR_ATTACHMENTS)
-                                       ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = sets[set].fb});
+                                    if (test_index == TEST_CLEAR_ATTACHMENTS) {
+                                       ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                                                                 .fb = sets[set].fb
+                                                              });
+                                    }
                                  }
 
                                  switch (test_index) {
@@ -849,7 +946,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                            &(api_render_pass_desc) {
                                                               .fb = sets[set].fb,
                                                               .clear = true,
-                                                              .clear_values.color = *clear_color,
+                                                              .clear_values = clear_values,
                                                            });
                                     ctx->end_render_pass(ctx);
                                     break;
@@ -858,14 +955,15 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                     ctx->clear_attachments(ctx,
                                                            &(api_clear_attachments_desc){
                                                               .box = dst_box,
-                                                              .clear_values.color = *clear_color,
+                                                              .clear_values = clear_values,
                                                            });
                                     break;
 
                                  case TEST_CLEAR_IMAGE:
                                     assert(!yflip);
                                     ctx->clear_image(ctx, sets[set].dst,
-                                                     region_option == REGION_FULL ? NULL : &dst_box, clear_color);
+                                                     region_option == REGION_FULL ? NULL : &dst_box,
+                                                     &clear_values);
                                     break;
 
                                  case TEST_COPY:
@@ -904,11 +1002,11 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               uint64_t bytes;
 
                               if (is_clear)
-                                 bytes = num_pixels * msaa_pix_size;
+                                 bytes = num_pixels * msaa_bpe_total;
                               else if (test_index == TEST_RESOLVE)
-                                 bytes = num_pixels * (msaa_pix_size + bpe);
+                                 bytes = num_pixels * (msaa_bpe_total + bpe_total);
                               else
-                                 bytes = num_pixels * msaa_pix_size * 2;
+                                 bytes = num_pixels * msaa_bpe_total * 2;
 
                               print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
                                                                     "%10.2f", "%10s", 30);
@@ -926,8 +1024,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      for (unsigned set = 0; set < num_image_sets; set++) {
                         if (sets[set].fb)
                            ctx->destroy_framebuffer(ctx, sets[set].fb);
-                        if (sets[set].dst)
-                           ctx->destroy_image(ctx, sets[set].dst);
+                        if (sets[set].dst_color)
+                           ctx->destroy_image(ctx, sets[set].dst_color);
+                        if (sets[set].dst_zs)
+                           ctx->destroy_image(ctx, sets[set].dst_zs);
                         if (sets[set].src)
                            ctx->destroy_image(ctx, sets[set].src);
                      }

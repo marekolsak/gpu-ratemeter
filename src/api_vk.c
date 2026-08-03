@@ -422,6 +422,17 @@ vk_buffer_bind_sparse(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
       *signal_fence = get_latest_fence(ctx, queue);
 }
 
+static unsigned
+get_image_aspect(api_image *image)
+{
+   if (format_is_depth_or_stencil(image->format)) {
+      return (format_has_depth(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+             (format_has_stencil(image->format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+   }
+
+   return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
 static void
 vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new_layout)
 {
@@ -443,9 +454,7 @@ vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new
                                   .newLayout = new_layout,
                                   .image = image->image,
                                   .subresourceRange = {
-                                     .aspectMask = format_is_depth_or_stencil(image->format) ?
-                                                      VK_IMAGE_ASPECT_DEPTH_BIT :
-                                                      VK_IMAGE_ASPECT_COLOR_BIT,
+                                     .aspectMask = get_image_aspect(image),
                                      .levelCount = 1,
                                      .layerCount = image->type == VK_IMAGE_TYPE_3D ?
                                                       VK_REMAINING_ARRAY_LAYERS : image->layer_count,
@@ -490,12 +499,12 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                              .arrayLayers = image->layer_count,
                              .samples = samples,
                              .tiling = tiling,
-                             .usage = is_zs ?
+                             .usage = (is_zs ?
                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                         (samples == 1 ? VK_IMAGE_USAGE_STORAGE_BIT : 0)) |
                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                         ((samples == 1) ? VK_IMAGE_USAGE_STORAGE_BIT : 0) ,
+                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                           },
                           NULL, &image->image));
 
@@ -562,28 +571,37 @@ vk_destroy_image(api_context *ctx, api_image *image)
 
 static void
 vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
-               const VkClearColorValue *value)
+               const api_clear_values *value)
 {
-   assert(!format_is_depth_or_stencil(image->format));
    assert(!box);
 
    vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-   vkCmdClearColorImage(ctx->current_cmd_buffer, image->image,
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, value, 1,
-                        &(VkImageSubresourceRange){
-                           .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                           .levelCount = 1,
-                           .layerCount = image->layer_count,
-                        });
+   if (format_is_depth_or_stencil(image->format)) {
+      vkCmdClearDepthStencilImage(ctx->current_cmd_buffer, image->image,
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value->zs, 1,
+                                  &(VkImageSubresourceRange){
+                                     .aspectMask =
+                                       (format_has_depth(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+                                       (format_has_stencil(image->format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0),
+                                     .levelCount = 1,
+                                     .layerCount = image->layer_count,
+                                  });
+   } else {
+      vkCmdClearColorImage(ctx->current_cmd_buffer, image->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value->color, 1,
+                           &(VkImageSubresourceRange){
+                              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                              .levelCount = 1,
+                              .layerCount = image->layer_count,
+                           });
+   }
 }
 
 static void
 vk_blit_image(api_context *ctx, api_blit_desc *desc)
 {
    bool is_resolve = desc->src->samples > 1 && desc->dst->samples == 1;
-   assert(!format_is_depth_or_stencil(desc->src->format));
-   assert(!format_is_depth_or_stencil(desc->dst->format));
 
    bool src_is_3d = desc->src->type == VK_IMAGE_TYPE_3D;
    bool dst_is_3d = desc->dst->type == VK_IMAGE_TYPE_3D;
@@ -599,13 +617,13 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
    unsigned dst_depth = dst_is_3d ? desc->dst_box.depth : 1;
 
    VkImageSubresourceLayers src_subresource = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .aspectMask = get_image_aspect(desc->src),
       .mipLevel = 0,
       .baseArrayLayer = src_base_layer,
       .layerCount = src_layer_count,
    };
    VkImageSubresourceLayers dst_subresource = {
-      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .aspectMask = get_image_aspect(desc->dst),
       .mipLevel = 0,
       .baseArrayLayer = dst_base_layer,
       .layerCount = dst_layer_count,
@@ -624,8 +642,16 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
       assert(!desc->linear_filter);
 
       if (is_resolve) {
+         assert(!format_has_stencil(desc->src->format));
+         assert(!format_has_stencil(desc->dst->format));
+
          vkCmdResolveImage2(ctx->current_cmd_buffer, &(VkResolveImageInfo2){
                             .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2,
+                            .pNext = format_has_depth(desc->src->format) ?
+                               &(VkResolveImageModeInfoKHR){
+                                  .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_MODE_INFO_KHR,
+                                  .resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
+                               } : NULL,
                             .srcImage = desc->src->image,
                             .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                             .dstImage = desc->dst->image,
@@ -660,6 +686,9 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                          });
       }
    } else {
+      assert(!format_is_depth_or_stencil(desc->src->format));
+      assert(!format_is_depth_or_stencil(desc->dst->format));
+
       vkCmdBlitImage2(ctx->current_cmd_buffer, &(VkBlitImageInfo2){
                          .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
                          .srcImage = desc->src->image,
@@ -1673,7 +1702,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                                         VK_ATTACHMENT_LOAD_OP_LOAD,
                                 .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                                 .clearValue = {
-                                    .depthStencil = {desc->clear_values.depth, 0},
+                                    .depthStencil = desc->clear_values.zs,
                                 },
                              },
                           });
@@ -1683,7 +1712,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       if (desc->fb->colorbuf)
          clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->clear_values.color};
       if (desc->fb->zbuf)
-         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->clear_values.depth};
+         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil = desc->clear_values.zs};
 
       vkCmdBeginRenderPass(ctx->current_cmd_buffer,
                            &(VkRenderPassBeginInfo) {
@@ -1760,8 +1789,7 @@ vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
 
       att[num_att].aspectMask = (has_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
                                 (has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
-      att[num_att].clearValue.depthStencil.depth = desc->clear_values.depth;
-      att[num_att].clearValue.depthStencil.stencil = desc->clear_values.stencil;
+      att[num_att].clearValue.depthStencil = desc->clear_values.zs;
       num_att++;
    }
 
@@ -2115,6 +2143,7 @@ vk_create_context(const program_options *options)
    VkPhysicalDeviceCopyMemoryIndirectFeaturesKHR enabled_KHR_copy_memory_indirect = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_KHR,
    };
+
    VkPhysicalDeviceFragmentShadingRateFeaturesKHR KHR_fragment_shading_rate = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR,
    };
@@ -2127,6 +2156,13 @@ vk_create_context(const program_options *options)
    };
    VkPhysicalDeviceMaintenance5FeaturesKHR enabled_KHR_maintenance5 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
+   };
+
+   VkPhysicalDeviceMaintenance10FeaturesKHR KHR_maintenance10 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_10_FEATURES_KHR,
+   };
+   VkPhysicalDeviceMaintenance10FeaturesKHR enabled_KHR_maintenance10 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_10_FEATURES_KHR,
    };
 
    VkPhysicalDeviceShaderClockFeaturesKHR KHR_shader_clock = {
@@ -2214,6 +2250,7 @@ vk_create_context(const program_options *options)
    check_add_ext(VK_KHR_COPY_MEMORY_INDIRECT_EXTENSION_NAME, KHR_copy_memory_indirect);
    check_add_ext(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, KHR_fragment_shading_rate);
    check_add_ext(VK_KHR_MAINTENANCE_5_EXTENSION_NAME, KHR_maintenance5);
+   check_add_ext(VK_KHR_MAINTENANCE_10_EXTENSION_NAME, KHR_maintenance10);
    check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
    check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
 
@@ -2445,6 +2482,8 @@ vk_create_context(const program_options *options)
 
    require(KHR_maintenance5.maintenance5);
 
+   optional(KHR_maintenance10.maintenance10);
+
    optional(KHR_shader_clock.shaderSubgroupClock);
    //optional(KHR_shader_clock.shaderDeviceClock);
 
@@ -2637,8 +2676,10 @@ vk_create_context(const program_options *options)
 
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
+   ctx->has_blit_image_zs = false;
    ctx->has_buffer_device_address = Vulkan12.bufferDeviceAddress;
    ctx->has_clear_image_region = false;
+   ctx->has_depth_msaa_resolve = KHR_maintenance10.maintenance10;
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
    ctx->has_image_tiling_linear = true;
    ctx->has_multiview = Vulkan11.multiview;

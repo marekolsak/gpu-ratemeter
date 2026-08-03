@@ -220,6 +220,8 @@ get_gl_internalformat(VkFormat format)
 
    case VK_FORMAT_D32_SFLOAT:
       return GL_DEPTH_COMPONENT32F;
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return GL_DEPTH32F_STENCIL8;
 
    /* These don't exist in GL. */
    case VK_FORMAT_A2B10G10R10_SNORM_PACK32:
@@ -300,6 +302,8 @@ get_gl_format(VkFormat format)
 
    case VK_FORMAT_D32_SFLOAT:
       return GL_DEPTH_COMPONENT;
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return GL_DEPTH_STENCIL;
 
    default:
       error("get_gl_format: unexpected image format %u", format);
@@ -373,6 +377,9 @@ get_gl_type(VkFormat format)
    case VK_FORMAT_R32G32B32A32_SFLOAT:
    case VK_FORMAT_D32_SFLOAT:
       return GL_FLOAT;
+
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
 
    case VK_FORMAT_R32_UINT:
    case VK_FORMAT_R32G32_UINT:
@@ -481,24 +488,40 @@ gl_destroy_image(api_context *ctx, api_image *image)
 
 static void
 gl_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
-               const VkClearColorValue *value)
+               const api_clear_values *value)
 {
-   assert(!format_is_depth_or_stencil(image->format));
    GLenum format, type;
+   const void *clear_value = NULL;
 
-   if (format_is_integer(image->format)) {
+   if (format_is_depth_or_stencil(image->format)) {
+      if (format_has_depth(image->format) && format_has_stencil(image->format)) {
+         format = GL_DEPTH_STENCIL;
+         type = GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
+         clear_value = &value->zs;
+      } else if (format_has_depth(image->format)) {
+         format = GL_DEPTH_COMPONENT;
+         type = GL_FLOAT;
+         clear_value = &value->zs;
+      } else {
+         format = GL_STENCIL_INDEX;
+         type = GL_UNSIGNED_BYTE;
+         clear_value = &value->zs.stencil;
+      }
+   } else if (format_is_integer(image->format)) {
       format = GL_RGBA_INTEGER;
       type = format_is_sint(image->format) ? GL_INT : GL_UNSIGNED_INT;
+      clear_value = value->color.uint32;
    } else {
       format = GL_RGBA;
       type = GL_FLOAT;
+      clear_value = value->color.float32;
    }
 
    if (box) {
       glClearTexSubImage(image->id, 0, box->x, box->y, box->z, box->width, box->height, box->depth,
-                         format, type, value->uint32);
+                         format, type, clear_value);
    } else {
-      glClearTexImage(image->id, 0, format, type, value->uint32);
+      glClearTexImage(image->id, 0, format, type, clear_value);
    }
    gl_check_no_error();
 }
@@ -506,9 +529,6 @@ gl_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
 static void
 gl_blit_image(api_context *ctx, api_blit_desc *desc)
 {
-   assert(!format_is_depth_or_stencil(desc->src->format));
-   assert(!format_is_depth_or_stencil(desc->dst->format));
-
    if (desc->is_copy) {
       assert(desc->dst_box.width == desc->src_box.width);
       assert(desc->dst_box.height == desc->src_box.height);
@@ -529,20 +549,42 @@ gl_blit_image(api_context *ctx, api_blit_desc *desc)
       assert(desc->src_box.depth == 1 && desc->dst_box.depth == 1);
       GLuint dst_fbo, src_fbo;
 
+      GLbitfield blit_bits = 0;
+      GLenum att = 0;
+
+      if (format_is_depth_or_stencil(desc->dst->format)) {
+         if (format_has_depth(desc->dst->format) && format_has_stencil(desc->dst->format)) {
+            blit_bits |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+            att = GL_DEPTH_STENCIL_ATTACHMENT;
+            assert(format_has_depth(desc->src->format));
+         } else if (format_has_depth(desc->dst->format)) {
+            blit_bits |= GL_DEPTH_BUFFER_BIT;
+            att = GL_DEPTH_ATTACHMENT;
+            assert(format_has_depth(desc->src->format));
+         } else {
+            blit_bits |= GL_STENCIL_BUFFER_BIT;
+            att = GL_STENCIL_ATTACHMENT;
+            assert(format_has_stencil(desc->src->format));
+         }
+      } else {
+         blit_bits |= GL_COLOR_BUFFER_BIT;
+         att = GL_COLOR_ATTACHMENT0;
+      }
+
       glCreateFramebuffers(1, &dst_fbo);
       if (desc->dst->depth > 1) {
-         glNamedFramebufferTextureLayer(dst_fbo, GL_COLOR_ATTACHMENT0, desc->dst->id, 0,
+         glNamedFramebufferTextureLayer(dst_fbo, att, desc->dst->id, 0,
                                         desc->dst_box.z);
       } else {
-         glNamedFramebufferTexture(dst_fbo, GL_COLOR_ATTACHMENT0, desc->dst->id, 0);
+         glNamedFramebufferTexture(dst_fbo, att, desc->dst->id, 0);
       }
 
       glCreateFramebuffers(1, &src_fbo);
       if (desc->src->depth > 1) {
-         glNamedFramebufferTextureLayer(src_fbo, GL_COLOR_ATTACHMENT0, desc->src->id, 0,
+         glNamedFramebufferTextureLayer(src_fbo, att, desc->src->id, 0,
                                         desc->src_box.z);
       } else {
-         glNamedFramebufferTexture(src_fbo, GL_COLOR_ATTACHMENT0, desc->src->id, 0);
+         glNamedFramebufferTexture(src_fbo, att, desc->src->id, 0);
       }
 
       glBlitNamedFramebuffer(src_fbo, dst_fbo,
@@ -550,7 +592,7 @@ gl_blit_image(api_context *ctx, api_blit_desc *desc)
                              desc->src_box.x + desc->src_box.width, desc->src_box.y + desc->src_box.height,
                              desc->dst_box.x, desc->dst_box.y,
                              desc->dst_box.x + desc->dst_box.width, desc->dst_box.y + desc->dst_box.height,
-                             GL_COLOR_BUFFER_BIT, desc->linear_filter ? GL_LINEAR : GL_NEAREST);
+                             blit_bits, desc->linear_filter ? GL_LINEAR : GL_NEAREST);
 
       glDeleteFramebuffers(1, &dst_fbo);
       glDeleteFramebuffers(2, &src_fbo);
@@ -1155,12 +1197,12 @@ gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
    /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
    if (clear_bits & GL_DEPTH_BUFFER_BIT) {
       glDepthMask(GL_TRUE);
-      glClearDepth(desc->clear_values.depth);
+      glClearDepth(desc->clear_values.zs.depth);
    }
 
    if (clear_bits & GL_STENCIL_BUFFER_BIT) {
       glStencilMask(0xff);
-      glClearStencil(desc->clear_values.stencil);
+      glClearStencil(desc->clear_values.zs.stencil);
    }
 
    if (ctx->fb->colorbuf) {
@@ -1446,8 +1488,10 @@ gl_create_context(const program_options *options)
 
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
+   ctx->has_blit_image_zs = true;
    ctx->has_buffer_device_address = false;
    ctx->has_clear_image_region = true;
+   ctx->has_depth_msaa_resolve = true;
    ctx->has_image_tiling_linear = options->gl_tiling_linear;
    ctx->has_resolve_image_yflip = true;
    ctx->has_shader_int8 = false;

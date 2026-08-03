@@ -1260,7 +1260,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                    .clear = true,
                                    .clear_values.color.float32 = {1, 0, 0, 1},
-                                   .clear_values.depth = 0.5,
+                                   .clear_values.zs.depth = 0.5,
                                 });
 
          /* Warm up the GPU. */

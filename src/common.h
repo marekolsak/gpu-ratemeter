@@ -330,8 +330,7 @@ typedef struct {
 
 typedef struct {
    VkClearColorValue color;
-   float depth;
-   uint8_t stencil;
+   VkClearDepthStencilValue zs;
 } api_clear_values;
 
 typedef struct {
@@ -430,8 +429,10 @@ typedef struct api_context {
    /* Feature properties. */
    bool has_blit_image_3d;
    bool has_blit_image_msaa;
+   bool has_blit_image_zs;
    bool has_buffer_device_address;
    bool has_clear_image_region;
+   bool has_depth_msaa_resolve;
    bool has_fully_covered;
    bool has_image_tiling_linear;
    bool has_multiview;
@@ -487,7 +488,7 @@ typedef struct api_context {
                               VkImageTiling tiling, api_heap_type heap);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
    void (*clear_image)(struct api_context *ctx, api_image *image, const api_image_box *box,
-                       const VkClearColorValue *value);
+                       const api_clear_values *value);
    void (*blit_image)(struct api_context *ctx, api_blit_desc *desc);
    void (*upload_image_data)(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
                              void *data);

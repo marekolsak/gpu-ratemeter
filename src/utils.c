@@ -222,6 +222,9 @@ get_pixel_size_from_format(VkFormat format)
    case VK_FORMAT_D32_SFLOAT:
       return 4;
 
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return 5;
+
    case VK_FORMAT_R16G16B16A16_SFLOAT:
    case VK_FORMAT_R16G16B16A16_UINT:
    case VK_FORMAT_R16G16B16A16_SINT:
@@ -238,7 +241,7 @@ get_pixel_size_from_format(VkFormat format)
       return 16;
 
    default:
-      error("unexpected format in get_pixel_size_from_format: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -297,7 +300,7 @@ format_is_integer(VkFormat format)
       return true;
 
    default:
-      error("unexpected format in format_is_integer: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -356,7 +359,7 @@ format_is_sint(VkFormat format)
       return true;
 
    default:
-      error("unexpected format in format_is_integer: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -419,7 +422,7 @@ format_get_num_channels(VkFormat format)
       return 4;
 
    default:
-      error("unexpected format in format_get_num_channels: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -476,10 +479,11 @@ format_has_depth(VkFormat format)
       return false;
 
    case VK_FORMAT_D32_SFLOAT:
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
       return true;
 
    default:
-      error("unexpected format in format_has_depth: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -536,8 +540,11 @@ format_has_stencil(VkFormat format)
    case VK_FORMAT_D32_SFLOAT:
       return false;
 
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+      return true;
+
    default:
-      error("unexpected format in format_has_stencil: %u", format);
+      error("unexpected format in %s: %u", __func__, format);
       return 0;
    }
 }
@@ -599,6 +606,7 @@ format_is_valid(VkFormat format)
    case VK_FORMAT_R32G32B32A32_SINT:
    case VK_FORMAT_R32G32B32A32_SFLOAT:
    case VK_FORMAT_D32_SFLOAT:
+   case VK_FORMAT_D32_SFLOAT_S8_UINT:
       return true;
 
    default:

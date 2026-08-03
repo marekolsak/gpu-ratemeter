@@ -20,10 +20,8 @@
  *
  * imgbw:
  * - write README
- * - Z/S (including vkCmdClearDepthStencilImage)
- * - clears:
- *    - MRTs
- *    - vkCmdClearAttachments and scissored glClearBuffer
+ * - stencil
+ * - clears: MRTs
  * - 2D array images
  * - transfer queue
  * - buffer-to-image, image-to-buffer
