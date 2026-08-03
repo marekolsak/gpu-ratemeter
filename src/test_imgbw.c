@@ -906,7 +906,10 @@ test_imgbw(api_context *ctx, const char *test_name)
 
    api_query_pool *timestamps = ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
+   printf("Executing tests ...");
+   fflush(stdout);
    run(ctx, test_name, RUN, &num_tests, timestamps);
+   puts("");
 
    ctx->get_query_results(ctx, timestamps);
    run(ctx, test_name, REPORT, NULL, timestamps);

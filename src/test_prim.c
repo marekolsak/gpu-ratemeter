@@ -1664,6 +1664,7 @@ test_prim(api_context *ctx, const char *test_name)
 
    printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
    printf("Executing tests ...");
+   fflush(stdout);
 
    unsigned num_visited_tests = 0;
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {

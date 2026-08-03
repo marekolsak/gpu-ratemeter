@@ -223,6 +223,8 @@ test_sparsebind(api_context *ctx, const char *test_name)
       ctx->create_query_pool(ctx, num_tests * 2 * 5, api_query_timestamp);
 
    printf("Executing tests ...");
+   fflush(stdout);
+
    unsigned num_visited_tests = 0;
 
    for (unsigned i = 0; i < num_tests; i++) {

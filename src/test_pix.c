@@ -1175,6 +1175,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
 
    printf("Executing tests ...");
+   fflush(stdout);
 
    bool raster_dumped_images = false;
 

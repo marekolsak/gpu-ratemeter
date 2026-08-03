@@ -418,6 +418,7 @@ test_bufbw(api_context *ctx, const char *test_name)
    state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
+   fflush(stdout);
    run(ctx, test_name, RUN, &state);
    puts("");
 
