@@ -1333,7 +1333,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       }
    }
 
-   printf("%-87s", "Formats");
+   const unsigned name_indent = 87;
+   printf("%-*s", name_indent, "Formats");
 
    unsigned off = 0;
 
@@ -1377,7 +1378,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
       char name[256];
       snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
-      printf("%-87s", name);
+      printf("%-*s", name_indent, name);
 
       bool raster = strstr(pipeline_name, "raster");
 

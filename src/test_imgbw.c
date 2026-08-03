@@ -336,18 +336,16 @@ static const char *test_strings[] = {
 };
 
 enum {
-   LAYOUT_O2O, /* optimal to optimal or clear optimal */
-   LAYOUT_L2O, /* linear to optimal */
-   LAYOUT_O2L, /* optimal to linear */
-   LAYOUT_L2L, /* linear to linear or clear linear */
+   LAYOUT_DEFAULT,
+   LAYOUT_SRC_LINEAR,
+   LAYOUT_DST_LINEAR,
    NUM_LAYOUTS,
 };
 
 static const char *layout_strings[] = {
-   [LAYOUT_O2O] = "O2O",
-   [LAYOUT_L2O] = "L2O",
-   [LAYOUT_O2L] = "O2L",
-   [LAYOUT_L2L] = "L2L",
+   [LAYOUT_DEFAULT] = "",
+   [LAYOUT_SRC_LINEAR] = ".linear_to_optimal",
+   [LAYOUT_DST_LINEAR] = ".optimal_to_linear",
 };
 
 enum {
@@ -364,7 +362,7 @@ static const char *box_strings[] = {
    [BOX_FULL_YFLIP] = "yflip",
    [BOX_PARTIAL] = "partial",
    [BOX_PARTIAL_UNALIGNED] = "unaligned",
-   [BOX_PARTIAL_UNALIGNED_YFLIP] = "yflip/unali",
+   [BOX_PARTIAL_UNALIGNED_YFLIP] = "yflip_unaligned",
 };
 
 enum {
@@ -411,6 +409,33 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
    }
 }
 
+static void
+get_subtest_name(char *out, size_t max_len, unsigned test_index, VkImageType img_type,
+                 unsigned format_index, unsigned samples, unsigned layout, unsigned fill_flavor,
+                 unsigned box_flavor)
+{
+   snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s.region_%s%s",
+            test_strings[test_index], img_type + 1, formats[format_index].name, samples,
+            fill_strings[fill_flavor], box_strings[box_flavor], layout_strings[layout]);
+}
+
+static void
+print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned format_index,
+                unsigned samples, unsigned layout, unsigned fill_flavor, unsigned box_flavor)
+{
+   const unsigned name_indent = 68;
+
+   if (header) {
+      printf("%-*s,%s,%s\n", name_indent, "Size", "small", "LARGE");
+   } else {
+      char name[128];
+
+      get_subtest_name(name, sizeof(name), test_index, img_type, format_index, samples, layout,
+                       fill_flavor, box_flavor);
+      printf("%-*s", name_indent, name);
+   }
+}
+
 static const VkClearColorValue black_color_float = {.float32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_float = {.float32 = {0.2, 0.3, 0.4, 0.5}};
 static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
@@ -420,10 +445,8 @@ static void
 run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tests,
     api_query_pool *timestamps)
 {
-   if (stage == REPORT) {
-      printf("Op          ,Dim, Format            ,MS,Layout, Fill       , Box         ,"
-             "   small   ,   LARGE\n");
-   }
+   if (stage == REPORT)
+      print_table_row(true, 0, 0, 0, 0, 0, 0, 0);
 
    misc_state misc_state = {0};
 
@@ -450,22 +473,25 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
                   /* Reject invalid combinations. */
-                  if (samples >= 2 && layout != LAYOUT_O2O)
-                     continue;
+                  switch (test_index) {
+                  case TEST_CLEAR_FB:
+                  case TEST_CLEAR_IMAGE:
+                  case TEST_BLIT:
+                  case TEST_RESOLVE:
+                     if (layout != LAYOUT_DEFAULT)
+                        continue;
+                     break;
 
-                  if (img_type == VK_IMAGE_TYPE_1D && layout != LAYOUT_O2O)
-                     continue;
-
-                  if (test_index != TEST_COPY && (layout == LAYOUT_L2O || layout == LAYOUT_O2L))
-                     continue;
-
-                  if (test_index != TEST_COPY && img_type != VK_IMAGE_TYPE_1D && layout != LAYOUT_O2O)
-                     continue;
+                  case TEST_COPY:
+                     if ((img_type == VK_IMAGE_TYPE_1D || samples >= 2) && layout != LAYOUT_DEFAULT)
+                        continue;
+                     break;
+                  }
 
                   /* Report n/a for unsupported tests. */
                   bool unsupported = false;
 
-                  if ((layout == LAYOUT_L2O || layout == LAYOUT_O2L || layout == LAYOUT_L2L) &&
+                  if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
                       !ctx->has_image_tiling_linear)
                      unsupported = true;
 
@@ -525,9 +551,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      if (stage == RUN && !unsupported) {
                         unsigned src_samples = samples;
-                        unsigned src_tiling = layout == LAYOUT_L2L || layout == LAYOUT_L2O ?
+                        unsigned src_tiling = layout == LAYOUT_SRC_LINEAR ?
                                                  VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
-                        unsigned dst_tiling = layout == LAYOUT_L2L || layout == LAYOUT_O2L ?
+                        unsigned dst_tiling = layout == LAYOUT_DST_LINEAR ?
                                                  VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
                         unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
 
@@ -570,9 +596,12 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      /* Fill the source texture. */
                      if (stage == RUN && !unsupported) {
-                        printf("%s, %ud, %s, samples=%u, layout=%u, %s\n",
-                               test_strings[test_index], img_type + 1, formats[format_index].name,
-                               samples, layout, fill_strings[fill_flavor]);
+#if 0
+                        char name[128];
+                        get_subtest_name(name, sizeof(name), test_index, img_type, format_index,
+                                         samples, layout, fill_flavor, 0);
+                        printf("Executing: %s\n", name);
+#endif
 
                         if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
                            for (unsigned size_index = 0; size_index <= 1; size_index++) {
@@ -644,25 +673,20 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            continue;
 
                         if (stage == REPORT) {
-                           printf("%-12s, %uD, %-18s, %u, %-5s, %-11s, %-11s",
-                                  test_strings[test_index], img_type + 1,
-                                  formats[format_index].name, samples,
-                                  layout_strings[layout], fill_strings[fill_flavor],
-                                  box_strings[box_flavor]);
+                           print_table_row(false, test_index, img_type, format_index, samples,
+                                           layout, fill_flavor, box_flavor);
                         }
 
-                        // TODO: tidy up?
-                        bool report_skip = unsupported;
+                        bool report_na = unsupported;
 
-                        if (test_index == TEST_RESOLVE && yflip &&
-                            !ctx->has_resolve_image_yflip)
-                           report_skip = true;
+                        if (test_index == TEST_RESOLVE && yflip && !ctx->has_resolve_image_yflip)
+                           report_na = true;
 
                         if (test_index == TEST_CLEAR_IMAGE && box_flavor != BOX_FULL &&
                             !ctx->has_clear_image_region)
-                           report_skip = true;
+                           report_na = true;
 
-                        if (report_skip) {
+                        if (report_na) {
                            for (unsigned size_index = 0; size_index <= 1; size_index++) {
                               if (stage == COUNT_TESTS)
                                  (*num_tests)++;
