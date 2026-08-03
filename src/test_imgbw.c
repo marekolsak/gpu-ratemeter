@@ -3,6 +3,31 @@
  * SPDX-License-Identifier: MIT
  */
 
+/* begin_render_pass clear:
+ * - gl: glClearBuffer{iv,uiv,fv}
+ * - vk: vkCmdBeginRenderPass / vkCmdBeginRendering
+ *
+ * clear_attachments:
+ * - gl: scissored glClearBuffer{iv,uiv,fv}
+ * - vk: vkCmdClearAttachments
+ *
+ * clear_image:
+ * - gl: glClearTex{Sub}Image
+ * - vk: vkCmdClearColorImage
+ *
+ * blit_image - copy:
+ * - gl: glCopyImageSubData
+ * - vk: vkCmdCopyImage2
+ *
+ * blit_image - blit:
+ * - gl: glBlitNamedFramebuffer
+ * - vk: vkCmdBlitImage2
+ *
+ * blit_image - resolve:
+ * - gl: glBlitNamedFramebuffer
+ * - vk: vkCmdResolveImage2
+ */
+
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -769,7 +794,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                            &(api_render_pass_desc) {
                                                               .fb = state[size_index].fb,
                                                               .clear = true,
-                                                              .color_clear_value = *clear_color,
+                                                              .clear_values.color = *clear_color,
                                                            });
                                     ctx->end_render_pass(ctx);
                                     break;

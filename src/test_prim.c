@@ -1334,7 +1334,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = state->fb,
                              .clear = true,
-                             .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
+                             .clear_values.color.float32 = {0.2, 0.2, 0.2, 1},
                           });
    run_draws(ctx, num_iterations / 4, test->geom_style, count);
    ctx->end_render_pass(ctx);

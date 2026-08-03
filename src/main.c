@@ -20,13 +20,11 @@
  *
  * imgbw:
  * - write README
+ * - Z/S (including vkCmdClearDepthStencilImage)
  * - clears:
- *    - vkCmdBeginRenderPass (MRTs + Z/S), vkCmdClearAttachments, vkCmdClearDepthStencilImage
- *    - glClear (MRTs + Z/S) with and without scissor, glClearBuffer
- * - resolve:
- *    - pResolveAttachments via a render pass
+ *    - MRTs
+ *    - vkCmdClearAttachments and scissored glClearBuffer
  * - 2D array images
- * - Z/S?
  * - transfer queue
  * - buffer-to-image (including VK_KHR_copy_memory_indirect), image-to-buffer
  *

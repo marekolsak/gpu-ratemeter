@@ -328,11 +328,21 @@ typedef struct {
 } api_query_pool;
 
 typedef struct {
+   VkClearColorValue color;
+   float depth;
+   uint8_t stencil;
+} api_clear_values;
+
+typedef struct {
    api_framebuffer *fb;
    bool clear;
-   VkClearColorValue color_clear_value;
-   float depth_clear_value;
+   api_clear_values clear_values;
 } api_render_pass_desc;
+
+typedef struct {
+   api_image_box box;
+   api_clear_values clear_values;
+} api_clear_attachments_desc;
 
 typedef struct {
 #ifdef VK_PRIVATE
@@ -538,6 +548,7 @@ typedef struct api_context {
    /* Graphics commands. */
    void (*begin_render_pass)(struct api_context *ctx, const api_render_pass_desc *desc);
    void (*end_render_pass)(struct api_context *ctx);
+   void (*clear_attachments)(struct api_context *ctx, api_clear_attachments_desc *desc);
 
    void (*bind_vertex_buffers)(struct api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets);
    void (*bind_index_buffer)(struct api_context *ctx, api_buffer *ib);
@@ -562,6 +573,7 @@ typedef struct api_context {
 
 #ifdef VK_PRIVATE
    api_gfx_pipeline *current_pipeline;
+   api_framebuffer *current_fb;
 
    /* Device. */
    unsigned num_extensions;
@@ -638,6 +650,8 @@ unsigned get_pixel_size_from_format(VkFormat format);
 bool format_is_integer(VkFormat format);
 bool format_is_sint(VkFormat format);
 unsigned format_get_num_channels(VkFormat format);
+bool format_has_depth(VkFormat format);
+bool format_has_stencil(VkFormat format);
 bool format_is_depth_or_stencil(VkFormat format);
 bool format_is_valid(VkFormat format);
 unsigned get_next_power_of_two(unsigned x);

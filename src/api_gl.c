@@ -1151,16 +1151,16 @@ gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
          if (format_is_sint((desc->fb->colorbuf->format)))
-            glClearBufferiv(GL_COLOR, 0, desc->color_clear_value.int32);
+            glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
          else if (format_is_integer(desc->fb->colorbuf->format))
-            glClearBufferuiv(GL_COLOR, 0, desc->color_clear_value.uint32);
+            glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
          else
-            glClearBufferfv(GL_COLOR, 0, desc->color_clear_value.float32);
+            glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
       }
 
       if (desc->fb->zbuf) {
          glDepthMask(GL_TRUE);
-         glClearBufferfv(GL_DEPTH, 0, &desc->depth_clear_value);
+         glClearBufferfv(GL_DEPTH, 0, &desc->clear_values.depth);
       }
 
       gl_set_current_pipeline_color_depth_masks(ctx);

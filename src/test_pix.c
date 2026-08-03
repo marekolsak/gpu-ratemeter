@@ -1258,8 +1258,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                    .fb = fbs[f].pipelines[p]->desc.fb,
                                    .clear = true,
-                                   .color_clear_value.float32 = {1, 0, 0, 1},
-                                   .depth_clear_value = 0.5,
+                                   .clear_values.color.float32 = {1, 0, 0, 1},
+                                   .clear_values.depth = 0.5,
                                 });
 
          /* Warm up the GPU. */

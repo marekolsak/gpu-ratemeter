@@ -216,7 +216,7 @@ test_sanity(api_context *ctx, const char *test_name)
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = fb,
                              .clear = true,
-                             .color_clear_value.float32 = {0.2, 0.2, 0.2, 1},
+                             .clear_values.color.float32 = {0.2, 0.2, 0.2, 1},
                           });
    ctx->bind_gfx_pipeline(ctx, pipeline);
    ctx->bind_vertex_buffers(ctx, vb, vb_offsets);

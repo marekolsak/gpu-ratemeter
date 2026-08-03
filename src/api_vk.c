@@ -1625,6 +1625,8 @@ vk_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *
 static void
 vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 {
+   ctx->current_fb = desc->fb;
+
    if (desc->fb->colorbuf) {
       vk_image_layout_transition(ctx, desc->fb->colorbuf,
                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -1658,7 +1660,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                                         VK_ATTACHMENT_LOAD_OP_LOAD,
                                 .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
                                 .clearValue = {
-                                    .color = desc->color_clear_value,
+                                    .color = desc->clear_values.color,
                                 },
                              },
                              .pDepthAttachment = &(VkRenderingAttachmentInfo){
@@ -1670,7 +1672,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                                         VK_ATTACHMENT_LOAD_OP_LOAD,
                                 .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
                                 .clearValue = {
-                                    .depthStencil = {desc->depth_clear_value, 0},
+                                    .depthStencil = {desc->clear_values.depth, 0},
                                 },
                              },
                           });
@@ -1678,9 +1680,9 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
 
       if (desc->fb->colorbuf)
-         clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->color_clear_value};
+         clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->clear_values.color};
       if (desc->fb->zbuf)
-         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->depth_clear_value};
+         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil.depth = desc->clear_values.depth};
 
       vkCmdBeginRenderPass(ctx->current_cmd_buffer,
                            &(VkRenderPassBeginInfo) {
@@ -1719,10 +1721,57 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 static void
 vk_end_render_pass(api_context *ctx)
 {
+   ctx->current_fb = NULL;
+
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE)
       vkCmdEndRendering(ctx->current_cmd_buffer);
    else
       vkCmdEndRenderPass(ctx->current_cmd_buffer);
+}
+
+static void
+vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
+{
+   unsigned num_att = 0;
+   VkClearAttachment att[10];
+
+   assert(desc->box.x >= 0);
+   assert(desc->box.y >= 0);
+   assert(desc->box.z >= 0);
+   assert(desc->box.width > 0);
+   assert(desc->box.height > 0);
+   assert(desc->box.depth > 0);
+
+   if (ctx->current_fb->colorbuf) {
+      assert(num_att < ARRAY_SIZE(att));
+      att[num_att].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      att[num_att].colorAttachment = 0;
+      att[num_att].clearValue.color = desc->clear_values.color;
+      num_att++;
+   }
+
+   if (ctx->current_fb->zbuf) {
+      bool has_depth = format_has_depth(ctx->current_fb->zbuf->format);
+      bool has_stencil = format_has_stencil(ctx->current_fb->zbuf->format);
+
+      assert(has_depth || has_stencil);
+      assert(num_att < ARRAY_SIZE(att));
+
+      att[num_att].aspectMask = (has_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
+                                (has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+      att[num_att].clearValue.depthStencil.depth = desc->clear_values.depth;
+      att[num_att].clearValue.depthStencil.stencil = desc->clear_values.stencil;
+      num_att++;
+   }
+
+   assert(num_att);
+   vkCmdClearAttachments(ctx->current_cmd_buffer, num_att, att, 1,
+                         &(VkClearRect){
+                            .rect.offset = {desc->box.x, desc->box.y},
+                            .rect.extent = {desc->box.width, desc->box.height},
+                            .baseArrayLayer = desc->box.z,
+                            .layerCount = desc->box.depth,
+                         });
 }
 
 static void
@@ -2742,6 +2791,7 @@ vk_create_context(const program_options *options)
 
    ctx->begin_render_pass = vk_begin_render_pass;
    ctx->end_render_pass = vk_end_render_pass;
+   ctx->clear_attachments = vk_clear_attachments;
 
    ctx->bind_vertex_buffers = vk_bind_vertex_buffers;
    ctx->bind_index_buffer = vk_bind_index_buffer;
