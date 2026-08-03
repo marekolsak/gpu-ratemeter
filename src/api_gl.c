@@ -1145,23 +1145,43 @@ gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       ctx->prev_fb = NULL;
    }
 
-   if (desc->clear) {
+   if (desc->clear && (desc->fb->colorbuf || desc->fb->zbuf)) {
+      GLuint clear_bits = (desc->fb->zbuf ?
+                              (format_has_depth(desc->fb->zbuf->format) ? GL_DEPTH_BUFFER_BIT : 0) |
+                              (format_has_stencil(desc->fb->zbuf->format) ? GL_STENCIL_BUFFER_BIT : 0)
+                            : 0);
+
+      /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
+      if (clear_bits & GL_DEPTH_BUFFER_BIT) {
+         glDepthMask(GL_TRUE);
+         glClearDepth(desc->clear_values.depth);
+      }
+
+      if (clear_bits & GL_STENCIL_BUFFER_BIT) {
+         glStencilMask(0xff);
+         glClearStencil(desc->clear_values.stencil);
+      }
+
       if (desc->fb->colorbuf) {
-         /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
          glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-         if (format_is_sint((desc->fb->colorbuf->format)))
-            glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
-         else if (format_is_integer(desc->fb->colorbuf->format))
-            glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
-         else
-            glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
+         if (format_is_integer(desc->fb->colorbuf->format)) {
+            if (format_is_sint((desc->fb->colorbuf->format)))
+               glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
+            else if (format_is_integer(desc->fb->colorbuf->format))
+               glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
+            else
+               glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
+         } else {
+            glClearColor(desc->clear_values.color.float32[0], desc->clear_values.color.float32[1],
+                         desc->clear_values.color.float32[2], desc->clear_values.color.float32[3]);
+
+            clear_bits |= GL_COLOR_BUFFER_BIT;
+         }
       }
 
-      if (desc->fb->zbuf) {
-         glDepthMask(GL_TRUE);
-         glClearBufferfv(GL_DEPTH, 0, &desc->clear_values.depth);
-      }
+      if (clear_bits)
+         glClear(clear_bits);
 
       gl_set_current_pipeline_color_depth_masks(ctx);
    }

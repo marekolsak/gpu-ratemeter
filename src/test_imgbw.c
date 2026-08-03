@@ -4,11 +4,11 @@
  */
 
 /* begin_render_pass clear:
- * - gl: glClearBuffer{iv,uiv,fv}
+ * - gl: glClear (non-integer only) or glClearBuffer{iv,uiv,fv}
  * - vk: vkCmdBeginRenderPass / vkCmdBeginRendering
  *
  * clear_attachments:
- * - gl: scissored glClearBuffer{iv,uiv,fv}
+ * - gl: scissored glClear (non-integer only) or glClearBuffer{iv,uiv,fv}
  * - vk: vkCmdClearAttachments
  *
  * clear_image:
