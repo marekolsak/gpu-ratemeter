@@ -426,11 +426,13 @@ print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned
 
    if (header) {
       printf("%-*s", name_indent, "Size");
+
       for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
          unsigned shift = size >= (1 << 20) ? 20 : 10;
 
          printf(",%8u%cB", (unsigned)(size >> shift), shift == 20 ? 'M' : 'K');
       }
+
       puts("");
    } else {
       char name[128];
@@ -457,7 +459,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
    unsigned num_visited_tests = 0;
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
-      for (VkImageType img_type = VK_IMAGE_TYPE_1D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
+      for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
             assert(format_is_valid(formats[format_index].format));
 
@@ -472,7 +474,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   /* Reject invalid combinations. */
                   switch (test_index) {
                   case TEST_CLEAR_FB:
-                     if (layout != LAYOUT_DEFAULT || img_type == VK_IMAGE_TYPE_1D)
+                     if (layout != LAYOUT_DEFAULT)
                         continue;
                      break;
 
@@ -489,7 +491,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      break;
 
                   case TEST_COPY:
-                     if (layout != LAYOUT_DEFAULT && (img_type == VK_IMAGE_TYPE_1D || samples >= 2))
+                     if (layout != LAYOUT_DEFAULT && samples >= 2)
                         continue;
                      break;
                   }
@@ -530,10 +532,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      assert(num_image_sets < ARRAY_SIZE(sets));
 
-                     /* Determine the size. The final size must be exactly "eff_size" for 2D and 3D. */
-                     if (img_type == VK_IMAGE_TYPE_1D) {
-                        width = ((double)eff_size / MAX_SIZE) * ctx->max_image_dim_1d;
-                     } else if (img_type == VK_IMAGE_TYPE_2D) {
+                     /* Determine the size. The final size must be exactly "eff_size". */
+                     if (img_type == VK_IMAGE_TYPE_2D) {
                         width = height = get_next_power_of_two(sqrt(num_pixels));
 
                         for (unsigned i = 0; width * height != num_pixels; i++) {
@@ -562,12 +562,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         depth = MIN2(depth, ctx->max_image_dim_3d);
                      }
 
+                     sets[num_image_sets].exceeds_limits = width * height * depth != num_pixels;
                      sets[num_image_sets].width = width;
                      sets[num_image_sets].height = height;
                      sets[num_image_sets].depth = depth;
-
-                     if (img_type != VK_IMAGE_TYPE_1D)
-                        sets[num_image_sets].exceeds_limits = width * height * depth != num_pixels;
 
                      if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
                         unsigned src_samples = samples;
@@ -611,10 +609,6 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      if ((samples == 1 && fill_option >= FILL_RANDOM_FRAGMENTED2) ||
                          (samples == 2 && fill_option >= FILL_RANDOM_FRAGMENTED4) ||
                          (samples == 4 && fill_option >= FILL_RANDOM_FRAGMENTED8))
-                        continue;
-
-                     if (img_type == VK_IMAGE_TYPE_1D &&
-                         fill_option != (test_index == TEST_CLEAR_IMAGE ? FILL_SOLID : FILL_RANDOM))
                         continue;
 
                      if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
@@ -688,11 +682,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         if (test_index == TEST_CLEAR_FB && region_option != REGION_FULL)
                            continue;
 
-                        if (img_type == VK_IMAGE_TYPE_1D && region_option != REGION_FULL)
-                           continue;
-
-                        if (yflip && (test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY ||
-                                      img_type == VK_IMAGE_TYPE_1D))
+                        if (yflip && (test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY))
                            continue;
 
                         if (ctx->options.filter) {
@@ -750,10 +740,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               break;
 
                            case REGION_PARTIAL:
-                              if (img_type == VK_IMAGE_TYPE_1D) {
-                                 dst_box.x = 256;
-                                 dst_box.width -= 256;
-                              } else if (img_type == VK_IMAGE_TYPE_2D) {
+                              if (img_type == VK_IMAGE_TYPE_2D) {
                                  dst_box.x = 8;
                                  dst_box.y = 8;
                                  dst_box.width -= 8;
