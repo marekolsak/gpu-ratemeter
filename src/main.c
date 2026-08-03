@@ -209,7 +209,7 @@ main(int argc, char **argv)
       }
 
       if (!valid)
-         error("Unknown option: %s", argv[i]);
+         error("Unknown option: %s (note that the test name should always be the last parameter)", argv[i]);
    }
 
    const char *name = NULL;

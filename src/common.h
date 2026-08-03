@@ -127,6 +127,7 @@ typedef struct {
 typedef struct {
    unsigned width;
    unsigned height;
+   unsigned layers;
    unsigned samples;
    unsigned view_mask;
    api_image *colorbuf;

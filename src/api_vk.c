@@ -692,6 +692,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
+   fb->layers = colorbuf ? colorbuf->depth : zbuf ? zbuf->depth : 1;
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;

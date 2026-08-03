@@ -623,6 +623,7 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
+   fb->layers = colorbuf ? colorbuf->depth : zbuf ? zbuf->depth : 1;
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
@@ -1135,6 +1136,61 @@ gl_wait_idle_before_deallocation(api_context *ctx)
 }
 
 static void
+gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
+{
+   assert(desc->box.z == 0 && desc->box.depth == ctx->fb->layers);
+   bool scissor = desc->box.x > 0 || desc->box.y > 0 ||
+                  desc->box.width < ctx->fb->width || desc->box.height < ctx->fb->height;
+
+   if (scissor) {
+      glEnable(GL_SCISSOR_TEST);
+      glScissor(desc->box.x, desc->box.y, desc->box.width, desc->box.height);
+   }
+
+   GLuint clear_bits = (ctx->fb->zbuf ?
+                           (format_has_depth(ctx->fb->zbuf->format) ? GL_DEPTH_BUFFER_BIT : 0) |
+                           (format_has_stencil(ctx->fb->zbuf->format) ? GL_STENCIL_BUFFER_BIT : 0)
+                         : 0);
+
+   /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
+   if (clear_bits & GL_DEPTH_BUFFER_BIT) {
+      glDepthMask(GL_TRUE);
+      glClearDepth(desc->clear_values.depth);
+   }
+
+   if (clear_bits & GL_STENCIL_BUFFER_BIT) {
+      glStencilMask(0xff);
+      glClearStencil(desc->clear_values.stencil);
+   }
+
+   if (ctx->fb->colorbuf) {
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+      if (format_is_integer(ctx->fb->colorbuf->format)) {
+         if (format_is_sint((ctx->fb->colorbuf->format)))
+            glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
+         else if (format_is_integer(ctx->fb->colorbuf->format))
+            glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
+         else
+            glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
+      } else {
+         glClearColor(desc->clear_values.color.float32[0], desc->clear_values.color.float32[1],
+                      desc->clear_values.color.float32[2], desc->clear_values.color.float32[3]);
+
+         clear_bits |= GL_COLOR_BUFFER_BIT;
+      }
+   }
+
+   if (clear_bits)
+      glClear(clear_bits);
+
+   if (scissor)
+      glDisable(GL_SCISSOR_TEST);
+
+   gl_set_current_pipeline_color_depth_masks(ctx);
+}
+
+static void
 gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 {
    ctx->fb = desc->fb;
@@ -1146,44 +1202,12 @@ gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    }
 
    if (desc->clear && (desc->fb->colorbuf || desc->fb->zbuf)) {
-      GLuint clear_bits = (desc->fb->zbuf ?
-                              (format_has_depth(desc->fb->zbuf->format) ? GL_DEPTH_BUFFER_BIT : 0) |
-                              (format_has_stencil(desc->fb->zbuf->format) ? GL_STENCIL_BUFFER_BIT : 0)
-                            : 0);
-
-      /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
-      if (clear_bits & GL_DEPTH_BUFFER_BIT) {
-         glDepthMask(GL_TRUE);
-         glClearDepth(desc->clear_values.depth);
-      }
-
-      if (clear_bits & GL_STENCIL_BUFFER_BIT) {
-         glStencilMask(0xff);
-         glClearStencil(desc->clear_values.stencil);
-      }
-
-      if (desc->fb->colorbuf) {
-         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
-         if (format_is_integer(desc->fb->colorbuf->format)) {
-            if (format_is_sint((desc->fb->colorbuf->format)))
-               glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
-            else if (format_is_integer(desc->fb->colorbuf->format))
-               glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
-            else
-               glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
-         } else {
-            glClearColor(desc->clear_values.color.float32[0], desc->clear_values.color.float32[1],
-                         desc->clear_values.color.float32[2], desc->clear_values.color.float32[3]);
-
-            clear_bits |= GL_COLOR_BUFFER_BIT;
-         }
-      }
-
-      if (clear_bits)
-         glClear(clear_bits);
-
-      gl_set_current_pipeline_color_depth_masks(ctx);
+      gl_clear_attachments(ctx, &(api_clear_attachments_desc){
+                              .box.width = desc->fb->width,
+                              .box.height = desc->fb->height,
+                              .box.depth = desc->fb->layers,
+                              .clear_values = desc->clear_values,
+                           });
    }
 }
 
@@ -1531,6 +1555,7 @@ gl_create_context(const program_options *options)
 
    ctx->begin_render_pass = gl_begin_render_pass;
    ctx->end_render_pass = gl_end_render_pass;
+   ctx->clear_attachments = gl_clear_attachments;
 
    ctx->bind_vertex_buffers = gl_bind_vertex_buffers;
    ctx->bind_index_buffer = gl_bind_index_buffer;

@@ -322,6 +322,7 @@ static struct {
 
 enum {
    TEST_CLEAR_FB,
+   TEST_CLEAR_ATTACHMENTS,
    TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
@@ -331,6 +332,7 @@ enum {
 
 static const char *test_strings[] = {
    [TEST_CLEAR_FB] = "clear_fb",
+   [TEST_CLEAR_ATTACHMENTS] = "clear_att",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
@@ -462,6 +464,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
    unsigned num_visited_tests = 0;
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
+      bool is_clear = test_index == TEST_CLEAR_FB ||
+                      test_index == TEST_CLEAR_ATTACHMENTS ||
+                      test_index == TEST_CLEAR_IMAGE;
+
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
             assert(format_is_valid(formats[format_index].format));
@@ -477,6 +483,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   /* Reject invalid combinations. */
                   switch (test_index) {
                   case TEST_CLEAR_FB:
+                  case TEST_CLEAR_ATTACHMENTS:
                      if (layout != LAYOUT_DEFAULT)
                         continue;
                      break;
@@ -580,7 +587,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                  VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
                         unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
 
-                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
+                        if (!is_clear) {
                            sets[num_image_sets].src =
                               ctx->create_image(ctx, img_type, formats[format_index].format, width,
                                                 height, depth, src_samples, src_tiling,
@@ -607,8 +614,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            (fill_option == FILL_BLACK ? &black_color_float : &solid_color_float);
 
                      /* Reject invalid and less important combinations. */
-                     if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_IMAGE) &&
-                         fill_option != FILL_SOLID && fill_option != FILL_BLACK)
+                     if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                         continue;
 
                      if ((samples == 1 && fill_option >= FILL_RANDOM_FRAGMENTED2) ||
@@ -622,7 +628,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      /* Fill the source texture. */
                      if (stage == RUN && !unsupported) {
-                        if (test_index != TEST_CLEAR_FB && test_index != TEST_CLEAR_IMAGE) {
+                        if (!is_clear) {
                            for (unsigned set = 0; set < num_image_sets; set++) {
                               switch (fill_option) {
                               case FILL_BLACK:
@@ -687,7 +693,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         if (test_index == TEST_CLEAR_FB && region_option != REGION_FULL)
                            continue;
 
-                        if (yflip && (test_index == TEST_CLEAR_IMAGE || test_index == TEST_COPY))
+                        if (yflip && (is_clear || test_index == TEST_COPY))
                            continue;
 
                         if (ctx->options.filter) {
@@ -753,10 +759,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               } else {
                                  dst_box.x = 8;
                                  dst_box.y = 8;
-                                 dst_box.z = 8;
                                  dst_box.width -= 8;
                                  dst_box.height -= 8;
-                                 dst_box.depth -= 8;
                               }
                               src_box = dst_box;
                               break;
@@ -769,10 +773,6 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               if (img_type >= VK_IMAGE_TYPE_2D) {
                                  dst_box.y = off;
                                  dst_box.height -= off;
-                                 if (img_type == VK_IMAGE_TYPE_3D) {
-                                    dst_box.z = off;
-                                    dst_box.depth -= off;
-                                 }
                               }
                               src_box = dst_box;
 
@@ -826,12 +826,21 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            if (stage == RUN) {
                               ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
+                              if (test_index == TEST_CLEAR_ATTACHMENTS)
+                                 ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = sets[set].fb});
+
                               /* Run tests. */
                               for (unsigned i = 0; i < num_warmup_runs + num_runs; i++) {
                                  /* The first few just warm up caches and the hw. */
                                  if (i == num_warmup_runs) {
+                                    if (test_index == TEST_CLEAR_ATTACHMENTS)
+                                       ctx->end_render_pass(ctx);
+
                                     ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
                                     ctx->write_next_query_value(ctx, timestamps);
+
+                                    if (test_index == TEST_CLEAR_ATTACHMENTS)
+                                       ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = sets[set].fb});
                                  }
 
                                  switch (test_index) {
@@ -843,6 +852,14 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                               .clear_values.color = *clear_color,
                                                            });
                                     ctx->end_render_pass(ctx);
+                                    break;
+
+                                 case TEST_CLEAR_ATTACHMENTS:
+                                    ctx->clear_attachments(ctx,
+                                                           &(api_clear_attachments_desc){
+                                                              .box = dst_box,
+                                                              .clear_values.color = *clear_color,
+                                                           });
                                     break;
 
                                  case TEST_CLEAR_IMAGE:
@@ -870,6 +887,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  }
                               }
 
+                              if (test_index == TEST_CLEAR_ATTACHMENTS)
+                                 ctx->end_render_pass(ctx);
+
                               ctx->write_next_query_value(ctx, timestamps);
                               ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
                            }
@@ -883,7 +903,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                     dst_box.height * dst_box.depth;
                               uint64_t bytes;
 
-                              if (test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_IMAGE)
+                              if (is_clear)
                                  bytes = num_pixels * msaa_pix_size;
                               else if (test_index == TEST_RESOLVE)
                                  bytes = num_pixels * (msaa_pix_size + bpe);
