@@ -1496,6 +1496,7 @@ gl_create_context(const program_options *options)
    ctx->has_resolve_image_yflip = true;
    ctx->has_shader_int8 = false;
    ctx->has_shader_int64 = GLAD_GL_ARB_gpu_shader_int64;
+   ctx->has_shader_stencil_export = GLAD_GL_ARB_shader_stencil_export;
    ctx->has_shader_subgroup_clock = GLAD_GL_ARB_shader_clock;
    ctx->has_shader_subgroup_ops =
       (supported_subgroup_ops & required_subgroup_ops) == required_subgroup_ops;

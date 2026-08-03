@@ -440,6 +440,7 @@ typedef struct api_context {
    bool has_sparse_buffer;
    bool has_shader_int8;
    bool has_shader_int64;
+   bool has_shader_stencil_export;
    bool has_shader_subgroup_clock;
    bool has_shader_subgroup_ops;
    bool has_vrs;

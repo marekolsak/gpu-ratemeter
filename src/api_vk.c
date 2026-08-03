@@ -2258,6 +2258,7 @@ vk_create_context(const program_options *options)
    check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, EXT_extended_dynamic_state3);
    check_add_ext(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, EXT_graphics_pipeline_library);
    check_add_ext(VK_EXT_MESH_SHADER_EXTENSION_NAME, EXT_mesh_shader);
+   check_add_ext_no_features(VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME);
    check_add_ext(VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME, EXT_transform_feedback);
    check_add_ext(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME, EXT_vertex_input_dynamic_state);
 
@@ -2686,6 +2687,7 @@ vk_create_context(const program_options *options)
    ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
    ctx->has_shader_int64 = Vulkan10.features.shaderInt64;
+   ctx->has_shader_stencil_export = has_extension(ctx, VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME);
    ctx->has_shader_subgroup_clock = KHR_shader_clock.shaderSubgroupClock;
    ctx->has_shader_subgroup_ops =
       (subgroup_props.supportedStages & required_subgroup_op_stages) == required_subgroup_op_stages &&
