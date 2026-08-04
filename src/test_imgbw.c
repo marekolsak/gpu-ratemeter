@@ -51,7 +51,7 @@
 
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
-   api_shader *fs_gradient[6]; /* output format variants */
+   api_shader *fs_gradient[7]; /* output format variants */
    api_shader *fs_random[8]; /* output format variants */
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
@@ -79,7 +79,9 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
          "void main() { \n"
          /* Generate a quad from VertexID. */
          "   gl_Position = vec4((gl_VertexID & 1) == 0 ? -1 : 1, \n"
-         "                      (gl_VertexID & 2) == 0 ? -1 : 1, 0, 1); \n"
+         "                      (gl_VertexID & 2) == 0 ? -1 : 1, \n"
+         /* This will produce a gradient for Z. */
+         "                      (gl_VertexID & 1) == 0 ?  0.1 : 0.9, 1); \n"
          "#if LAYERED \n"
          "   gl_Layer = gl_InstanceID; \n"
          "#endif \n"
@@ -95,19 +97,17 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
 static api_shader *
 get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
 {
-   bool is_depth = format_has_depth(format);
-   bool is_stencil = format_has_stencil(format);
-   bool is_sint = !is_depth && format_is_sint(format);
-   bool is_integer = !is_depth && format_is_integer(format);
-   unsigned chan_size = is_depth ? 4 : get_pixel_size_from_format(format) /
-                                       format_get_num_channels(format);
-
+   bool has_color_output = !format_is_depth_or_stencil(format);
+   bool has_stencil_output = format_has_stencil(format);
+   bool is_sint = has_color_output && format_is_sint(format);
+   bool is_integer = has_color_output && format_is_integer(format);
+   unsigned chan_size = has_color_output ? get_pixel_size_from_format(format) /
+                                           format_get_num_channels(format) : 0;
    const char *gradient, *vec_type, *output;
    unsigned format_index;
 
-   assert(!is_stencil);
-
-   output = is_depth ? "gl_FragDepth" : "fs_out";
+   output = has_color_output ? "fs_out" :
+            has_stencil_output ? "gl_FragStencilRefARB" : "";
 
    /* This fragment shader code generates the gradient pattern. */
    if (is_integer) {
@@ -136,8 +136,18 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
       }
    } else {
       gradient = "mod(gl_FragCoord.x, 256.0) / 256.0";
-      vec_type = is_depth ? "float" : "vec4";
-      format_index = is_depth ? 5 : 4;
+
+      if (has_color_output) {
+         vec_type = "vec4";
+         format_index = 4;
+      } else if (has_stencil_output) {
+         vec_type = "int";
+         format_index = 5;
+      } else {
+         assert(format_has_depth(format));
+         vec_type = "";
+         format_index = 6;
+      }
    }
 
    assert(format_index < ARRAY_SIZE(state->fs_gradient));
@@ -149,15 +159,23 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
    char fs_source[1024];
    snprintf(fs_source, sizeof(fs_source),
             "#version 460 \n"
-            "#define DEPTH %u \n"
-            "#if !DEPTH \n"
+            "#define HAS_COLOR_OUTPUT %u \n"
+            "#define HAS_STENCIL_OUTPUT %u \n"
+
+            "#if HAS_STENCIL_OUTPUT \n"
+            "#extension GL_ARB_shader_stencil_export : enable \n"
+            "#endif \n"
+
+            "#if HAS_COLOR_OUTPUT \n"
             "layout(location = 0) out %s fs_out; \n"
             "#endif \n"
 
             "void main() { \n"
+            "#if HAS_COLOR_OUTPUT || HAS_STENCIL_OUTPUT \n"
             "   %s = %s(%s); \n"
+            "#endif \n"
             "}",
-            is_depth, vec_type, output, vec_type, gradient);
+            has_color_output, has_stencil_output, vec_type, output, vec_type, gradient);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
@@ -280,13 +298,14 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 }
 
 static void
-generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shader *vs,
-                api_shader *fs, unsigned samplemask)
+generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shader *fs,
+                unsigned samplemask)
 {
    bool layered = image->depth > 1;
    bool is_zs = format_is_depth_or_stencil(image->format);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, !is_zs ? image : NULL, is_zs ? image : NULL,
                                                  image->width, image->height, image->samples, 0x1);
+   api_shader *vs = get_passthrough_vs(ctx, state, layered);
    api_gfx_pipeline *pipeline =
       ctx->create_gfx_pipeline(ctx,
                                &(api_gfx_pipeline_desc){
@@ -296,6 +315,10 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                                   .vrs_fragment_size = {1, 1},
                                   .samplemask = samplemask,
                                   .colormask = 0xf,
+                                  .depth_enabled = true,
+                                  .depth_write_enabled = true,
+                                  .depth_compare_op = VK_COMPARE_OP_ALWAYS,
+                                  // TODO: enable stencil
                                   .fb = fb,
                                });
 
@@ -318,20 +341,14 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
 static void
 set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image)
 {
-   bool layered = image->depth > 1;
-
-   // TODO: for Z, draw the gradient using the Z position
-   generate_pixels(ctx, state, image, get_passthrough_vs(ctx, state, layered),
-                   get_gradient_fs(ctx, state, image->format), (1 << image->samples) - 1);
+   generate_pixels(ctx, state, image, get_gradient_fs(ctx, state, image->format),
+                   (1 << image->samples) - 1);
 }
 
 static void
 set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigned samplemask)
 {
-   bool layered = image->depth > 1;
-
-   generate_pixels(ctx, state, image, get_passthrough_vs(ctx, state, layered),
-                   get_random_pixel_fs(ctx, state, image->format), samplemask);
+   generate_pixels(ctx, state, image, get_random_pixel_fs(ctx, state, image->format), samplemask);
 }
 
 static struct {
@@ -347,7 +364,8 @@ static struct {
    {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
    {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
    {"d32",     0, VK_FORMAT_D32_SFLOAT},
-   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   // TODO: MRT clears
+   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT}, // TODO
 };
 
 enum {
@@ -718,7 +736,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      }
 
                      if (formats[format_index].zs_format) {
-                        clear_values.zs.depth = fill_option == FILL_BLACK ? 1 : 0.4;
+                        clear_values.zs.depth = fill_option == FILL_BLACK ? 0 : 0.4;
                         clear_values.zs.stencil = fill_option == FILL_BLACK ? 0 : 0x55;
                      }
 
