@@ -222,6 +222,8 @@ get_gl_internalformat(VkFormat format)
       return GL_DEPTH_COMPONENT32F;
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
       return GL_DEPTH32F_STENCIL8;
+   case VK_FORMAT_S8_UINT:
+      return GL_STENCIL_INDEX8;
 
    /* These don't exist in GL. */
    case VK_FORMAT_A2B10G10R10_SNORM_PACK32:
@@ -304,6 +306,8 @@ get_gl_format(VkFormat format)
       return GL_DEPTH_COMPONENT;
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
       return GL_DEPTH_STENCIL;
+   case VK_FORMAT_S8_UINT:
+      return GL_STENCIL_INDEX;
 
    default:
       error("get_gl_format: unexpected image format %u", format);
@@ -321,6 +325,7 @@ get_gl_type(VkFormat format)
    case VK_FORMAT_R8G8_UNORM:
    case VK_FORMAT_R8G8B8A8_UNORM:
    case VK_FORMAT_R8G8B8A8_UINT:
+   case VK_FORMAT_S8_UINT:
       return GL_UNSIGNED_BYTE;
 
    case VK_FORMAT_R8_SINT:
@@ -679,7 +684,12 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
 
    if (zbuf) {
       assert(zbuf->type != VK_IMAGE_TYPE_3D);
-      glNamedFramebufferTexture(fb->id, GL_DEPTH_ATTACHMENT, zbuf->id, 0);
+      assert(format_is_depth_or_stencil(zbuf->format));
+
+      if (format_has_depth(zbuf->format))
+         glNamedFramebufferTexture(fb->id, GL_DEPTH_ATTACHMENT, zbuf->id, 0);
+      if (format_has_stencil(zbuf->format))
+         glNamedFramebufferTexture(fb->id, GL_STENCIL_ATTACHMENT, zbuf->id, 0);
    }
 
    if (!colorbuf && !zbuf) {
@@ -991,7 +1001,7 @@ get_compare_func(VkCompareOp op)
 }
 
 static void
-gl_set_current_pipeline_color_depth_masks(api_context *ctx)
+gl_set_current_pipeline_color_depth_stencil_masks(api_context *ctx)
 {
    if (ctx->current_pipeline) {
       glColorMask(!!(ctx->current_pipeline->desc.colormask & 0x1),
@@ -1004,9 +1014,25 @@ gl_set_current_pipeline_color_depth_masks(api_context *ctx)
       } else {
          glDepthMask(GL_TRUE);
       }
+      glStencilMaskSeparate(GL_FRONT, ctx->current_pipeline->desc.stencil_front.writeMask);
+      glStencilMaskSeparate(GL_BACK, ctx->current_pipeline->desc.stencil_back.writeMask);
    } else {
       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       glDepthMask(GL_TRUE);
+      glStencilMask(0xff);
+   }
+}
+
+static GLenum
+get_stencil_op(VkStencilOp op)
+{
+   switch (op) {
+   case VK_STENCIL_OP_KEEP:
+      return GL_KEEP;
+   case VK_STENCIL_OP_REPLACE:
+      return GL_REPLACE;
+   default:
+      error("unexpected stencil op in get_stencil_op");
    }
 }
 
@@ -1026,7 +1052,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
    ctx->current_pipeline = pipeline;
 
    if (!pipeline) {
-      gl_set_current_pipeline_color_depth_masks(ctx);
+      gl_set_current_pipeline_color_depth_stencil_masks(ctx);
       return;
    }
 
@@ -1096,6 +1122,30 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       glDisable(GL_DEPTH_TEST);
    }
 
+   if (pipeline->desc.stencil_enabled) {
+      glEnable(GL_STENCIL_TEST);
+
+      glStencilFuncSeparate(GL_FRONT,
+                            get_compare_func(pipeline->desc.stencil_front.compareOp),
+                            pipeline->desc.stencil_front.reference,
+                            pipeline->desc.stencil_front.compareMask);
+      glStencilOpSeparate(GL_FRONT, get_stencil_op(pipeline->desc.stencil_front.failOp),
+                          get_stencil_op(pipeline->desc.stencil_front.depthFailOp),
+                          get_stencil_op(pipeline->desc.stencil_front.passOp));
+      glStencilMaskSeparate(GL_FRONT, pipeline->desc.stencil_front.writeMask);
+
+      glStencilFuncSeparate(GL_BACK,
+                            get_compare_func(pipeline->desc.stencil_back.compareOp),
+                            pipeline->desc.stencil_back.reference,
+                            pipeline->desc.stencil_back.compareMask);
+      glStencilOpSeparate(GL_BACK, get_stencil_op(pipeline->desc.stencil_back.failOp),
+                          get_stencil_op(pipeline->desc.stencil_back.depthFailOp),
+                          get_stencil_op(pipeline->desc.stencil_back.passOp));
+      glStencilMaskSeparate(GL_BACK, pipeline->desc.stencil_back.writeMask);
+   } else {
+      glDisable(GL_STENCIL_TEST);
+   }
+
    if (pipeline->desc.alpha_to_coverage)
       glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
    else
@@ -1119,7 +1169,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       glDisable(GL_SAMPLE_MASK);
    }
 
-   gl_set_current_pipeline_color_depth_masks(ctx);
+   gl_set_current_pipeline_color_depth_stencil_masks(ctx);
 }
 
 
@@ -1229,7 +1279,7 @@ gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
    if (scissor)
       glDisable(GL_SCISSOR_TEST);
 
-   gl_set_current_pipeline_color_depth_masks(ctx);
+   gl_set_current_pipeline_color_depth_stencil_masks(ctx);
 }
 
 static void

@@ -185,6 +185,7 @@ get_pixel_size_from_format(VkFormat format)
    case VK_FORMAT_R8_SNORM:
    case VK_FORMAT_R8_UINT:
    case VK_FORMAT_R8_SINT:
+   case VK_FORMAT_S8_UINT:
       return 1;
 
    case VK_FORMAT_R8G8_UNORM:
@@ -476,6 +477,7 @@ format_has_depth(VkFormat format)
    case VK_FORMAT_R32G32B32A32_UINT:
    case VK_FORMAT_R32G32B32A32_SINT:
    case VK_FORMAT_R32G32B32A32_SFLOAT:
+   case VK_FORMAT_S8_UINT:
       return false;
 
    case VK_FORMAT_D32_SFLOAT:
@@ -541,6 +543,7 @@ format_has_stencil(VkFormat format)
       return false;
 
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+   case VK_FORMAT_S8_UINT:
       return true;
 
    default:
@@ -607,6 +610,7 @@ format_is_valid(VkFormat format)
    case VK_FORMAT_R32G32B32A32_SFLOAT:
    case VK_FORMAT_D32_SFLOAT:
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+   case VK_FORMAT_S8_UINT:
       return true;
 
    default:

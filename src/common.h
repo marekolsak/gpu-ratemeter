@@ -240,9 +240,15 @@ typedef struct {
    uint8_t vrs_fragment_size[2];
    bool sample_shading;
    unsigned samplemask;
+
    bool depth_enabled;
    bool depth_write_enabled;
    VkCompareOp depth_compare_op;
+
+   bool stencil_enabled;
+   VkStencilOpState stencil_front;
+   VkStencilOpState stencil_back;
+
    bool alpha_to_coverage;
    uint8_t colormask;
    bool blend_src_color;
