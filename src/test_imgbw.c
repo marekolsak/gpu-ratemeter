@@ -280,8 +280,8 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 }
 
 static void
-generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shader *fs,
-                unsigned samplemask)
+generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shader *vs,
+                api_shader *fs, unsigned samplemask)
 {
    bool layered = image->depth > 1;
    bool is_zs = format_is_depth_or_stencil(image->format);
@@ -291,7 +291,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
       ctx->create_gfx_pipeline(ctx,
                                &(api_gfx_pipeline_desc){
                                   .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
-                                  .vs = get_passthrough_vs(ctx, state, layered),
+                                  .vs = vs,
                                   .fs = fs,
                                   .vrs_fragment_size = {1, 1},
                                   .samplemask = samplemask,
@@ -318,15 +318,20 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
 static void
 set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image)
 {
+   bool layered = image->depth > 1;
+
    // TODO: for Z, draw the gradient using the Z position
-   generate_pixels(ctx, state, image, get_gradient_fs(ctx, state, image->format),
-                   (1 << image->samples) - 1);
+   generate_pixels(ctx, state, image, get_passthrough_vs(ctx, state, layered),
+                   get_gradient_fs(ctx, state, image->format), (1 << image->samples) - 1);
 }
 
 static void
 set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigned samplemask)
 {
-   generate_pixels(ctx, state, image, get_random_pixel_fs(ctx, state, image->format), samplemask);
+   bool layered = image->depth > 1;
+
+   generate_pixels(ctx, state, image, get_passthrough_vs(ctx, state, layered),
+                   get_random_pixel_fs(ctx, state, image->format), samplemask);
 }
 
 static struct {
@@ -565,11 +570,11 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                       !ctx->has_blit_image_zs)
                      unsupported = true;
 
-                  if (test_index == TEST_RESOLVE && formats[format_index].zs_format &&
-                      !ctx->has_depth_msaa_resolve)
+                  if (test_index == TEST_BLIT && samples > 1 && !ctx->has_blit_image_msaa)
                      unsupported = true;
 
-                  if (test_index == TEST_BLIT && samples > 1 && !ctx->has_blit_image_msaa)
+                  if (test_index == TEST_RESOLVE && formats[format_index].zs_format &&
+                      !ctx->has_depth_msaa_resolve)
                      unsupported = true;
 
                   /* Create textures. */
