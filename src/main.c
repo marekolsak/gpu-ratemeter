@@ -20,7 +20,6 @@
  *
  * imgbw:
  * - write README
- * - stencil
  * - clears: MRTs
  * - 2D array images
  * - transfer queue

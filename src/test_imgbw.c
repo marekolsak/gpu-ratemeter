@@ -52,7 +52,7 @@
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
    api_shader *fs_gradient[7]; /* output format variants */
-   api_shader *fs_random[8]; /* output format variants */
+   api_shader *fs_random[10]; /* output format variants */
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
@@ -103,11 +103,8 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
    bool is_integer = has_color_output && format_is_integer(format);
    unsigned chan_size = has_color_output ? get_pixel_size_from_format(format) /
                                            format_get_num_channels(format) : 0;
-   const char *gradient, *vec_type, *output;
+   const char *gradient, *vec_type;
    unsigned format_index;
-
-   output = has_color_output ? "fs_out" :
-            has_stencil_output ? "gl_FragStencilRefARB" : "";
 
    /* This fragment shader code generates the gradient pattern. */
    if (is_integer) {
@@ -136,16 +133,16 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
       }
    } else {
       gradient = "mod(gl_FragCoord.x, 256.0) / 256.0";
+      vec_type = "";
 
       if (has_color_output) {
          vec_type = "vec4";
          format_index = 4;
       } else if (has_stencil_output) {
-         vec_type = "int";
          format_index = 5;
       } else {
+         /* The Z gradient is drawn via VS position.z. */
          assert(format_has_depth(format));
-         vec_type = "";
          format_index = 6;
       }
    }
@@ -171,11 +168,15 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
             "#endif \n"
 
             "void main() { \n"
-            "#if HAS_COLOR_OUTPUT || HAS_STENCIL_OUTPUT \n"
-            "   %s = %s(%s); \n"
+            "#if HAS_COLOR_OUTPUT \n"
+            "   fs_out = %s(%s); \n"
+            "#endif \n"
+
+            "#if HAS_STENCIL_OUTPUT \n"
+            "   gl_FragStencilRefARB = int(gl_FragCoord.x) %% 256; \n"
             "#endif \n"
             "}",
-            has_color_output, has_stencil_output, vec_type, output, vec_type, gradient);
+            has_color_output, has_stencil_output, vec_type, vec_type, gradient);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
@@ -184,19 +185,15 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
 static api_shader *
 get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 {
-   bool is_depth = format_has_depth(format);
-   bool is_stencil = format_has_stencil(format);
-   bool is_sint = !is_depth && format_is_sint(format);
-   bool is_integer = !is_depth && format_is_integer(format);
-   unsigned chan_size = is_depth ? 4 : get_pixel_size_from_format(format) /
-                                       format_get_num_channels(format);
-
-   const char *rand_color, *vec_type, *output;
+   bool has_color_output = !format_is_depth_or_stencil(format);
+   bool has_depth_output = format_has_depth(format);
+   bool has_stencil_output = format_has_stencil(format);
+   bool is_sint = has_color_output && format_is_sint(format);
+   bool is_integer = has_color_output && format_is_integer(format);
+   unsigned chan_size = has_color_output ? get_pixel_size_from_format(format) /
+                                           format_get_num_channels(format) : 0;
+   const char *rand_color, *vec_type;
    unsigned format_index;
-
-   assert(!is_stencil);
-
-   output = is_depth ? "gl_FragDepth" : "fs_out";
 
    /* This fragment shader code generates the gradient pattern. */
    if (is_integer) {
@@ -234,9 +231,21 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
          error("invalid chan size");
       }
    } else {
-      rand_color = "rand_vec4(seed)";
-      vec_type = is_depth ? "float" : "vec4";
-      format_index = is_depth ? 7 : 6;
+      rand_color = "";
+      vec_type = "";
+
+      if (has_color_output) {
+         rand_color = "rand_vec4(seed)";
+         vec_type = "vec4";
+         format_index = 6;
+      } else if (has_depth_output && has_stencil_output) {
+         format_index = 7;
+      } else if (has_stencil_output) {
+         format_index = 8;
+      } else {
+         assert(format_has_depth(format));
+         format_index = 9;
+      }
    }
 
    assert(format_index < ARRAY_SIZE(state->fs_random));
@@ -245,11 +254,18 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
    if (*fs)
       return *fs;
 
-   char fs_source[1024];
+   char fs_source[2048];
    snprintf(fs_source, sizeof(fs_source),
             "#version 460 \n"
-            "#define DEPTH %u \n"
-            "#if !DEPTH \n"
+            "#define HAS_COLOR_OUTPUT %u \n"
+            "#define HAS_DEPTH_OUTPUT %u \n"
+            "#define HAS_STENCIL_OUTPUT %u \n"
+
+            "#if HAS_STENCIL_OUTPUT \n"
+            "#extension GL_ARB_shader_stencil_export : enable \n"
+            "#endif \n"
+
+            "#if HAS_COLOR_OUTPUT \n"
             "layout(location = 0) out %s fs_out; \n"
             "#endif \n"
 
@@ -289,9 +305,21 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 
             "void main() { \n"
             "   uvec4 seed = uvec4(uint(gl_FragCoord.x), uint(gl_FragCoord.y), gl_Layer, gl_SampleMaskIn[0]); \n"
-            "   %s = %s(%s); \n"
+
+            "#if HAS_COLOR_OUTPUT \n"
+            "    fs_out = %s(%s); \n"
+            "#endif \n"
+
+            "#if HAS_DEPTH_OUTPUT \n"
+            "   gl_FragDepth = rand_vec4(seed).x; \n"
+            "#endif \n"
+
+            "#if HAS_STENCIL_OUTPUT \n"
+            "   gl_FragStencilRefARB = int(rand_uvec4(seed).x >> 24); \n"
+            "#endif \n"
             "}",
-            is_depth, vec_type, output, vec_type, rand_color);
+            has_color_output, has_depth_output, has_stencil_output,
+            vec_type, vec_type, rand_color);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
@@ -318,7 +346,14 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                                   .depth_enabled = true,
                                   .depth_write_enabled = true,
                                   .depth_compare_op = VK_COMPARE_OP_ALWAYS,
-                                  // TODO: enable stencil
+                                  /* The FS stencil output should overwrite stencil. */
+                                  .stencil_enabled = true,
+                                  .stencil_front.passOp = VK_STENCIL_OP_REPLACE,
+                                  .stencil_front.compareOp = VK_COMPARE_OP_ALWAYS,
+                                  .stencil_front.writeMask = 0xff,
+                                  .stencil_back.passOp = VK_STENCIL_OP_REPLACE,
+                                  .stencil_back.compareOp = VK_COMPARE_OP_ALWAYS,
+                                  .stencil_back.writeMask = 0xff,
                                   .fb = fb,
                                });
 
@@ -364,8 +399,9 @@ static struct {
    {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
    {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
    {"d32",     0, VK_FORMAT_D32_SFLOAT},
+   {"s8",      0, VK_FORMAT_S8_UINT},
+   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT}, // TODO: the exact size check is an infinite loop with bpe=5
    // TODO: MRT clears
-   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT}, // TODO
 };
 
 enum {
@@ -541,34 +577,28 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   continue;
 
                for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
-                  if ((multiple_attachments || formats[format_index].zs_format) &&
-                      layout != LAYOUT_DEFAULT)
+                  /* Skip invalid combinations and unimportant tests. */
+                  if (layout != LAYOUT_DEFAULT &&
+                      (test_index != TEST_COPY || samples >= 2 || multiple_attachments ||
+                       formats[format_index].zs_format))
                      continue;
 
-                  /* Reject invalid combinations. */
-                  switch (test_index) {
-                  case TEST_CLEAR_FB:
-                  case TEST_CLEAR_ATTACHMENTS:
-                     if (layout != LAYOUT_DEFAULT)
-                        continue;
-                     break;
+                  if (multiple_attachments && test_index != TEST_CLEAR_FB &&
+                      test_index != TEST_CLEAR_ATTACHMENTS)
+                     continue;
 
-                  case TEST_CLEAR_IMAGE:
+                  switch (test_index) {
                   case TEST_BLIT:
-                     if (layout != LAYOUT_DEFAULT || multiple_attachments)
+                     if (formats[format_index].zs_format == VK_FORMAT_S8_UINT)
                         continue;
                      break;
 
                   case TEST_RESOLVE:
-                     if (layout != LAYOUT_DEFAULT || img_type != VK_IMAGE_TYPE_2D ||
-                         samples == 1 || multiple_attachments ||
+                     if (img_type != VK_IMAGE_TYPE_2D || samples == 1 ||
                          (formats[format_index].color_format &&
-                          format_is_integer(formats[format_index].color_format)))
-                        continue;
-                     break;
-
-                  case TEST_COPY:
-                     if ((layout != LAYOUT_DEFAULT && samples >= 2) || multiple_attachments)
+                          format_is_integer(formats[format_index].color_format)) ||
+                         (formats[format_index].zs_format &&
+                          format_has_stencil(formats[format_index].zs_format)))
                         continue;
                      break;
                   }
@@ -712,7 +742,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                   }
 
                   for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
-                     /* Reject invalid and less important combinations. */
+                     /* Skip invalid and unimportant tests. */
                      if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                         continue;
 
@@ -724,6 +754,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                      if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
                          fill_option != FILL_RANDOM)
+                        continue;
+
+                     if (fill_option == FILL_GRADIENT &&
+                         formats[format_index].zs_format == VK_FORMAT_S8_UINT)
                         continue;
 
                      api_clear_values clear_values = {0};
@@ -803,7 +837,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         bool yflip = region_option == REGION_FULL_YFLIP ||
                                      region_option == REGION_PARTIAL_UNALIGNED_YFLIP;
 
-                        /* Reject invalid combinations. */
+                        /* Skip invalid and unimportant tests. */
                         if (test_index == TEST_CLEAR_FB && region_option != REGION_FULL)
                            continue;
 
@@ -950,8 +984,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               for (unsigned i = 0; i < num_warmup_runs + num_runs; i++) {
                                  /* The first few just warm up caches and the hw. */
                                  if (i == num_warmup_runs) {
-                                    if (test_index == TEST_CLEAR_ATTACHMENTS)
+                                    if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                        ctx->end_render_pass(ctx);
+                                       ctx->barrier_images(ctx, 1, &sets[set].dst, false);
+                                    }
 
                                     ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
                                     ctx->write_next_query_value(ctx, timestamps);
@@ -972,6 +1008,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                               .clear_values = clear_values,
                                                            });
                                     ctx->end_render_pass(ctx);
+                                    ctx->barrier_images(ctx, 1, &sets[set].dst, false);
                                     break;
 
                                  case TEST_CLEAR_ATTACHMENTS:
@@ -987,6 +1024,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                     ctx->clear_image(ctx, sets[set].dst,
                                                      region_option == REGION_FULL ? NULL : &dst_box,
                                                      &clear_values);
+                                    ctx->barrier_images(ctx, 1, &sets[set].dst, false);
                                     break;
 
                                  case TEST_COPY:
@@ -1000,6 +1038,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                        .src_box = src_box,
                                                        .is_copy = test_index == TEST_COPY,
                                                     });
+                                    ctx->barrier_images(ctx, 2, (api_image*[2]){sets[set].dst,
+                                                                                sets[set].src}, false);
                                     break;
                                  }
 
@@ -1008,8 +1048,10 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                  }
                               }
 
-                              if (test_index == TEST_CLEAR_ATTACHMENTS)
+                              if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                  ctx->end_render_pass(ctx);
+                                 ctx->barrier_images(ctx, 1, &sets[set].dst, false);
+                              }
 
                               ctx->write_next_query_value(ctx, timestamps);
                               ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
