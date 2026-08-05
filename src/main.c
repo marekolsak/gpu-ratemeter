@@ -20,7 +20,6 @@
  *
  * imgbw:
  * - write README
- * - clears: MRTs
  * - 2D array images
  * - transfer queue
  * - buffer-to-image, image-to-buffer
