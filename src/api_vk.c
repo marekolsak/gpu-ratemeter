@@ -756,7 +756,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
-   fb->zbuf = zbuf;
+   fb->zsbuf = zbuf;
 
    assert(view_mask);
    assert(ctx->has_multiview || view_mask == 0x1);
@@ -1360,10 +1360,10 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       .viewMask = multiview ? desc->fb->view_mask : 0,
       .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
       .pColorAttachmentFormats = desc->fb->colorbuf ? &desc->fb->colorbuf->format : NULL,
-      .depthAttachmentFormat = desc->fb->zbuf && format_has_depth(desc->fb->zbuf->format) ?
-                                 desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
-      .stencilAttachmentFormat = desc->fb->zbuf && format_has_stencil(desc->fb->zbuf->format) ?
-                                    desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
+      .depthAttachmentFormat = desc->fb->zsbuf && format_has_depth(desc->fb->zsbuf->format) ?
+                                 desc->fb->zsbuf->format : VK_FORMAT_UNDEFINED,
+      .stencilAttachmentFormat = desc->fb->zsbuf && format_has_stencil(desc->fb->zsbuf->format) ?
+                                    desc->fb->zsbuf->format : VK_FORMAT_UNDEFINED,
    };
 
    assert(desc->vrs_fragment_size[0] && desc->vrs_fragment_size[1]);
@@ -1723,9 +1723,9 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       vk_image_layout_transition(ctx, desc->fb->colorbuf,
                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
    }
-   if (desc->fb->zbuf) {
-      vk_image_layout_transition(ctx, desc->fb->zbuf,
-                                 get_attachment_optimal_layout(desc->fb->zbuf));
+   if (desc->fb->zsbuf) {
+      vk_image_layout_transition(ctx, desc->fb->zsbuf,
+                                 get_attachment_optimal_layout(desc->fb->zsbuf));
    }
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
@@ -1749,11 +1749,11 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 
       VkRenderingAttachmentInfo zs_att = {0};
 
-      if (desc->fb->zbuf) {
+      if (desc->fb->zsbuf) {
          zs_att = (VkRenderingAttachmentInfo){
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = desc->fb->zbuf->render_compatible_view,
-            .imageLayout = get_attachment_optimal_layout(desc->fb->zbuf),
+            .imageView = desc->fb->zsbuf->render_compatible_view,
+            .imageLayout = get_attachment_optimal_layout(desc->fb->zsbuf),
             .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
                                     VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -1772,15 +1772,15 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                              },
                              .layerCount = multiview ? 1 :
                                              desc->fb->colorbuf ? desc->fb->colorbuf->depth :
-                                             desc->fb->zbuf ? desc->fb->zbuf->depth : 1,
+                                             desc->fb->zsbuf ? desc->fb->zsbuf->depth : 1,
                              .viewMask = multiview ? desc->fb->view_mask : 0,
                              .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
                              .pColorAttachments = desc->fb->colorbuf ? &color_att : NULL,
-                             .pDepthAttachment = desc->fb->zbuf &&
-                                                 format_has_depth(desc->fb->zbuf->format) ?
+                             .pDepthAttachment = desc->fb->zsbuf &&
+                                                 format_has_depth(desc->fb->zsbuf->format) ?
                                                       &zs_att : NULL,
-                             .pStencilAttachment = desc->fb->zbuf &&
-                                                   format_has_stencil(desc->fb->zbuf->format) ?
+                             .pStencilAttachment = desc->fb->zsbuf &&
+                                                   format_has_stencil(desc->fb->zsbuf->format) ?
                                                       &zs_att : NULL,
                           });
    } else {
@@ -1788,7 +1788,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 
       if (desc->fb->colorbuf)
          clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->clear_values.color};
-      if (desc->fb->zbuf)
+      if (desc->fb->zsbuf)
          clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil = desc->clear_values.zs};
 
       vkCmdBeginRenderPass(ctx->current_cmd_buffer,
@@ -1805,8 +1805,8 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 
    if (desc->fb->colorbuf)
       desc->fb->colorbuf->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-   if (desc->fb->zbuf)
-      desc->fb->zbuf->layout = get_attachment_optimal_layout(desc->fb->zbuf);;
+   if (desc->fb->zsbuf)
+      desc->fb->zsbuf->layout = get_attachment_optimal_layout(desc->fb->zsbuf);;
 
    const VkViewport viewport = {
       .x = 0,
@@ -1857,14 +1857,14 @@ vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
       num_att++;
    }
 
-   if (ctx->current_fb->zbuf) {
-      bool has_depth = format_has_depth(ctx->current_fb->zbuf->format);
-      bool has_stencil = format_has_stencil(ctx->current_fb->zbuf->format);
+   if (ctx->current_fb->zsbuf) {
+      bool has_depth = format_has_depth(ctx->current_fb->zsbuf->format);
+      bool has_stencil = format_has_stencil(ctx->current_fb->zsbuf->format);
 
       assert(has_depth || has_stencil);
       assert(num_att < ARRAY_SIZE(att));
 
-      att[num_att].aspectMask = get_image_aspect(ctx->current_fb->zbuf);
+      att[num_att].aspectMask = get_image_aspect(ctx->current_fb->zsbuf);
       att[num_att].clearValue.depthStencil = desc->clear_values.zs;
       num_att++;
    }

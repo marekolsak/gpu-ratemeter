@@ -43,7 +43,7 @@ d3d11_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->height = height;
    fb->samples = samples;
    fb->colorbuf = colorbuf;
-   fb->zbuf = zbuf;
+   fb->zsbuf = zbuf;
 
 
    return fb;

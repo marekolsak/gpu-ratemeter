@@ -712,7 +712,7 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
-   fb->zbuf = zbuf;
+   fb->zsbuf = zbuf;
 
    assert(view_mask == 0x1);
 
@@ -1254,9 +1254,9 @@ gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
       glScissor(desc->box.x, desc->box.y, desc->box.width, desc->box.height);
    }
 
-   GLuint clear_bits = (ctx->fb->zbuf ?
-                           (format_has_depth(ctx->fb->zbuf->format) ? GL_DEPTH_BUFFER_BIT : 0) |
-                           (format_has_stencil(ctx->fb->zbuf->format) ? GL_STENCIL_BUFFER_BIT : 0)
+   GLuint clear_bits = (ctx->fb->zsbuf ?
+                           (format_has_depth(ctx->fb->zsbuf->format) ? GL_DEPTH_BUFFER_BIT : 0) |
+                           (format_has_stencil(ctx->fb->zsbuf->format) ? GL_STENCIL_BUFFER_BIT : 0)
                          : 0);
 
    /* Clears are affected by glColorMask and glDepthMask, while we want them to be unaffected. */
@@ -1308,7 +1308,7 @@ gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       ctx->prev_fb = NULL;
    }
 
-   if (desc->clear && (desc->fb->colorbuf || desc->fb->zbuf)) {
+   if (desc->clear && (desc->fb->colorbuf || desc->fb->zsbuf)) {
       gl_clear_attachments(ctx, &(api_clear_attachments_desc){
                               .box.width = desc->fb->width,
                               .box.height = desc->fb->height,

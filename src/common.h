@@ -131,7 +131,7 @@ typedef struct {
    unsigned samples;
    unsigned view_mask;
    api_image *colorbuf;
-   api_image *zbuf;
+   api_image *zsbuf;
 
 #ifdef GL_PRIVATE
    GLuint id;
