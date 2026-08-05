@@ -434,34 +434,56 @@ get_image_aspect(api_image *image)
 }
 
 static void
+barrier_images(api_context *ctx, unsigned num_images, api_image **images,
+               VkImageLayout *new_layouts)
+{
+   VkImageMemoryBarrier2 *barriers = alloca(sizeof(barriers[0]) * num_images);
+
+   for (unsigned i = 0; i < num_images; i++) {
+      barriers[i] = (VkImageMemoryBarrier2){
+         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+         .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+         .srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT |
+                          VK_ACCESS_2_MEMORY_WRITE_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+         .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT |
+                          VK_ACCESS_2_MEMORY_WRITE_BIT,
+         .oldLayout = images[i]->layout,
+         .newLayout = new_layouts ? new_layouts[i] : images[i]->layout,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = images[i]->image,
+         .subresourceRange = {
+            .aspectMask = get_image_aspect(images[i]),
+            .levelCount = 1,
+            .layerCount = images[i]->type == VK_IMAGE_TYPE_3D ?
+                             VK_REMAINING_ARRAY_LAYERS : images[i]->layer_count,
+         },
+      };
+   }
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo) {
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .imageMemoryBarrierCount = num_images,
+                            .pImageMemoryBarriers = barriers,
+                         });
+}
+
+static void
+vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
+                  bool after_shader_writes)
+{
+   barrier_images(ctx, num_images, images, NULL);
+}
+
+static void
 vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new_layout)
 {
    if (image->layout == new_layout)
       return;
 
-   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
-                         &(VkDependencyInfo) {
-                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                            .imageMemoryBarrierCount = 1,
-                            .pImageMemoryBarriers = (VkImageMemoryBarrier2[2]) {
-                               {
-                                  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                                  .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                                  .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-                                  .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-                                  .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-                                  .oldLayout = image->layout,
-                                  .newLayout = new_layout,
-                                  .image = image->image,
-                                  .subresourceRange = {
-                                     .aspectMask = get_image_aspect(image),
-                                     .levelCount = 1,
-                                     .layerCount = image->type == VK_IMAGE_TYPE_3D ?
-                                                      VK_REMAINING_ARRAY_LAYERS : image->layer_count,
-                                  },
-                               },
-                            },
-                         });
+   barrier_images(ctx, 1, &image, &new_layout);
    image->layout = new_layout;
 }
 
@@ -2853,12 +2875,14 @@ vk_create_context(const program_options *options)
    ctx->copy_buffer = vk_copy_buffer;
    ctx->copy_memory_indirect = vk_copy_memory_indirect;
    ctx->buffer_bind_sparse = vk_buffer_bind_sparse;
+   ctx->barrier_buffers = vk_barrier_buffers;
 
    ctx->create_image = vk_create_image;
    ctx->destroy_image = vk_destroy_image;
    ctx->clear_image = vk_clear_image;
    ctx->blit_image = vk_blit_image;
    ctx->image_write_png = vk_image_write_png;
+   ctx->barrier_images = vk_barrier_images;
 
    ctx->create_framebuffer = vk_create_framebuffer;
    ctx->destroy_framebuffer = vk_destroy_framebuffer;
@@ -2885,7 +2909,6 @@ vk_create_context(const program_options *options)
    ctx->destroy_compute_pipeline = vk_destroy_compute_pipeline;
    ctx->bind_compute_pipeline = vk_bind_compute_pipeline;
    ctx->dispatch = vk_dispatch;
-   ctx->barrier_buffers = vk_barrier_buffers;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;

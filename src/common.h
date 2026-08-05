@@ -488,6 +488,8 @@ typedef struct api_context {
    void (*buffer_bind_sparse)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
                               uint64_t size, bool bind, api_queue_type queue,
                               api_fence *wait_fence, api_fence **signal_fence);
+   void (*barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                           uint64_t *offset_size_pairs, bool after_shader_writes);
 
    /* Image functions. */
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
@@ -501,6 +503,8 @@ typedef struct api_context {
                              void *data);
    void (*image_write_png)(struct api_context *ctx, api_image *image, unsigned layer,
                            const char *filename);
+   void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,
+                          bool after_shader_writes);
 
    /* Framebuffer functions. */
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
@@ -549,8 +553,6 @@ typedef struct api_context {
 
    /* Compute commands and barriers. */
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
-   void (*barrier_buffers)(struct api_context *ctx, unsigned num_buffers, api_buffer **buffers,
-                           uint64_t *offset_size_pairs, bool after_shader_writes);
 
    /* Command submission. */
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);

@@ -109,6 +109,44 @@ gl_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
    gl_check_no_error();
 }
 
+static void
+gl_barrier_buffers(api_context *ctx, unsigned num_buffers, api_buffer **buffers,
+                   uint64_t *offset_size_pairs, bool after_shader_writes)
+{
+   /* GL only needs barriers after shader writes. */
+   if (!after_shader_writes)
+      return;
+
+   glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT |
+                   GL_ELEMENT_ARRAY_BARRIER_BIT |
+                   GL_UNIFORM_BARRIER_BIT |
+                   GL_TEXTURE_FETCH_BARRIER_BIT |
+                   GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+                   GL_COMMAND_BARRIER_BIT |
+                   GL_PIXEL_BUFFER_BARRIER_BIT |
+                   GL_BUFFER_UPDATE_BARRIER_BIT |
+                   GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT |
+                   GL_TRANSFORM_FEEDBACK_BARRIER_BIT |
+                   GL_ATOMIC_COUNTER_BARRIER_BIT |
+                   GL_SHADER_STORAGE_BARRIER_BIT |
+                   GL_QUERY_BUFFER_BARRIER_BIT);
+}
+
+static void
+gl_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
+                  bool after_shader_writes)
+{
+   /* GL only needs barriers after shader writes. */
+   if (!after_shader_writes)
+      return;
+
+   glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT |
+                   GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
+                   GL_PIXEL_BUFFER_BARRIER_BIT |
+                   GL_TEXTURE_UPDATE_BARRIER_BIT |
+                   GL_FRAMEBUFFER_BARRIER_BIT);
+}
+
 static GLenum
 get_gl_internalformat(VkFormat format)
 {
@@ -1181,29 +1219,6 @@ gl_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 }
 
 static void
-gl_barrier_buffers(api_context *ctx, unsigned num_buffers, api_buffer **buffers,
-                   uint64_t *offset_size_pairs, bool after_shader_writes)
-{
-   /* GL only needs barriers after shader writes. */
-   if (!after_shader_writes)
-      return;
-
-   glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT |
-                   GL_ELEMENT_ARRAY_BARRIER_BIT |
-                   GL_UNIFORM_BARRIER_BIT |
-                   GL_TEXTURE_FETCH_BARRIER_BIT |
-                   GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
-                   GL_COMMAND_BARRIER_BIT |
-                   GL_PIXEL_BUFFER_BARRIER_BIT |
-                   GL_BUFFER_UPDATE_BARRIER_BIT |
-                   GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT |
-                   GL_TRANSFORM_FEEDBACK_BARRIER_BIT |
-                   GL_ATOMIC_COUNTER_BARRIER_BIT |
-                   GL_SHADER_STORAGE_BARRIER_BIT |
-                   GL_QUERY_BUFFER_BARRIER_BIT);
-}
-
-static void
 gl_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(queue == api_queue_gfx);
@@ -1612,6 +1627,7 @@ gl_create_context(const program_options *options)
    ctx->get_buffer_data = gl_get_buffer_data;
    ctx->clear_buffer = gl_clear_buffer;
    ctx->copy_buffer = gl_copy_buffer;
+   ctx->barrier_buffers = gl_barrier_buffers;
 
    ctx->create_image = gl_create_image;
    ctx->destroy_image = gl_destroy_image;
@@ -1619,6 +1635,7 @@ gl_create_context(const program_options *options)
    ctx->blit_image = gl_blit_image;
    ctx->upload_image_data = gl_upload_image_data;
    ctx->image_write_png = gl_image_write_png;
+   ctx->barrier_images = gl_barrier_images;
 
    ctx->create_framebuffer = gl_create_framebuffer;
    ctx->destroy_framebuffer = gl_destroy_framebuffer;
@@ -1641,8 +1658,6 @@ gl_create_context(const program_options *options)
    ctx->create_gfx_pipeline = gl_create_gfx_pipeline;
    ctx->destroy_gfx_pipeline = gl_destroy_gfx_pipeline;
    ctx->bind_gfx_pipeline = gl_bind_gfx_pipeline;
-
-   ctx->barrier_buffers = gl_barrier_buffers;
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = gl_end_cmdbuf_and_submit;
