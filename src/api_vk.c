@@ -542,9 +542,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                                     .a = VK_COMPONENT_SWIZZLE_A,
                                  },
                                  .subresourceRange = {
-                                    .aspectMask = format_is_depth_or_stencil(format) ?
-                                                      VK_IMAGE_ASPECT_DEPTH_BIT :
-                                                      VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .aspectMask = get_image_aspect(image),
                                     .levelCount = 1,
                                     .layerCount = image->depth,
                                  },
@@ -581,9 +579,7 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
       vkCmdClearDepthStencilImage(ctx->current_cmd_buffer, image->image,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value->zs, 1,
                                   &(VkImageSubresourceRange){
-                                     .aspectMask =
-                                       (format_has_depth(image->format) ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
-                                       (format_has_stencil(image->format) ? VK_IMAGE_ASPECT_STENCIL_BIT : 0),
+                                     .aspectMask = get_image_aspect(image),
                                      .levelCount = 1,
                                      .layerCount = image->layer_count,
                                   });
@@ -647,7 +643,7 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
 
          vkCmdResolveImage2(ctx->current_cmd_buffer, &(VkResolveImageInfo2){
                             .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2,
-                            .pNext = format_has_depth(desc->src->format) ?
+                            .pNext = format_is_depth_or_stencil(desc->src->format) ?
                                &(VkResolveImageModeInfoKHR){
                                   .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_MODE_INFO_KHR,
                                   .resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
@@ -714,6 +710,19 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
    }
 }
 
+static unsigned
+get_attachment_optimal_layout(api_image *image)
+{
+   if (format_has_depth(image->format) && format_has_stencil(image->format))
+      return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+   else if (format_has_depth(image->format))
+      return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+   else if (format_has_stencil(image->format))
+      return VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL;
+   else
+      return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+}
+
 static api_framebuffer *
 vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                       unsigned width, unsigned height, unsigned samples, unsigned view_mask)
@@ -761,13 +770,15 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
          assert(!colorbuf || zbuf->depth == colorbuf->depth);
          assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
+         VkImageLayout layout = get_attachment_optimal_layout(zbuf);
+
          att_descs[fb->num_attachments] = (VkAttachmentDescription2){
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
             .format = zbuf->format,
             .samples = zbuf->samples,
-            .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = layout,
+            .finalLayout = layout,
          };
 
          att_views[fb->num_attachments] = zbuf->render_compatible_view;
@@ -803,8 +814,8 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                   .pDepthStencilAttachment = &(VkAttachmentReference2) {
                      .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
                      .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
-                     .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                     .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                     .layout = zbuf ? get_attachment_optimal_layout(zbuf) : 0,
+                     .aspectMask = zbuf ? get_image_aspect(zbuf) : 0,
                   },
                },
             },
@@ -1199,7 +1210,7 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       stages[num_stages++] = fs_stages[num_fs_stages++] = desc->fs->stage_info;
 
    bool uses_dynamic_state = ctx->options.api_flags & API_VK_DYNAMIC_STATE;
-   VkDynamicState dyn_states_vi[10], dyn_states_prerast[10], dyn_states_fs[10], dyn_states_out[10];
+   VkDynamicState dyn_states_vi[10], dyn_states_prerast[10], dyn_states_fs[20], dyn_states_out[10];
    unsigned num_dyn_states_vi = 0, num_dyn_states_prerast = 0, num_dyn_states_fs = 0;
    unsigned num_dyn_states_out = 0;
 
@@ -1225,9 +1236,17 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT;
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_SAMPLE_MASK_EXT;
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
+
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE;
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE;
       dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_DEPTH_COMPARE_OP;
+
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_STENCIL_OP;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_STENCIL_REFERENCE;
+      dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_STENCIL_WRITE_MASK;
+
       if (ctx->has_vrs && ctx->options.api_flags & API_VK_GPL)
          dyn_states_fs[check_incr(dyn_states_fs)] = VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
 
@@ -1237,7 +1256,7 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
 
    }
 
-   VkDynamicState dyn_states[20];
+   VkDynamicState dyn_states[30];
    unsigned num_dyn_states = 0;
 
    for (unsigned i = 0; i < num_dyn_states_vi; i++)
@@ -1319,8 +1338,10 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       .viewMask = multiview ? desc->fb->view_mask : 0,
       .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
       .pColorAttachmentFormats = desc->fb->colorbuf ? &desc->fb->colorbuf->format : NULL,
-      .depthAttachmentFormat = desc->fb->zbuf ? desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
-      .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
+      .depthAttachmentFormat = desc->fb->zbuf && format_has_depth(desc->fb->zbuf->format) ?
+                                 desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
+      .stencilAttachmentFormat = desc->fb->zbuf && format_has_stencil(desc->fb->zbuf->format) ?
+                                    desc->fb->zbuf->format : VK_FORMAT_UNDEFINED,
    };
 
    assert(desc->vrs_fragment_size[0] && desc->vrs_fragment_size[1]);
@@ -1504,11 +1525,30 @@ vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       ctx->vkCmdSetAlphaToCoverageEnableEXT(ctx->current_cmd_buffer, pipeline->desc.alpha_to_coverage);
 
       vkCmdSetDepthTestEnable(ctx->current_cmd_buffer, pipeline->desc.depth_enabled);
+      vkCmdSetDepthWriteEnable(ctx->current_cmd_buffer, pipeline->desc.depth_write_enabled);
+      vkCmdSetDepthCompareOp(ctx->current_cmd_buffer, pipeline->desc.depth_compare_op);
 
-      if (pipeline->desc.fb->zbuf) {
-         vkCmdSetDepthWriteEnable(ctx->current_cmd_buffer, pipeline->desc.depth_write_enabled);
-         vkCmdSetDepthCompareOp(ctx->current_cmd_buffer, pipeline->desc.depth_compare_op);
-      }
+      vkCmdSetStencilTestEnable(ctx->current_cmd_buffer, pipeline->desc.stencil_enabled);
+
+      vkCmdSetStencilOp(ctx->current_cmd_buffer, VK_STENCIL_FACE_FRONT_BIT,
+                        pipeline->desc.stencil_front.failOp, pipeline->desc.stencil_front.passOp,
+                        pipeline->desc.stencil_front.depthFailOp, pipeline->desc.stencil_front.compareOp);
+      vkCmdSetStencilCompareMask(ctx->current_cmd_buffer, VK_STENCIL_FACE_FRONT_BIT,
+                                 pipeline->desc.stencil_front.compareMask);
+      vkCmdSetStencilWriteMask(ctx->current_cmd_buffer, VK_STENCIL_FACE_FRONT_BIT,
+                               pipeline->desc.stencil_front.writeMask);
+      vkCmdSetStencilReference(ctx->current_cmd_buffer, VK_STENCIL_FACE_FRONT_BIT,
+                               pipeline->desc.stencil_front.reference);
+
+      vkCmdSetStencilOp(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
+                        pipeline->desc.stencil_back.failOp, pipeline->desc.stencil_back.passOp,
+                        pipeline->desc.stencil_back.depthFailOp, pipeline->desc.stencil_back.compareOp);
+      vkCmdSetStencilCompareMask(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
+                                 pipeline->desc.stencil_back.compareMask);
+      vkCmdSetStencilWriteMask(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
+                               pipeline->desc.stencil_back.writeMask);
+      vkCmdSetStencilReference(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
+                               pipeline->desc.stencil_back.reference);
 
       if (pipeline->desc.fb->colorbuf) {
          ctx->vkCmdSetColorBlendEnableEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.blendEnable);
@@ -1663,11 +1703,43 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    }
    if (desc->fb->zbuf) {
       vk_image_layout_transition(ctx, desc->fb->zbuf,
-                                 VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+                                 get_attachment_optimal_layout(desc->fb->zbuf));
    }
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       bool multiview = desc->fb->view_mask != 0x1;
+
+      VkRenderingAttachmentInfo color_att = {0};
+
+      if (desc->fb->colorbuf) {
+         color_att = (VkRenderingAttachmentInfo){
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = desc->fb->colorbuf->render_compatible_view,
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
+                                    VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {
+               .color = desc->clear_values.color,
+            },
+         };
+      }
+
+      VkRenderingAttachmentInfo zs_att = {0};
+
+      if (desc->fb->zbuf) {
+         zs_att = (VkRenderingAttachmentInfo){
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = desc->fb->zbuf->render_compatible_view,
+            .imageLayout = get_attachment_optimal_layout(desc->fb->zbuf),
+            .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
+                                    VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {
+                .depthStencil = desc->clear_values.zs,
+            },
+         };
+      }
 
       vkCmdBeginRendering(ctx->current_cmd_buffer,
                           &(VkRenderingInfo){
@@ -1681,30 +1753,13 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                              desc->fb->zbuf ? desc->fb->zbuf->depth : 1,
                              .viewMask = multiview ? desc->fb->view_mask : 0,
                              .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
-                             .pColorAttachments = &(VkRenderingAttachmentInfo){
-                                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                .imageView = desc->fb->colorbuf ?
-                                                desc->fb->colorbuf->render_compatible_view : NULL,
-                                .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
-                                                        VK_ATTACHMENT_LOAD_OP_LOAD,
-                                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                                .clearValue = {
-                                    .color = desc->clear_values.color,
-                                },
-                             },
-                             .pDepthAttachment = &(VkRenderingAttachmentInfo){
-                                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                                .imageView = desc->fb->zbuf ?
-                                                desc->fb->zbuf->render_compatible_view : NULL,
-                                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                                .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
-                                                        VK_ATTACHMENT_LOAD_OP_LOAD,
-                                .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                .clearValue = {
-                                    .depthStencil = desc->clear_values.zs,
-                                },
-                             },
+                             .pColorAttachments = desc->fb->colorbuf ? &color_att : NULL,
+                             .pDepthAttachment = desc->fb->zbuf &&
+                                                 format_has_depth(desc->fb->zbuf->format) ?
+                                                      &zs_att : NULL,
+                             .pStencilAttachment = desc->fb->zbuf &&
+                                                   format_has_stencil(desc->fb->zbuf->format) ?
+                                                      &zs_att : NULL,
                           });
    } else {
       VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
@@ -1729,7 +1784,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    if (desc->fb->colorbuf)
       desc->fb->colorbuf->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
    if (desc->fb->zbuf)
-      desc->fb->zbuf->layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+      desc->fb->zbuf->layout = get_attachment_optimal_layout(desc->fb->zbuf);;
 
    const VkViewport viewport = {
       .x = 0,
@@ -1787,8 +1842,7 @@ vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
       assert(has_depth || has_stencil);
       assert(num_att < ARRAY_SIZE(att));
 
-      att[num_att].aspectMask = (has_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : 0) |
-                                (has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
+      att[num_att].aspectMask = get_image_aspect(ctx->current_fb->zbuf);
       att[num_att].clearValue.depthStencil = desc->clear_values.zs;
       num_att++;
    }
