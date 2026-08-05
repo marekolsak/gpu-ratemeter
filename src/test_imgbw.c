@@ -400,7 +400,7 @@ static struct {
    {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
    {"d32",     0, VK_FORMAT_D32_SFLOAT},
    {"s8",      0, VK_FORMAT_S8_UINT},
-   //{"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT}, // TODO: the exact size check is an infinite loop with bpe=5
+   {"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT},
    // TODO: MRT clears
 };
 
@@ -589,7 +589,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                   switch (test_index) {
                   case TEST_BLIT:
-                     if (formats[format_index].zs_format == VK_FORMAT_S8_UINT)
+                     if (formats[format_index].zs_format &&
+                         format_has_stencil(formats[format_index].zs_format))
                         continue;
                      break;
 
@@ -649,6 +650,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      api_framebuffer *fb;
                   } sets[6] = {0};
                   unsigned num_image_sets = 0;
+                  bool exceeds_limits = false;
 
                   for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
                      unsigned eff_size = size >> (DEBUG_DUMP_IMAGES ? 4 : 0);
@@ -661,15 +663,24 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      if (img_type == VK_IMAGE_TYPE_2D) {
                         width = height = get_next_power_of_two(sqrt(num_pixels));
 
-                        for (unsigned i = 0; width * height != num_pixels; i++) {
-                           if (i % 2 == 1)
-                              width /= 2;
-                           else
-                              height /= 2;
+                        if (IS_POT(bpe_total)) {
+                           for (unsigned i = 0; width * height != num_pixels; i++) {
+                              if (i % 2 == 1)
+                                 width /= 2;
+                              else
+                                 height /= 2;
+                           }
+                        } else {
+                           for (unsigned i = 0; width * height > num_pixels; i++) {
+                              if (i % 2 == 1)
+                                 width -= 64 / samples;
+                              else
+                                 height -= 64 / samples;
+                           }
                         }
 
-                        width = MIN2(width, ctx->max_image_dim_2d);
-                        height = MIN2(height, ctx->max_image_dim_2d);
+                        exceeds_limits = width > ctx->max_image_dim_2d ||
+                                         height > ctx->max_image_dim_2d;
                      } else if (img_type == VK_IMAGE_TYPE_3D) {
                         width = height = depth = get_next_power_of_two(pow(size / bpe_total, 0.333334));
 
@@ -682,13 +693,13 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                               depth /= 2;
                         }
 
-                        width = MIN2(width, ctx->max_image_dim_3d);
-                        height = MIN2(height, ctx->max_image_dim_3d);
-                        depth = MIN2(depth, ctx->max_image_dim_3d);
+                        exceeds_limits = width > ctx->max_image_dim_3d ||
+                                         height > ctx->max_image_dim_3d ||
+                                         depth > ctx->max_image_dim_3d;
                      }
 
                      sets[num_image_sets].size = size;
-                     sets[num_image_sets].exceeds_limits = width * height * depth != num_pixels;
+                     sets[num_image_sets].exceeds_limits = exceeds_limits;
                      sets[num_image_sets].width = width;
                      sets[num_image_sets].height = height;
                      sets[num_image_sets].depth = depth;
@@ -710,6 +721,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                                                    formats[format_index].color_format :
                                                    formats[format_index].zs_format, width, height,
                                                 depth, src_samples, src_tiling, api_heap_device);
+                           assert(sets[num_image_sets].src);
                         }
 
                         if (formats[format_index].color_format) {
@@ -730,6 +742,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                            sets[num_image_sets].dst = sets[num_image_sets].dst_color ?
                                                          sets[num_image_sets].dst_color :
                                                          sets[num_image_sets].dst_zs;
+                           assert(sets[num_image_sets].dst);
                         }
 
                         sets[num_image_sets].fb =
@@ -778,6 +791,9 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                      if (stage == RUN && !unsupported) {
                         if (!is_clear) {
                            for (unsigned set = 0; set < num_image_sets; set++) {
+                              if (sets[set].exceeds_limits)
+                                 continue;
+
                               switch (fill_option) {
                               case FILL_BLACK:
                               case FILL_SOLID: {
