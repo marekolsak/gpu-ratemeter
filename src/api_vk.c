@@ -468,6 +468,11 @@ barrier_images(api_context *ctx, unsigned num_images, api_image **images,
                             .imageMemoryBarrierCount = num_images,
                             .pImageMemoryBarriers = barriers,
                          });
+
+   if (new_layouts) {
+      for (unsigned i = 0; i < num_images; i++)
+         images[i]->layout = new_layouts[i];
+   }
 }
 
 static void
@@ -478,13 +483,31 @@ vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
 }
 
 static void
-vk_image_layout_transition(api_context *ctx, api_image *image, VkImageLayout new_layout)
+vk_transition_image_layouts(api_context *ctx, unsigned num_images, api_image **images,
+                            VkImageLayout *new_layouts, bool cmdbuf_not_started)
 {
-   if (image->layout == new_layout)
-      return;
+   api_image **transition_images = alloca(num_images * sizeof(transition_images[0]));
+   VkImageLayout *transition_new_layouts = alloca(num_images * sizeof(VkImageLayout));
+   unsigned num_transition_images = 0;
 
-   barrier_images(ctx, 1, &image, &new_layout);
-   image->layout = new_layout;
+   /* Skip layout transitions that don't change the layout. */
+   for (unsigned i = 0; i < num_images; i++) {
+      if (images[i]->layout != new_layouts[i]) {
+         transition_images[num_transition_images] = images[i];
+         transition_new_layouts[num_transition_images] = new_layouts[i];
+         num_transition_images++;
+      }
+   }
+
+   if (num_transition_images) {
+      if (cmdbuf_not_started)
+         ctx->begin_cmdbuf(ctx, api_queue_gfx);
+
+      barrier_images(ctx, num_transition_images, transition_images, transition_new_layouts);
+
+      if (cmdbuf_not_started)
+         ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+   }
 }
 
 static api_image *
@@ -595,7 +618,8 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
 {
    assert(!box);
 
-   vk_image_layout_transition(ctx, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+   vk_transition_image_layouts(ctx, 1, &image,
+                               (VkImageLayout[1]){VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
 
    if (format_is_depth_or_stencil(image->format)) {
       vkCmdClearDepthStencilImage(ctx->current_cmd_buffer, image->image,
@@ -647,8 +671,9 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
       .layerCount = dst_layer_count,
    };
 
-   vk_image_layout_transition(ctx, desc->src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-   vk_image_layout_transition(ctx, desc->dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+   vk_transition_image_layouts(ctx, 2, (api_image*[2]){desc->src, desc->dst},
+                               (VkImageLayout[2]){VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
 
    if (desc->is_copy || is_resolve) {
       assert(desc->dst_box.width == desc->src_box.width);
@@ -746,50 +771,51 @@ get_attachment_optimal_layout(api_image *image)
 }
 
 static api_framebuffer *
-vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
-                      unsigned width, unsigned height, unsigned samples, unsigned view_mask)
+vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_image **colorbufs,
+                      api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
+                      unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
-   fb->width = width;
-   fb->height = height;
-   fb->layers = colorbuf ? colorbuf->depth : zsbuf ? zsbuf->depth : 1;
-   fb->samples = samples;
-   fb->view_mask = view_mask;
-   fb->colorbuf = colorbuf;
-   fb->zsbuf = zsbuf;
+   init_framebuffer_base(fb, num_color_attachments, colorbufs, zsbuf, width, height, samples,
+                         view_mask);
 
    assert(view_mask);
    assert(ctx->has_multiview || view_mask == 0x1);
 
    if (!(ctx->options.api_flags & API_VK_DYNAMIC_STATE)) {
-      fb->colorbuf_att_index = 0;
-      fb->zsbuf_att_index = 0;
-      fb->num_attachments = 0;
+      VkAttachmentDescription2 att_descs[MAX_COLOR_ATTACHMENTS + 1];
+      VkImageView att_views[MAX_COLOR_ATTACHMENTS + 1];
+      VkAttachmentReference2 color_att_ref[MAX_COLOR_ATTACHMENTS];
+      VkAttachmentReference2 zs_att_ref;
 
-      VkAttachmentDescription2 att_descs[2];
-      VkImageView att_views[2];
-
-      if (colorbuf) {
-         assert(!format_is_depth_or_stencil(colorbuf->format));
+      for (unsigned i = 0; i < num_color_attachments; i++) {
+         assert(!format_is_depth_or_stencil(colorbufs[i]->format));
          assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
          att_descs[fb->num_attachments] = (VkAttachmentDescription2){
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
-            .format = colorbuf->format,
-            .samples = colorbuf->samples,
+            .format = colorbufs[i]->format,
+            .samples = colorbufs[i]->samples,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
          };
 
-         att_views[fb->num_attachments] = colorbuf->render_compatible_view;
-         fb->colorbuf_att_index = fb->num_attachments;
+         att_views[fb->num_attachments] = colorbufs[i]->render_compatible_view;
+         fb->colorbufs_att_index[i] = fb->num_attachments;
+
+         color_att_ref[i] = (VkAttachmentReference2){
+            .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+            .attachment = fb->colorbufs_att_index[i],
+            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+         };
+
          fb->num_attachments++;
       }
 
       if (zsbuf) {
          assert(zsbuf->type != VK_IMAGE_TYPE_3D);
-         assert(!colorbuf || zsbuf->depth == colorbuf->depth);
          assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
          VkImageLayout layout = get_attachment_optimal_layout(zsbuf);
@@ -805,7 +831,20 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
 
          att_views[fb->num_attachments] = zsbuf->render_compatible_view;
          fb->zsbuf_att_index = fb->num_attachments;
+
+         zs_att_ref = (VkAttachmentReference2) {
+            .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+            .attachment = fb->zsbuf_att_index,
+            .layout = get_attachment_optimal_layout(zsbuf),
+            .aspectMask = get_image_aspect(zsbuf),
+         };
+
          fb->num_attachments++;
+      } else {
+         zs_att_ref = (VkAttachmentReference2) {
+            .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+            .attachment = VK_ATTACHMENT_UNUSED,
+         };
       }
 
       for (unsigned clear = 0; clear < 2; clear++) {
@@ -824,21 +863,9 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
                   .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
                   .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
                   .viewMask = multiview ? view_mask : 0,
-                  .colorAttachmentCount = colorbuf ? 1 : 0,
-                  .pColorAttachments = (VkAttachmentReference2[]) {
-                     {
-                        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-                        .attachment = colorbuf ? fb->colorbuf_att_index : VK_ATTACHMENT_UNUSED,
-                        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                     },
-                  },
-                  .pDepthStencilAttachment = &(VkAttachmentReference2) {
-                     .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-                     .attachment = zsbuf ? fb->zsbuf_att_index : VK_ATTACHMENT_UNUSED,
-                     .layout = zsbuf ? get_attachment_optimal_layout(zsbuf) : 0,
-                     .aspectMask = zsbuf ? get_image_aspect(zsbuf) : 0,
-                  },
+                  .colorAttachmentCount = num_color_attachments,
+                  .pColorAttachments = color_att_ref,
+                  .pDepthStencilAttachment = &zs_att_ref,
                },
             },
             .correlatedViewMaskCount = multiview ? 1 : 0,
@@ -854,9 +881,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
                                          .pAttachments = att_views,
                                          .width = fb->width,
                                          .height = fb->height,
-                                         .layers = multiview ? 1 :
-                                                      colorbuf ? colorbuf->depth :
-                                                      zsbuf ? zsbuf->depth : 1,
+                                         .layers = multiview ? 1 : fb->layers,
                                       },
                                       NULL, &fb->fb[clear]));
       }
@@ -1149,14 +1174,14 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
 {
    assert(num_images <= set->layout->desc.storage_image[binding_index].array_size);
    VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_images);
+   VkImageLayout *need_layouts = alloca(num_images * sizeof(need_layouts[0]));
+
+   for (unsigned i = 0; i < num_images; i++)
+      need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
+
+   vk_transition_image_layouts(ctx, num_images, images, need_layouts, true);
 
    for (unsigned i = 0; i < num_images; i++) {
-      if (images[i]->layout != VK_IMAGE_LAYOUT_GENERAL) {
-         ctx->begin_cmdbuf(ctx, api_queue_gfx);
-         vk_image_layout_transition(ctx, images[i], VK_IMAGE_LAYOUT_GENERAL);
-         ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
-      }
-
       image_infos[i].sampler = NULL;
       image_infos[i].imageView = images[i]->render_compatible_view;
       image_infos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1340,9 +1365,19 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       },
       .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-         .attachmentCount = desc->fb->colorbuf ? 1 : 0,
+         .attachmentCount = desc->fb->num_color_attachments,
          .pAttachments = uses_dynamic_state ?
-            (VkPipelineColorBlendAttachmentState[1]){} : &pipeline->blend_state,
+            (VkPipelineColorBlendAttachmentState[MAX_COLOR_ATTACHMENTS]){} :
+            (VkPipelineColorBlendAttachmentState[MAX_COLOR_ATTACHMENTS]){
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+               pipeline->blend_state,
+            },
       },
       .pDynamicState = &(VkPipelineDynamicStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -1354,12 +1389,17 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       .renderPass = uses_dynamic_state ? NULL : desc->fb->render_pass[0],
    };
 
+   VkFormat color_formats[MAX_COLOR_ATTACHMENTS] = {0};
+
+   for (unsigned i = 0; i < desc->fb->num_color_attachments; i++)
+      color_formats[i] = desc->fb->colorbufs[i]->format;
+
    bool multiview = desc->fb->view_mask != 0x1;
    VkPipelineRenderingCreateInfo dyn_rendering_pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
       .viewMask = multiview ? desc->fb->view_mask : 0,
-      .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
-      .pColorAttachmentFormats = desc->fb->colorbuf ? &desc->fb->colorbuf->format : NULL,
+      .colorAttachmentCount = desc->fb->num_color_attachments,
+      .pColorAttachmentFormats = color_formats,
       .depthAttachmentFormat = desc->fb->zsbuf && format_has_depth(desc->fb->zsbuf->format) ?
                                  desc->fb->zsbuf->format : VK_FORMAT_UNDEFINED,
       .stencilAttachmentFormat = desc->fb->zsbuf && format_has_stencil(desc->fb->zsbuf->format) ?
@@ -1572,7 +1612,7 @@ vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       vkCmdSetStencilReference(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
                                pipeline->desc.stencil_back.reference);
 
-      if (pipeline->desc.fb->colorbuf) {
+      if (pipeline->desc.fb->num_color_attachments) {
          ctx->vkCmdSetColorBlendEnableEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.blendEnable);
          ctx->vkCmdSetColorBlendEquationEXT(ctx->current_cmd_buffer, 0, 1, &(VkColorBlendEquationEXT){
                                                .srcColorBlendFactor = pipeline->blend_state.srcColorBlendFactor,
@@ -1719,24 +1759,38 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 {
    ctx->current_fb = desc->fb;
 
-   if (desc->fb->colorbuf) {
-      vk_image_layout_transition(ctx, desc->fb->colorbuf,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-   }
-   if (desc->fb->zsbuf) {
-      vk_image_layout_transition(ctx, desc->fb->zsbuf,
-                                 get_attachment_optimal_layout(desc->fb->zsbuf));
+   /* Do image layout transitions if needed. */
+   api_image *transition_images[MAX_COLOR_ATTACHMENTS + 1];
+   VkImageLayout transition_layouts[MAX_COLOR_ATTACHMENTS + 1];
+   unsigned num_transition_images = 0;
+
+   for (unsigned i = 0; i < desc->fb->num_color_attachments; i++) {
+      transition_images[num_transition_images] = desc->fb->colorbufs[i];
+      transition_layouts[num_transition_images] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      num_transition_images++;
    }
 
+   if (desc->fb->zsbuf) {
+      transition_images[num_transition_images] = desc->fb->zsbuf;
+      transition_layouts[num_transition_images] = get_attachment_optimal_layout(desc->fb->zsbuf);
+      num_transition_images++;
+   }
+
+   if (num_transition_images) {
+      vk_transition_image_layouts(ctx, num_transition_images, transition_images,
+                                  transition_layouts, false);
+   }
+
+   /* Begin dynamic rendering or a render pass. */
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       bool multiview = desc->fb->view_mask != 0x1;
 
-      VkRenderingAttachmentInfo color_att = {0};
+      VkRenderingAttachmentInfo color_att[MAX_COLOR_ATTACHMENTS] = {0};
 
-      if (desc->fb->colorbuf) {
-         color_att = (VkRenderingAttachmentInfo){
+      for (unsigned i = 0; i < desc->fb->num_color_attachments; i++) {
+         color_att[i] = (VkRenderingAttachmentInfo){
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = desc->fb->colorbuf->render_compatible_view,
+            .imageView = desc->fb->colorbufs[i]->render_compatible_view,
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
                                     VK_ATTACHMENT_LOAD_OP_LOAD,
@@ -1770,12 +1824,10 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                                 .offset = {0, 0},
                                 .extent = {desc->fb->width, desc->fb->height},
                              },
-                             .layerCount = multiview ? 1 :
-                                             desc->fb->colorbuf ? desc->fb->colorbuf->depth :
-                                             desc->fb->zsbuf ? desc->fb->zsbuf->depth : 1,
+                             .layerCount = multiview ? 1 : desc->fb->layers,
                              .viewMask = multiview ? desc->fb->view_mask : 0,
-                             .colorAttachmentCount = desc->fb->colorbuf ? 1 : 0,
-                             .pColorAttachments = desc->fb->colorbuf ? &color_att : NULL,
+                             .colorAttachmentCount = desc->fb->num_color_attachments,
+                             .pColorAttachments = color_att,
                              .pDepthAttachment = desc->fb->zsbuf &&
                                                  format_has_depth(desc->fb->zsbuf->format) ?
                                                       &zs_att : NULL,
@@ -1786,8 +1838,9 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    } else {
       VkClearValue *clear_values = alloca(desc->fb->num_attachments * sizeof(VkClearValue));
 
-      if (desc->fb->colorbuf)
-         clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->clear_values.color};
+      for (unsigned i = 0; i < desc->fb->num_color_attachments; i++)
+         clear_values[desc->fb->colorbufs_att_index[i]] = (VkClearValue){.color = desc->clear_values.color};
+
       if (desc->fb->zsbuf)
          clear_values[desc->fb->zsbuf_att_index] = (VkClearValue){.depthStencil = desc->clear_values.zs};
 
@@ -1802,11 +1855,6 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
                            },
                            VK_SUBPASS_CONTENTS_INLINE);
    }
-
-   if (desc->fb->colorbuf)
-      desc->fb->colorbuf->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-   if (desc->fb->zsbuf)
-      desc->fb->zsbuf->layout = get_attachment_optimal_layout(desc->fb->zsbuf);;
 
    const VkViewport viewport = {
       .x = 0,
@@ -1840,7 +1888,7 @@ static void
 vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
 {
    unsigned num_att = 0;
-   VkClearAttachment att[10];
+   VkClearAttachment att[MAX_COLOR_ATTACHMENTS + 1];
 
    assert(desc->box.x >= 0);
    assert(desc->box.y >= 0);
@@ -1849,10 +1897,9 @@ vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
    assert(desc->box.height > 0);
    assert(desc->box.depth > 0);
 
-   if (ctx->current_fb->colorbuf) {
-      assert(num_att < ARRAY_SIZE(att));
+   for (unsigned i = 0; i < ctx->current_fb->num_color_attachments; i++) {
       att[num_att].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      att[num_att].colorAttachment = 0;
+      att[num_att].colorAttachment = i;
       att[num_att].clearValue.color = desc->clear_values.color;
       num_att++;
    }

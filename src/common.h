@@ -124,24 +124,28 @@ typedef struct {
    bool linear_filter;
 } api_blit_desc;
 
+#define MAX_COLOR_ATTACHMENTS 8
+
 typedef struct {
    unsigned width;
    unsigned height;
    unsigned layers;
    unsigned samples;
    unsigned view_mask;
-   api_image *colorbuf;
+   unsigned num_color_attachments;
+   api_image *colorbufs[MAX_COLOR_ATTACHMENTS];
    api_image *zsbuf;
 
 #ifdef GL_PRIVATE
    GLuint id;
+   bool any_integer_colorbuf;
 #endif
 
 #ifdef VK_PRIVATE
    VkRenderPass render_pass[2];  /* 0=no clear, 1=clear */
    VkFramebuffer fb[2];          /* 0=no clear, 1=clear */
    unsigned num_attachments;
-   unsigned colorbuf_att_index;
+   unsigned colorbufs_att_index[MAX_COLOR_ATTACHMENTS];
    unsigned zsbuf_att_index;
 #endif
 } api_framebuffer;
@@ -507,9 +511,10 @@ typedef struct api_context {
                           bool after_shader_writes);
 
    /* Framebuffer functions. */
-   api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf,
-                                          api_image *zsbuf, unsigned width, unsigned height,
-                                          unsigned samples, unsigned view_mask);
+   api_framebuffer *(*create_framebuffer)(struct api_context *ctx, unsigned num_color_attachments,
+                                          api_image **colorbufs, api_image *zsbuf,
+                                          unsigned width, unsigned height, unsigned samples,
+                                          unsigned view_mask);
    void (*destroy_framebuffer)(struct api_context *ctx, api_framebuffer *fb);
 
    /* Shader and descriptor set layout functions. */
@@ -676,6 +681,9 @@ unsigned logbase2(unsigned n);
 const char *heap_to_string(api_heap_type heap);
 const char *queue_to_string(api_queue_type queue);
 uint32_t fnv1a_hash(const void *data, size_t size);
+void init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_image **colorbufs,
+                           api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
+                           unsigned view_mask);
 
 #ifdef __cplusplus
 }

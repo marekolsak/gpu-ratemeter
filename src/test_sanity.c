@@ -137,7 +137,7 @@ test_sanity(api_context *ctx, const char *test_name)
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device);
-   api_framebuffer *fb = ctx->create_framebuffer(ctx, colorbuf, NULL, colorbuf->width,
+   api_framebuffer *fb = ctx->create_framebuffer(ctx, 1, &colorbuf, NULL, colorbuf->width,
                                                  colorbuf->height, colorbuf->samples, 0x1);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);
 
@@ -231,6 +231,6 @@ test_sanity(api_context *ctx, const char *test_name)
    ctx->end_render_pass(ctx);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
-   ctx->image_write_png(ctx, fb->colorbuf, 0, "output.png");
+   ctx->image_write_png(ctx, fb->colorbufs[0], 0, "output.png");
    run_image_viewer("output.png");
 }

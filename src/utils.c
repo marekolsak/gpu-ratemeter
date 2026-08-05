@@ -806,3 +806,30 @@ fnv1a_hash(const void *data, size_t size)
 
     return hash;
 }
+
+void
+init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_image **colorbufs,
+                      api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
+                      unsigned view_mask)
+{
+   assert(num_color_attachments <= MAX_COLOR_ATTACHMENTS);
+   assert(!num_color_attachments || colorbufs);
+
+   fb->width = width;
+   fb->height = height;
+   fb->layers = num_color_attachments ? colorbufs[0]->depth : zsbuf ? zsbuf->depth : 1;
+   fb->samples = samples;
+   fb->view_mask = view_mask;
+   fb->num_color_attachments = num_color_attachments;
+   if (num_color_attachments)
+      memcpy(fb->colorbufs, colorbufs, num_color_attachments * sizeof(colorbufs[0]));
+   fb->zsbuf = zsbuf;
+
+   for (unsigned i = 0; i < num_color_attachments; i++) {
+      /* No mixed integer and non-integer formats since clear colors are not per attachment. */
+      assert(format_is_integer(colorbufs[0]->format) == format_is_integer(colorbufs[i]->format));
+      assert(fb->layers == colorbufs[i]->depth);
+   }
+   assert(!zsbuf || fb->layers == zsbuf->depth);
+
+}

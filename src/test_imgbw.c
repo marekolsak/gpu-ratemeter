@@ -331,8 +331,9 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
 {
    bool layered = image->depth > 1;
    bool is_zs = format_is_depth_or_stencil(image->format);
-   api_framebuffer *fb = ctx->create_framebuffer(ctx, !is_zs ? image : NULL, is_zs ? image : NULL,
-                                                 image->width, image->height, image->samples, 0x1);
+   api_framebuffer *fb = ctx->create_framebuffer(ctx, is_zs ? 0 : 1, is_zs ? NULL : &image,
+                                                 is_zs ? image : NULL, image->width, image->height,
+                                                 image->samples, 0x1);
    api_shader *vs = get_passthrough_vs(ctx, state, layered);
    api_gfx_pipeline *pipeline =
       ctx->create_gfx_pipeline(ctx,
@@ -388,19 +389,20 @@ set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigne
 
 static struct {
    const char *name;
+   unsigned num_color_attachments;
    VkFormat color_format;
    VkFormat zs_format;
 } formats[] = {
-   {"r8",      VK_FORMAT_R8_UNORM},
-   {"r8g8",    VK_FORMAT_R8G8_UNORM},
-   {"r16f",    VK_FORMAT_R16_SFLOAT},
-   {"rgba8",   VK_FORMAT_R8G8B8A8_UNORM},
-   {"r32f",    VK_FORMAT_R32_SFLOAT},
-   {"rgba16f", VK_FORMAT_R16G16B16A16_SFLOAT},
-   {"rgba32f", VK_FORMAT_R32G32B32A32_SFLOAT},
-   {"d32",     0, VK_FORMAT_D32_SFLOAT},
-   {"s8",      0, VK_FORMAT_S8_UINT},
-   {"d32s8",   0, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"r8",      1, VK_FORMAT_R8_UNORM},
+   {"r8g8",    1, VK_FORMAT_R8G8_UNORM},
+   {"r16f",    1, VK_FORMAT_R16_SFLOAT},
+   {"rgba8",   1, VK_FORMAT_R8G8B8A8_UNORM},
+   {"r32f",    1, VK_FORMAT_R32_SFLOAT},
+   {"rgba16f", 1, VK_FORMAT_R16G16B16A16_SFLOAT},
+   {"rgba32f", 1, VK_FORMAT_R32G32B32A32_SFLOAT},
+   {"d32",     0, 0, VK_FORMAT_D32_SFLOAT},
+   {"s8",      0, 0, VK_FORMAT_S8_UINT},
+   {"d32s8",   0, 0, VK_FORMAT_D32_SFLOAT_S8_UINT},
    // TODO: MRT clears
 };
 
@@ -746,7 +748,8 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
                         }
 
                         sets[num_image_sets].fb =
-                           ctx->create_framebuffer(ctx, sets[num_image_sets].dst_color,
+                           ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
+                                                   &sets[num_image_sets].dst_color,
                                                    sets[num_image_sets].dst_zs, width, height,
                                                    dst_samples, 0x1);
                      }

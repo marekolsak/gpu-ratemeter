@@ -1048,6 +1048,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                                         : VK_IMAGE_TILING_OPTIMAL;
       const unsigned num_layers = test_flavor == TEST_IMAGE_3D ? 8 : (multiview ? 2 : 1);
       const unsigned view_mask = multiview ? 0x3 : 0x1;
+      unsigned num_colorbufs = 0;
 
       if (format) {
          fbs[f].colorbuf = ctx->create_image(ctx, image_type, format, fb_size,
@@ -1057,11 +1058,13 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          fbs[f].colorbuf_raster = ctx->create_image(ctx, image_type, format, fb_raster_size,
                                                     fb_raster_size, num_layers, samples, layout,
                                                     api_heap_device);
+         num_colorbufs = 1;
       }
 
-      fbs[f].fb_color_only = ctx->create_framebuffer(ctx, fbs[f].colorbuf, NULL,
+      fbs[f].fb_color_only = ctx->create_framebuffer(ctx, num_colorbufs, &fbs[f].colorbuf, NULL,
                                                      fb_size, fb_size, samples, view_mask);
-      fbs[f].fb_color_only_raster = ctx->create_framebuffer(ctx, fbs[f].colorbuf_raster, NULL,
+      fbs[f].fb_color_only_raster = ctx->create_framebuffer(ctx, num_colorbufs,
+                                                            &fbs[f].colorbuf_raster, NULL,
                                                             fb_raster_size, fb_raster_size,
                                                             samples, view_mask);
 
@@ -1070,8 +1073,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                          fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
                                          api_heap_device);
 
-         fbs[f].fb_color_and_zsbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zsbuf,
-                                                            fb_size, fb_size, samples, view_mask);
+         fbs[f].fb_color_and_zsbuf = ctx->create_framebuffer(ctx, num_colorbufs, &fbs[f].colorbuf,
+                                                             fbs[f].zsbuf, fb_size, fb_size,
+                                                             samples, view_mask);
       }
    }
 

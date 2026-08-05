@@ -702,23 +702,26 @@ gl_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
 }
 
 static api_framebuffer *
-gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
-                      unsigned width, unsigned height, unsigned samples, unsigned view_mask)
+gl_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_image **colorbufs,
+                      api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
+                      unsigned view_mask)
 {
+   GLenum draw_buffers[MAX_COLOR_ATTACHMENTS];
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
-   fb->width = width;
-   fb->height = height;
-   fb->layers = colorbuf ? colorbuf->depth : zsbuf ? zsbuf->depth : 1;
-   fb->samples = samples;
-   fb->view_mask = view_mask;
-   fb->colorbuf = colorbuf;
-   fb->zsbuf = zsbuf;
+
+   init_framebuffer_base(fb, num_color_attachments, colorbufs, zsbuf, width, height, samples,
+                         view_mask);
 
    assert(view_mask == 0x1);
 
    glCreateFramebuffers(1, &fb->id);
-   if (colorbuf)
-      glNamedFramebufferTexture(fb->id, GL_COLOR_ATTACHMENT0, colorbuf->id, 0);
+   for (unsigned i = 0; i < num_color_attachments; i++) {
+      glNamedFramebufferTexture(fb->id, GL_COLOR_ATTACHMENT0 + i, colorbufs[i]->id, 0);
+      draw_buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+
+      if (format_is_integer(colorbufs[i]->format))
+         fb->any_integer_colorbuf = true;
+   }
 
    if (zsbuf) {
       assert(zsbuf->type != VK_IMAGE_TYPE_3D);
@@ -730,13 +733,15 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
          glNamedFramebufferTexture(fb->id, GL_STENCIL_ATTACHMENT, zsbuf->id, 0);
    }
 
-   if (!colorbuf && !zsbuf) {
+   if (!num_color_attachments && !zsbuf) {
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_WIDTH, width);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_HEIGHT, height);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_LAYERS, 1);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_SAMPLES, samples);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_FIXED_SAMPLE_LOCATIONS, true);
    }
+
+   glNamedFramebufferDrawBuffers(fb->id, num_color_attachments, draw_buffers);
    gl_check_no_error();
 
    if (glCheckNamedFramebufferStatus(fb->id, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
@@ -1270,16 +1275,18 @@ gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
       glClearStencil(desc->clear_values.zs.stencil);
    }
 
-   if (ctx->fb->colorbuf) {
+   if (ctx->fb->num_color_attachments) {
       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-      if (format_is_integer(ctx->fb->colorbuf->format)) {
-         if (format_is_sint((ctx->fb->colorbuf->format)))
-            glClearBufferiv(GL_COLOR, 0, desc->clear_values.color.int32);
-         else if (format_is_integer(ctx->fb->colorbuf->format))
-            glClearBufferuiv(GL_COLOR, 0, desc->clear_values.color.uint32);
-         else
-            glClearBufferfv(GL_COLOR, 0, desc->clear_values.color.float32);
+      if (ctx->fb->any_integer_colorbuf) {
+         for (unsigned i = 0; i < ctx->fb->num_color_attachments; i++) {
+            if (format_is_sint((ctx->fb->colorbufs[i]->format)))
+               glClearBufferiv(GL_COLOR, i, desc->clear_values.color.int32);
+            else if (format_is_integer(ctx->fb->colorbufs[i]->format))
+               glClearBufferuiv(GL_COLOR, i, desc->clear_values.color.uint32);
+            else
+               glClearBufferfv(GL_COLOR, i, desc->clear_values.color.float32);
+         }
       } else {
          glClearColor(desc->clear_values.color.float32[0], desc->clear_values.color.float32[1],
                       desc->clear_values.color.float32[2], desc->clear_values.color.float32[3]);
@@ -1308,7 +1315,7 @@ gl_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       ctx->prev_fb = NULL;
    }
 
-   if (desc->clear && (desc->fb->colorbuf || desc->fb->zsbuf)) {
+   if (desc->clear && (desc->fb->num_color_attachments || desc->fb->zsbuf)) {
       gl_clear_attachments(ctx, &(api_clear_attachments_desc){
                               .box.width = desc->fb->width,
                               .box.height = desc->fb->height,
