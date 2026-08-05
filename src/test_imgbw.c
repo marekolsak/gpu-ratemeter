@@ -3,31 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* begin_render_pass clear:
- * - gl: glClear
- * - vk: vkCmdBeginRenderPass / vkCmdBeginRendering
- *
- * clear_attachments:
- * - gl: scissored glClear
- * - vk: vkCmdClearAttachments
- *
- * clear_image:
- * - gl: glClearTex{Sub}Image
- * - vk: vkCmdClearColorImage / vkCmdClearDepthStencilImage
- *
- * blit_image - copy:
- * - gl: glCopyImageSubData
- * - vk: vkCmdCopyImage2
- *
- * blit_image - blit:
- * - gl: glBlitNamedFramebuffer
- * - vk: vkCmdBlitImage2
- *
- * blit_image - resolve:
- * - gl: glBlitNamedFramebuffer
- * - vk: vkCmdResolveImage2
- */
-
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>

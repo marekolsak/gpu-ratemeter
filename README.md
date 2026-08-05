@@ -283,7 +283,45 @@ Optional parameters:
 
 ### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
-WIP (functionally mostly finished, try it)
+Each column is the total size cleared, copied, blitted, or resolved.
+
+All operations are tested with different image contents or different clear values to exercise data-dependent HW image compression in different scenarios.
+
+The table below shows how subtests are mapped to API functions.
+
+| Subtest name        | OpenGL                   | Vulkan                                                                |
+|---------------------|--------------------------|-----------------------------------------------------------------------|
+| `clear_framebuffer` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld) |
+| `clear_attachment`  | scissored `glClear`      | `vkCmdClearAttachments`                                               |
+| `clear_image`       | `glClearTex{Sub}Image`   | `vkCmdClearColorImage` and `vkCmdClearDepthStencilImage`              |
+| `copy`              | `glCopyImageSubData`     | `vkCmdCopyImage2`                                                     |
+| `blit`              | `glBlitNamedFramebuffer` | `vkCmdBlitImage2`                                                     |
+| `resolve`           | `glBlitNamedFramebuffer` | `vkCmdResolveImage2`                                                  |
+
+Image formats in subtest names should be mostly self-explanatory. For example, `rgba8_d32s8_4mrt` in clear subtests means 4 RGBA8 color attachments and D32S8 as the depth-stencil attachment.
+
+Decoding subtest fill identifiers in subtest names:
+- `fill_black`: if clearing, the clear color is 0; if copying, blitting, or resolving, the source image is pre-cleared to that value using a framebuffer clear
+- `fill_solid`: if clearing, the clear color is a non-trivial value (i.e. not 0/1); if copying, blitting, or resolving, the source image is pre-cleared to that value using a framebuffer clear
+- `fill_gradient`: using a draw, the source image is pre-filled with a gradual change of color; if the image uses a depth format, the fill is done by drawing a sloped quad to write Z naturally (for Z compression)
+- `fill_random`: using a draw, the source image is pre-filled with random noise (to defeat DCC); if `samples >= 2`, the draw overwrites all samples, setting all samples to the same random value (for MSAA compression)
+- `fill_fragmented2`: same as `fill_random`, but sample 0 and the remaining samples contain different random noise where the remaining samples contain the same noise (for MSAA compression)
+- `fill_fragmented4`: same as `fill_random`, but sample 0, sample 1, sample 2, and the remaining samples contain different random noise where the remaining samples contain the same noise (for MSAA compression)
+- `fill_fragmented8`: same as `fill_random`, but all samples contain different random noise (to defeat MSAA compression)
+
+Decoding the clear/copy/blit/resolve region identifiers in subtest names:
+- `region_full`: the operation runs on the whole image
+- `region_partial`: the operation excludes a small area, but the region offsets and extents are aligned to 8
+- `region_unaligned`: the operation excludes a small area, and the region offsets and extents are odd (unaligned)
+- `region_yflip`: the operation runs on the whole image, but it blits/resolves the image upside down
+- `region_yflip_unaligned`: same as `region_yflip`, but the operation excludes a small area and the region offsets and extents are odd (unaligned)
+
+Decoding other subtest identifiers:
+- `2d`, `3d`: the image dimensionality
+- `1s`-`8s`: the number of samples
+- `src_linear`: the source image uses linear tiling
+- `dst_linear`: the destination image uses linear tiling
+
 
 
 ## Miscellaneous Tests

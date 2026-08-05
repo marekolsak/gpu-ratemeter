@@ -19,7 +19,6 @@
  * - DX11
  *
  * imgbw:
- * - write README
  * - 2D array images
  * - transfer queue
  * - buffer-to-image, image-to-buffer
