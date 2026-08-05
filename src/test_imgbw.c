@@ -396,13 +396,13 @@ static struct {
    {"r8",                  1, VK_FORMAT_R8_UNORM},
    {"r16f",                1, VK_FORMAT_R16_SFLOAT},
    {"rgba8",               1, VK_FORMAT_R8G8B8A8_UNORM},
+   {"rgba8_d32s8",         1, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"rgba8_d32s8_4mrt",    4, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
    {"r32f",                1, VK_FORMAT_R32_SFLOAT},
    {"rgba16f",             1, VK_FORMAT_R16G16B16A16_SFLOAT},
+   {"rgba16f_d32s8",       1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"rgba16f_d32s8_4mrt",  4, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
    {"rgba32f",             1, VK_FORMAT_R32G32B32A32_SFLOAT},
-   {"1mrt_rgba8_d32s8",    1, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"4mrt_rgba8_d32s8",    4, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"1mrt_rgba16f_d32s8",  1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"4mrt_rgba16f_d32s8",  4, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
    {"d32",                 0, 0, VK_FORMAT_D32_SFLOAT},
    {"s8",                  0, 0, VK_FORMAT_S8_UINT},
    {"d32s8",               0, 0, VK_FORMAT_D32_SFLOAT_S8_UINT},
@@ -950,7 +950,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 
                            case REGION_PARTIAL_UNALIGNED:
                            case REGION_PARTIAL_UNALIGNED_YFLIP: {
-                              const unsigned off = 13;
+                              const unsigned off = 5;
                               dst_box.x = off;
                               dst_box.width -= off;
                               if (img_type >= VK_IMAGE_TYPE_2D) {
