@@ -702,17 +702,17 @@ gl_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
 }
 
 static api_framebuffer *
-gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
+gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
                       unsigned width, unsigned height, unsigned samples, unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
-   fb->layers = colorbuf ? colorbuf->depth : zbuf ? zbuf->depth : 1;
+   fb->layers = colorbuf ? colorbuf->depth : zsbuf ? zsbuf->depth : 1;
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
-   fb->zsbuf = zbuf;
+   fb->zsbuf = zsbuf;
 
    assert(view_mask == 0x1);
 
@@ -720,17 +720,17 @@ gl_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    if (colorbuf)
       glNamedFramebufferTexture(fb->id, GL_COLOR_ATTACHMENT0, colorbuf->id, 0);
 
-   if (zbuf) {
-      assert(zbuf->type != VK_IMAGE_TYPE_3D);
-      assert(format_is_depth_or_stencil(zbuf->format));
+   if (zsbuf) {
+      assert(zsbuf->type != VK_IMAGE_TYPE_3D);
+      assert(format_is_depth_or_stencil(zsbuf->format));
 
-      if (format_has_depth(zbuf->format))
-         glNamedFramebufferTexture(fb->id, GL_DEPTH_ATTACHMENT, zbuf->id, 0);
-      if (format_has_stencil(zbuf->format))
-         glNamedFramebufferTexture(fb->id, GL_STENCIL_ATTACHMENT, zbuf->id, 0);
+      if (format_has_depth(zsbuf->format))
+         glNamedFramebufferTexture(fb->id, GL_DEPTH_ATTACHMENT, zsbuf->id, 0);
+      if (format_has_stencil(zsbuf->format))
+         glNamedFramebufferTexture(fb->id, GL_STENCIL_ATTACHMENT, zsbuf->id, 0);
    }
 
-   if (!colorbuf && !zbuf) {
+   if (!colorbuf && !zsbuf) {
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_WIDTH, width);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_HEIGHT, height);
       glNamedFramebufferParameteri(fb->id, GL_FRAMEBUFFER_DEFAULT_LAYERS, 1);

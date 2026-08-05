@@ -35,7 +35,7 @@ d3d12_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned
 }
 
 static api_framebuffer *
-d3d12_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
+d3d12_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
                          unsigned width, unsigned height, unsigned samples, unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
@@ -43,7 +43,7 @@ d3d12_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
    fb->height = height;
    fb->samples = samples;
    fb->colorbuf = colorbuf;
-   fb->zsbuf = zbuf;
+   fb->zsbuf = zsbuf;
 
 
    return fb;

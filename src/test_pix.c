@@ -823,10 +823,10 @@ typedef struct {
    bool skip;
    api_image *colorbuf;
    api_image *colorbuf_raster;
-   api_image *zbuf;
+   api_image *zsbuf;
    api_framebuffer *fb_color_only; /* there is no color buffer if the format is "imgStore" */
    api_framebuffer *fb_color_only_raster;
-   api_framebuffer *fb_color_and_zbuf;
+   api_framebuffer *fb_color_and_zsbuf;
    api_gfx_pipeline *pipelines[ARRAY_SIZE(pipelines)];
    api_gfx_pipeline *pipelines_quad_count[ARRAY_SIZE(pipelines)];
 } fb_pipelines;
@@ -1066,11 +1066,11 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
                                                             samples, view_mask);
 
       if (test_flavor != TEST_IMAGE_3D && test_flavor != TEST_LINEAR) {
-         fbs[f].zbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
+         fbs[f].zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
                                          fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
                                          api_heap_device);
 
-         fbs[f].fb_color_and_zbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zbuf,
+         fbs[f].fb_color_and_zsbuf = ctx->create_framebuffer(ctx, fbs[f].colorbuf, fbs[f].zsbuf,
                                                             fb_size, fb_size, samples, view_mask);
       }
    }
@@ -1146,7 +1146,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 
          pipeline_desc.desc_set_layout = format ? NULL : desc_set->layout;
          assert(!require_zbuf || !raster);
-         pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zbuf :
+         pipeline_desc.fb = require_zbuf ? fbs[f].fb_color_and_zsbuf :
                             raster ? fbs[f].fb_color_only_raster : fbs[f].fb_color_only;
 
          assert(pipeline_desc.vs);
@@ -1414,14 +1414,14 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          ctx->destroy_framebuffer(ctx, fbs[f].fb_color_only);
       if (fbs[f].fb_color_only_raster)
          ctx->destroy_framebuffer(ctx, fbs[f].fb_color_only_raster);
-      if (fbs[f].fb_color_and_zbuf)
-         ctx->destroy_framebuffer(ctx, fbs[f].fb_color_and_zbuf);
+      if (fbs[f].fb_color_and_zsbuf)
+         ctx->destroy_framebuffer(ctx, fbs[f].fb_color_and_zsbuf);
       if (fbs[f].colorbuf)
          ctx->destroy_image(ctx, fbs[f].colorbuf);
       if (fbs[f].colorbuf_raster)
          ctx->destroy_image(ctx, fbs[f].colorbuf_raster);
-      if (fbs[f].zbuf)
-         ctx->destroy_image(ctx, fbs[f].zbuf);
+      if (fbs[f].zsbuf)
+         ctx->destroy_image(ctx, fbs[f].zsbuf);
 
       /* Free pipelines. */
       for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {

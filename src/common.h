@@ -142,7 +142,7 @@ typedef struct {
    VkFramebuffer fb[2];          /* 0=no clear, 1=clear */
    unsigned num_attachments;
    unsigned colorbuf_att_index;
-   unsigned zbuf_att_index;
+   unsigned zsbuf_att_index;
 #endif
 } api_framebuffer;
 
@@ -507,9 +507,9 @@ typedef struct api_context {
                           bool after_shader_writes);
 
    /* Framebuffer functions. */
-   api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf, api_image *zbuf,
-                                          unsigned width, unsigned height, unsigned samples,
-                                          unsigned view_mask);
+   api_framebuffer *(*create_framebuffer)(struct api_context *ctx, api_image *colorbuf,
+                                          api_image *zsbuf, unsigned width, unsigned height,
+                                          unsigned samples, unsigned view_mask);
    void (*destroy_framebuffer)(struct api_context *ctx, api_framebuffer *fb);
 
    /* Shader and descriptor set layout functions. */

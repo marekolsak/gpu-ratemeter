@@ -746,24 +746,24 @@ get_attachment_optimal_layout(api_image *image)
 }
 
 static api_framebuffer *
-vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
+vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zsbuf,
                       unsigned width, unsigned height, unsigned samples, unsigned view_mask)
 {
    api_framebuffer *fb = calloc(1, sizeof(api_framebuffer));
    fb->width = width;
    fb->height = height;
-   fb->layers = colorbuf ? colorbuf->depth : zbuf ? zbuf->depth : 1;
+   fb->layers = colorbuf ? colorbuf->depth : zsbuf ? zsbuf->depth : 1;
    fb->samples = samples;
    fb->view_mask = view_mask;
    fb->colorbuf = colorbuf;
-   fb->zsbuf = zbuf;
+   fb->zsbuf = zsbuf;
 
    assert(view_mask);
    assert(ctx->has_multiview || view_mask == 0x1);
 
    if (!(ctx->options.api_flags & API_VK_DYNAMIC_STATE)) {
       fb->colorbuf_att_index = 0;
-      fb->zbuf_att_index = 0;
+      fb->zsbuf_att_index = 0;
       fb->num_attachments = 0;
 
       VkAttachmentDescription2 att_descs[2];
@@ -787,24 +787,24 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
          fb->num_attachments++;
       }
 
-      if (zbuf) {
-         assert(zbuf->type != VK_IMAGE_TYPE_3D);
-         assert(!colorbuf || zbuf->depth == colorbuf->depth);
+      if (zsbuf) {
+         assert(zsbuf->type != VK_IMAGE_TYPE_3D);
+         assert(!colorbuf || zsbuf->depth == colorbuf->depth);
          assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
-         VkImageLayout layout = get_attachment_optimal_layout(zbuf);
+         VkImageLayout layout = get_attachment_optimal_layout(zsbuf);
 
          att_descs[fb->num_attachments] = (VkAttachmentDescription2){
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
-            .format = zbuf->format,
-            .samples = zbuf->samples,
+            .format = zsbuf->format,
+            .samples = zsbuf->samples,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .initialLayout = layout,
             .finalLayout = layout,
          };
 
-         att_views[fb->num_attachments] = zbuf->render_compatible_view;
-         fb->zbuf_att_index = fb->num_attachments;
+         att_views[fb->num_attachments] = zsbuf->render_compatible_view;
+         fb->zsbuf_att_index = fb->num_attachments;
          fb->num_attachments++;
       }
 
@@ -835,9 +835,9 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                   },
                   .pDepthStencilAttachment = &(VkAttachmentReference2) {
                      .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-                     .attachment = zbuf ? fb->zbuf_att_index : VK_ATTACHMENT_UNUSED,
-                     .layout = zbuf ? get_attachment_optimal_layout(zbuf) : 0,
-                     .aspectMask = zbuf ? get_image_aspect(zbuf) : 0,
+                     .attachment = zsbuf ? fb->zsbuf_att_index : VK_ATTACHMENT_UNUSED,
+                     .layout = zsbuf ? get_attachment_optimal_layout(zsbuf) : 0,
+                     .aspectMask = zsbuf ? get_image_aspect(zsbuf) : 0,
                   },
                },
             },
@@ -856,7 +856,7 @@ vk_create_framebuffer(api_context *ctx, api_image *colorbuf, api_image *zbuf,
                                          .height = fb->height,
                                          .layers = multiview ? 1 :
                                                       colorbuf ? colorbuf->depth :
-                                                      zbuf ? zbuf->depth : 1,
+                                                      zsbuf ? zsbuf->depth : 1,
                                       },
                                       NULL, &fb->fb[clear]));
       }
@@ -1789,7 +1789,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
       if (desc->fb->colorbuf)
          clear_values[desc->fb->colorbuf_att_index] = (VkClearValue){.color = desc->clear_values.color};
       if (desc->fb->zsbuf)
-         clear_values[desc->fb->zbuf_att_index] = (VkClearValue){.depthStencil = desc->clear_values.zs};
+         clear_values[desc->fb->zsbuf_att_index] = (VkClearValue){.depthStencil = desc->clear_values.zs};
 
       vkCmdBeginRenderPass(ctx->current_cmd_buffer,
                            &(VkRenderPassBeginInfo) {
