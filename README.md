@@ -32,7 +32,7 @@ Examples of result interpretation:
 
 `gpu-ratemeter [optional parameters] [api].[test][.regex]`
 
-Choose `api` and `test` from the options below. Optional `regex` filters which tests to run.
+Choose `api` and `test` from the options below. Optional `regex` is a regular expression that filters which tests are run.
 
 Examples:
 
@@ -107,7 +107,7 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
   * Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
 `pix`, `pixbw` parameters:
-- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
+- `-format=REGEX`: only test the image formats matching the regular expression
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-samplerate`: report samples/clock instead of pixels/clock

@@ -1064,7 +1064,7 @@ run_test_pix(api_context *ctx, unsigned samples,
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
           (formats[f].format && !(ctx->fb_format_sample_count_support[formats[f].format] & samples)) ||
-          !check_filter_string(ctx->options.format, formats[f].name)) {
+          (ctx->options.regex_format && !regex_matches(ctx->options.regex_format, formats[f].name))) {
          fbs[f].skip = true;
          continue;
       }

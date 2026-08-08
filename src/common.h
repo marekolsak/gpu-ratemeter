@@ -400,11 +400,13 @@ typedef struct {
 
    /* String options. */
    const char *filter;
-   const char *format;
 
    /* Memory size options. */
    unsigned spacing;
    uint64_t max_size;
+
+   /* Regular expression options. */
+   const void *regex_format;
 } program_options;
 
 typedef enum {

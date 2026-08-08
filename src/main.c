@@ -79,6 +79,7 @@ typedef enum {
    OPTION_UINT,
    OPTION_STRING,
    OPTION_MEMSIZE,
+   OPTION_REGEX,
 } option_type;
 
 typedef struct {
@@ -134,7 +135,7 @@ static const option_desc pix_options[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-samplerate", offsetof(program_options, samplerate)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
-   {OPTION_STRING, "-format=", offsetof(program_options, format)},
+   {OPTION_REGEX, "-format=", offsetof(program_options, regex_format)},
 };
 
 static const option_desc prim_options[] = {
@@ -193,6 +194,12 @@ parse_option(program_options *options, const option_desc *option, const char *ar
                           si_prefix == 'T' ? 4 : 0;
          sscanf(tmp_arg, "%"PRIu64, value);
          *value *= 1ull << (10 * order);
+         return true;
+      }
+      return false;
+   case OPTION_REGEX:
+      if (!strncmp(arg, option->name, len)) {
+         *(const char**)((uint8_t*)options + option->offset) = regex_compile(arg + len);
          return true;
       }
       return false;
