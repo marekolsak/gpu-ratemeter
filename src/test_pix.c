@@ -1446,7 +1446,7 @@ test_pix(api_context *ctx, const char *test_name)
 
    printf("Units: %s\n",
           ctx->options.report_bandwidth ? "GB/s" :
-          ctx->options.max_rate ? (ctx->options.samplerate ? "% of the specified pixel rate, multiplied by the number of MSAA samples" :
+          ctx->options.base_rate ? (ctx->options.samplerate ? "% of the specified pixel rate, multiplied by the number of MSAA samples" :
                                                              "% of the specified pixel rate") :
           ctx->options.freq_mhz ? (ctx->options.samplerate ? "pixels/clock (no MSAA) or samples/clock (MSAA)" :
                                                              "pixels/clock" ) :

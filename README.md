@@ -8,10 +8,9 @@ This is an engineering non-consumer command-line GPU microbenchmark that isolate
 
 It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, clocks per draw (TBD), rays per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to show how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
-This project is for anybody who would like to understand, improve, and validate the performance of their GPU drivers, API/OS implementations, and even silicon design.
+This project is for anybody who would like to understand, improve, and validate the performance of their GPU drivers and API/OS implementations.
 
 Broad support of APIs and API pipeline construction codepaths enables the following comparisons:
-
 - Open source vs closed source driver
 - Windows vs Linux vs Android
 - Vulkan vs OpenGL vs Zink
@@ -22,9 +21,7 @@ Broad support of APIs and API pipeline construction codepaths enables the follow
 - Vulkan static state vs dynamic state
 - VirtIO Native Context vs VirtIO VirGL/Venus vs bare metal
 
-In an ideal world, all APIs and API translation and forwarding layers would have equivalent performance on the same HW. Since this is rarely true, a tool like this is essential.
-
-Examples:
+Examples of result interpretation:
 - If one driver achieves 2x pixels/clock at 32 bpp than another, the other driver might not program the HW optimally for 32 bpp.
 - If one driver has 4x higher early depth-test rejection rate than another, HiZ may be disabled for the other driver.
 - If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the blit implementation in that driver may be suboptimal.
@@ -35,29 +32,6 @@ Examples:
 
 `gpu-ratemeter [optional parameters] [api].[test]`
 
-The following APIs are supported:
-- ⏳*(not implemented yet)* `d11`: Direct3D 11
-- ⏳*(not implemented yet)* `d12`: Direct3D 12
-- `gl`: OpenGL (linked shaders only)
-- `vk`: Vulkan (graphics pipeline objects + static state)
-- `vkd`: Vulkan (graphics pipeline objects + dynamic state)
-- `vkl`: Vulkan (graphics pipeline libraries + static state)
-- `vkld`: Vulkan (graphics pipeline libraries + dynamic state)
-- ⏳*(not implemented yet)* `vkso`: Vulkan (using shader objects)
-
-> [!tip]
-> - Use GPU-specific tools like sysfs to set a constant GPU frequency to get consistent results and use the `-freq=N` parameter.
-> - The output is a table in CSV. Paste it into a spreadsheet to make easy comparisons of different runs.
-
-Optional parameters common to all tests:
-- `-device=N`: the device index of the device to use (default: 0), Vulkan only
-- `-no-validator`: disable the Vulkan validation layer (enabled by default)
-- `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
-
-Optional parameters common to "performance per clock" tests:
-- `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported
-- `-maxrate=N`: if set, this number converts perf/clock to perf/clock % of N, e.g. results are reported as N -> 100, 2*N -> 200, N/4 -> 25; this makes perf/clock results more readable since 100% is easier to read than a HW-specific number corresponding to 100%
-
 Examples:
 
 ```
@@ -67,13 +41,17 @@ gpu-ratemeter -lean gl.pix
 gpu-ratemeter -lean vk.pix
 ```
 
-> [!note]
-> The desirable execution time per test is less than 1 minute. Exceeding that for some devices would warrant adding new optional parameters that would help reduce it. Pipeline object creation can also be distributed across all CPU cores (the `pix` test on Vulkan already does that).
+API identifiers:
+- ⏳*(not implemented yet)* `d11`: Direct3D 11
+- ⏳*(not implemented yet)* `d12`: Direct3D 12
+- `gl`: OpenGL (linked shaders only)
+- `vk`: Vulkan (graphics pipeline objects + static state)
+- `vkd`: Vulkan (graphics pipeline objects + dynamic state)
+- `vkl`: Vulkan (graphics pipeline libraries + static state)
+- `vkld`: Vulkan (graphics pipeline libraries + dynamic state)
+- ⏳*(not implemented yet)* `vkso`: Vulkan (using shader objects)
 
-
-# Tests
-
-### API Support
+### Tests and API Support
 
 |              | OpenGL | Vulkan |
 |--------------|-------:|-------:|
@@ -89,6 +67,50 @@ gpu-ratemeter -lean vk.pix
 | **Miscellaneous Tests**        |
 | `sparsebind` |        | **✓**  |
 
+### Parameters
+
+Common parameters:
+- `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
+- `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
+- `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
+- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it (only `bufbw`, `imgbw`, `pix`, `pixbw`, `prim`)
+
+OpenGL parameters:
+- `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
+
+Vulkan parameters:
+- `-device=N`: the device index of the device to use (default: 0), Vulkan only
+- `-no-validator`: disable the Vulkan validation layer (the layer is enabled by default)
+
+`bufbw` parameters:
+- `-compute`: execute on the compute queue
+- `-transfer`: execute on the transfer queue
+
+`latency` parameters:
+- `-maxsize=N` (**required**): The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
+Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
+- `-spacing=N` (**required**): All load addresses are multiples of this number. This should be a power of two and <= cache line size. To make the test faster, it's recommended to set this exactly to the cache line size.
+`maxsize / spacing` is the number of executed load indirections of each subtest, so it affects test length, and it also implies that the shader visits every load
+address that's a multiple of `spacing` only once in the largest buffer. Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.
+If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
+is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
+- `-bda`: Use buffer device addresses instead of storage buffers to traverse the buffer.  (this may report more lower latencies on some drivers)
+- `-int8`: Use 8-bit addresses for shared memory tests. (this may report lower latencies on some drivers)
+- `-clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
+(it must be set to 20 for RDNA 2 and 3)
+- `-sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.
+- `-sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
+  * Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
+
+`pix`, `pixbw` parameters:
+- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
+- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
+- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
+- `-samplerate`: report samples/clock instead of pixels/clock
+- `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
+
+
+# Tests
 
 ## Graphics Pipeline Tests
 
@@ -139,15 +161,6 @@ Decoding subtest names:
   - `Npersp_sample`: N inputs with perspective interpolation at sample (this forces sample shading if framebuffer samples > 1)
   - `Ncentroid`: N inputs with perspective interpolation at centroid
   - `Nlinear`: N inputs with linear (`noperspective`) interpolation at center
-
-Optional parameters:
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
-- `-format=STRING`: only test image formats containing this exact string; if `STRING` ends with $, the format name must end with it
-- `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
-- `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
-- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
-- `-samplerate`: report samples/clock instead of pixels/clock
-- `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
 
 #### Rasterizer efficiency subtests
 
@@ -211,9 +224,6 @@ Decoding subtest names:
 - `output_layer`: additionally write the layer output (with no effect on behavior)
 - `output_vrs1x1`: additionally write the primitive shading rate output (with no effect on behavior)
 
-Optional parameters:
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
-
 
 ## Shader Tests
 
@@ -228,26 +238,6 @@ The results are printed for each tested buffer size. Each printed latency should
 the buffer of that size.
 
 If the shader compiler inserts ALU instructions between load-use and load-issue, the measured latencies will include the cost of those extra instructions. Looking at the shader disassembly is recommended to see what is actually being measured.
-
-Required parameters:
-- `-maxsize=N`: The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
-Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
-- `-spacing=N`: All load addresses are multiples of this number. This should be a power of two and <= cache line size. To make the test faster, it's recommended to set this exactly to the cache line size.
-`maxsize / spacing` is the number of executed load indirections of each subtest, so it affects test length, and it also implies that the shader visits every load
-address that's a multiple of `spacing` only once in the largest buffer.
-Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.
-If spacing > cache line size, the latency of tested buffer sizes will no longer correspond to cache sizes because a subset of cache-line-sized buffer segments
-is never loaded if the spacing is large enough to skip them, reducing cache utilization, and thus creating an illusion that the cache can hold more data than it should. (this behavior can be exploited to find the exact cache line size if it's unknown)
-
-Optional parameters:
-- `-bda`: Use buffer device addresses instead of storage buffers to traverse the buffer.  (this may report more accurate latencies on some drivers)
-- `-int8`: Use 8-bit addresses for shared memory tests. (this may report more accurate latencies on some drivers)
-- `-clockbits=N`: It the shader subgroup clock has less than 64 bits, this is the number of bits that it returns. This parameter enables low-bit clock handling.
-(it must be set to 20 for RDNA 2 and 3)
-- `-sparse-bound`: The traversed buffer is sparse and the smallest possible buffers are bound across its whole range. This can be used to measure the impact of small pages.
-- `-sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
-
-Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
 Decoding subtest names:
 - `default`: no GLSL qualifier is added
@@ -276,11 +266,6 @@ Decoding subtest names:
 - `maxalign`: buffer offsets passed to the fill or copy call are maximally aligned (currently 64K)
 - `dst=N`, `src=N`: the destination or source buffer offset passed to the fill or copy call is aligned to N (N=1 means unaligned)
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
-
-Optional parameters:
-- `-compute`: execute on the compute queue
-- `-transfer`: execute on the transfer queue
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 
 ### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 

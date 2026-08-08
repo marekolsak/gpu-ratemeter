@@ -1581,7 +1581,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
          if (state->pipelines[test->geom_style][test->cull_method][test->special2][v]) {
             print_throughput_from_next_timestamps(ctx, state->timestamps,
                                                   NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
-                                                  ctx->options.max_rate ? "%6.1f" : "%6.2f", NULL, "%6s", 0);
+                                                  ctx->options.base_rate ? "%6.1f" : "%6.2f", NULL, "%6s", 0);
          } else {
             printf(",   n/a");
          }
@@ -1676,7 +1676,7 @@ test_prim(api_context *ctx, const char *test_name)
    ctx->get_query_results(ctx, state->timestamps);
 
    printf("Units: %s\n",
-          ctx->options.max_rate ? "% of the maximum primitive rate" :
+          ctx->options.base_rate ? "% of the maximum primitive rate" :
           ctx->options.freq_mhz ? "primitives/clock" :
                                   "billion primitives/second");
 

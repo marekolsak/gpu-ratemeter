@@ -366,7 +366,6 @@ typedef struct {
 typedef enum {
    API_VK_DYNAMIC_STATE = 1 << 0,
    API_VK_GPL = 1 << 1,
-   API_ENABLE_SPARSE_BUFFERS = 1 << 2,
 } api_flags;
 
 typedef struct {
@@ -392,7 +391,7 @@ typedef struct {
    unsigned clock_bits;
    unsigned device; /* device index */
    unsigned freq_mhz;
-   unsigned max_rate;
+   unsigned base_rate;
    unsigned max_valid_result;
 
    /* String options. */

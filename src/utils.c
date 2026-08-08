@@ -77,8 +77,8 @@ print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
    }
 
    /* If the base rate is set, print the results as % of the base rate. */
-   if (ctx->options.max_rate)
-      result *= 100.0 / ctx->options.max_rate;
+   if (ctx->options.base_rate)
+      result *= 100.0 / ctx->options.base_rate;
 
    /* a comma separator between results */
    printf(",");
