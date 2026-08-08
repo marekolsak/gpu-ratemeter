@@ -48,7 +48,7 @@ static api_shader *
 create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections,
                                 bool shared_memory)
 {
-   char source[3600];
+   char source[4000];
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
@@ -83,7 +83,12 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "\n"
 
                       "#extension GL_ARB_shader_clock : require \n"
+                      "#ifdef VULKAN \n"
                       "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
+                      "#else \n"
+                      "#extension GL_ARB_gpu_shader_int64 : require \n"
+                      "#endif \n"
+                      "\n"
 
                       "#if SHARED_MEMORY_INT8 \n"
                       "#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require \n"
@@ -108,7 +113,12 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
                       "\n"
 
-                      "layout(set = 0, binding = 0, std430) readonly restrict QUALIFIER buffer B0 { \n"
+                      "#ifdef VULKAN \n"
+                      "   layout(set = 0, binding = 0, std430) \n"
+                      "#else \n"
+                      "   layout(binding = 0, std430) \n"
+                      "#endif \n"
+                      "readonly restrict QUALIFIER buffer B0 { \n"
                       "   OFFSET_TYPE offsets[MAX_UINTS]; \n"
                       "} jumpbuf; \n"
                       "\n"
@@ -120,7 +130,12 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
                       "#endif \n"
                       "\n"
 
-                      "layout(set = 0, binding = 1, std430) buffer B1 { \n"
+                      "#ifdef VULKAN \n"
+                      "   layout(set = 0, binding = 1, std430) \n"
+                      "#else \n"
+                      "   layout(binding = 1, std430) \n"
+                      "#endif \n"
+                      "buffer B1 { \n"
                       "   uint64_t clock_cycles; \n"
                       "   uint64_t last_offset; \n"
                       "} result; \n"
@@ -364,6 +379,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                                               .storage_buffer[0].array_size = 1,
                                               .storage_buffer[1].array_size = 1,
                                               .storage_buffer[1].vk_binding = 1,
+                                              .storage_buffer[1].gl_binding = 1,
                                            });
 
       for (unsigned shared_memory = 0; shared_memory <= 1; shared_memory++) {

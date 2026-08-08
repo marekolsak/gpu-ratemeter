@@ -82,7 +82,7 @@ gpu-ratemeter -lean vk.pix
 | `pixbw`      | **✓**  | **✓**  |
 | `prim`       | **✓**  | **✓**  |
 | **Shader Tests**               |
-| `latency`    |        | **✓**  |
+| `latency`    | **✓**  | **✓**  |
 | **Resource Operation Tests**   |
 | `bufbw`      | **✓**  | **✓**  |
 | `imgbw`      | **✓**  | **✓**  |
