@@ -477,20 +477,22 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
 }
 
 static void
-get_subtest_name(char *out, size_t max_len, unsigned test_index, VkImageType img_type,
-                 unsigned format_index, unsigned samples, unsigned layout, unsigned fill_option,
-                 unsigned region_option)
+get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_index,
+                 VkImageType img_type, unsigned format_index, unsigned samples, unsigned layout,
+                 unsigned fill_option, unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s%s.region_%s",
-            test_strings[test_index], img_type + 1, formats[format_index].name, samples,
-            fill_strings[fill_option], layout_strings[layout], region_strings[region_option]);
+   snprintf(out, max_len, "%s.%s.%ud.%s.%us.fill_%s%s.region_%s",
+            ctx->options.name_prefix, test_strings[test_index], img_type + 1,
+            formats[format_index].name, samples, fill_strings[fill_option], layout_strings[layout],
+            region_strings[region_option]);
 }
 
 static void
-print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned format_index,
-                unsigned samples, unsigned layout, unsigned fill_option, unsigned region_option)
+print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType img_type,
+                unsigned format_index, unsigned samples, unsigned layout, unsigned fill_option,
+                unsigned region_option)
 {
-   const unsigned name_indent = 72;
+   const unsigned name_indent = 82;
 
    if (header) {
       printf("%-*s", name_indent, "Size");
@@ -505,7 +507,7 @@ print_table_row(bool header, unsigned test_index, VkImageType img_type, unsigned
    } else {
       char name[128];
 
-      get_subtest_name(name, sizeof(name), test_index, img_type, format_index, samples, layout,
+      get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index, samples, layout,
                        fill_option, region_option);
       printf("%-*s", name_indent, name);
    }
@@ -521,7 +523,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
     api_query_pool *timestamps)
 {
    if (stage == REPORT)
-      print_table_row(true, 0, 0, 0, 0, 0, 0, 0);
+      print_table_row(ctx, true, 0, 0, 0, 0, 0, 0, 0);
 
    misc_state misc_state = {0};
    atomic_uint num_visited_tests = 0;
@@ -856,7 +858,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                         if (ctx->options.filter) {
                            char name[128];
-                           get_subtest_name(name, sizeof(name), test_index, img_type, format_index,
+                           get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
                                             samples, layout, fill_option, region_option);
 
                            if (!check_filter_string(ctx->options.filter, name))
@@ -864,7 +866,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         }
 
                         if (stage == REPORT) {
-                           print_table_row(false, test_index, img_type, format_index, samples,
+                           print_table_row(ctx, false, test_index, img_type, format_index, samples,
                                            layout, fill_option, region_option);
                         }
 
