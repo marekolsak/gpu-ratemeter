@@ -417,6 +417,7 @@ test_bufbw(api_context *ctx)
    state.devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
    state.devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
    state.hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
+   state.queue = queue;
 
    _mesa_hash_table_init(&state.indirect_params_ht, indirect_params_hash, indirect_params_equal);
 
