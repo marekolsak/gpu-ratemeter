@@ -15,13 +15,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <png.h>
 
 #ifndef _WIN32
 #include <fcntl.h>   /* for open */
 #include <unistd.h>  /* for execl */
 #include <errno.h>   /* for execl */
 #endif
+
+#include <png.h>
+
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 
 #include "common.h"
 
@@ -827,5 +831,77 @@ init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_i
       assert(fb->layers == colorbufs[i]->depth);
    }
    assert(!zsbuf || fb->layers == zsbuf->depth);
+}
 
+const void *
+regex_compile(const char *pattern)
+{
+   PCRE2_SIZE error_offset;
+   int err;
+
+   pcre2_code *re = pcre2_compile((PCRE2_SPTR)pattern, PCRE2_ZERO_TERMINATED, 0, &err,
+                                  &error_offset, NULL);
+
+   if (!re) {
+       PCRE2_UCHAR message[256];
+       pcre2_get_error_message(err, message, sizeof message);
+
+       error("regex '%s' has error at offset %zu: %s\n", pattern, (size_t)error_offset,
+             (char *)message);
+   }
+
+   return re;
+}
+
+bool
+regex_matches(const void *re, const char *input)
+{
+    pcre2_match_data *data = pcre2_match_data_create(1, NULL);
+    if (!data)
+        error("pcre2_match_data_create failed.");
+
+    int rc = pcre2_match(re, (PCRE2_SPTR)input, strlen(input), 0, 0, data, NULL);
+
+    pcre2_match_data_free(data);
+    return rc >= 0;
+}
+
+unsigned
+regex_groups(const void *re, const char *input, char **groups, unsigned max_groups)
+{
+    pcre2_match_data *data = pcre2_match_data_create_from_pattern(re, NULL);
+    if (!data)
+        error("pcre2_match_data_create_from_pattern failed.");
+
+    int rc = pcre2_match(re, (PCRE2_SPTR)input, strlen(input), 0, 0, data, NULL);
+
+    if (rc <= 0) {
+        pcre2_match_data_free(data);
+        return 0;
+    }
+
+    PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(data);
+    size_t count = 0;
+
+    /* Skip group 0, which is the entire match. */
+    for (int i = 1; i < rc && count < max_groups; i++) {
+        PCRE2_SIZE begin = ovector[i * 2];
+        PCRE2_SIZE end = ovector[i * 2 + 1];
+
+        if (begin == PCRE2_UNSET)
+            continue;
+
+        size_t len = end - begin;
+
+        groups[count] = malloc(len + 1);
+        if (!groups[count])
+            break;
+
+        memcpy(groups[count], input + begin, len);
+        groups[count][len] = '\0';
+        count++;
+    }
+
+    pcre2_match_data_free(data);
+    return count;
 }

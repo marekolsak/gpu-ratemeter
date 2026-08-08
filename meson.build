@@ -13,9 +13,11 @@ cc = meson.get_compiler('c')
 cpp = meson.get_compiler('cpp')
 
 dep_m = cc.find_library('m', required : false)
-dep_egl = dependency('egl')
+dep_pcre2 = dependency('libpcre2-8')
 dep_libpng = dependency('libpng')
 dep_openmp = dependency('openmp')
+
+dep_egl = dependency('egl')
 dep_shaderc = dependency('shaderc')
 dep_vulkan = dependency('vulkan')
 
@@ -82,5 +84,6 @@ gpu_ratemeter = executable(
   [gpu_ratemeter_files],
   c_args : cc.get_supported_arguments(all_args + c_args),
   cpp_args : cpp.get_supported_arguments(all_args),
-  dependencies : [dep_m, dep_egl, dep_libpng, dep_openmp, dep_shaderc, dep_vulkan],
+  dependencies : [dep_m, dep_pcre2, dep_libpng, dep_openmp,
+                  dep_egl, dep_shaderc, dep_vulkan],
 )

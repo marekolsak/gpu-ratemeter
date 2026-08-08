@@ -682,6 +682,9 @@ uint32_t fnv1a_hash(const void *data, size_t size);
 void init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_image **colorbufs,
                            api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
                            unsigned view_mask);
+const void *regex_compile(const char *pattern);
+bool regex_matches(const void *re, const char *input);
+unsigned regex_groups(const void *re, const char *input, char **groups, unsigned max_groups);
 
 #ifdef __cplusplus
 }

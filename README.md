@@ -336,7 +336,7 @@ Decoding subtest names:
 
 ## Linux
 
-Dependencies: Vulkan, GL, EGL (surfaceless), libpng, libshaderc
+Dependencies: Vulkan, GL, EGL (surfaceless), libpcre2, libpng, libshaderc
 
 ```
 mkdir build

@@ -59,31 +59,6 @@
 
 #include "common.h"
 
-static const char *
-get_substring_before_dot(const char *input, char *output, unsigned output_max_size)
-{
-   if (!input) {
-      output[0] = 0;
-      return NULL;
-   }
-
-   const char *dot = strchr(input, '.');
-
-   if (dot == input) {
-      output[0] = 0;
-      return dot + 1;
-   }
-
-   if (dot) {
-      unsigned len = dot - input + 1;
-      snprintf(output, output_max_size < len ? output_max_size : len, "%s", input);
-      return dot + 1;
-   } else {
-      snprintf(output, output_max_size, "%s", input);
-      return NULL;
-   }
-}
-
 static const struct {
    const char *name;
    api_context *(*create_context)(const program_options *options);
@@ -242,39 +217,51 @@ parse_option_list(program_options *options, unsigned num_options, const option_d
 int
 main(int argc, char **argv)
 {
-   const char *name = NULL;
+   /* Remove the executable name. */
+   argv++;
+   argc--;
 
-   if (argc >= 2)
-      name = argv[argc - 1];
-   else
+   if (!argc)
       error("The test name is missing in parameters. (the test name must be last)");
 
+   const char *name_arg = name_arg = argv[argc - 1];
+   argc--;
+
    /* Parse the test name. */
-   char api[16], test[16], test_name[32];
+   const void *re_split2 = regex_compile("^([^.]+)\\.([^.]+)$");
+   char *re_groups[2];
+   unsigned num_re_groups = regex_groups(re_split2, name_arg, re_groups, ARRAY_SIZE(re_groups));
+
+   if (num_re_groups != 2)
+      error("Cannot parse the test name: %s (the form should be api.test)\n", name_arg);
+
+   const char *api_name = re_groups[0];
+   const char *test_name = re_groups[1];
+   char name_prefix[32];
+   snprintf(name_prefix, sizeof(name_prefix), "%s.%s", api_name, test_name);
+
    const test_desc *test_desc = NULL;
 
-   const char *remainder = get_substring_before_dot(name, api, sizeof(api));
-   get_substring_before_dot(remainder, test, sizeof(test));
-   snprintf(test_name, sizeof(test_name), "%s.%s", api, test);
-
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++) {
-      if (!strcmp(test, tests[i].name)) {
+      if (!strcmp(test_name, tests[i].name)) {
          test_desc = &tests[i];
          break;
       }
    }
 
-   if (!test_desc)
-      error("Invalid test name or test name missing in parameters: %s (the test name must be last)", test);
+   if (!test_desc) {
+      error("Invalid test name or test name missing in parameters: %s (the test name must be last)",
+            test_name);
+   }
 
-   printf("Test name: %s\n", test_name);
+   printf("Test name: %s\n", name_prefix);
 
    /* Parse options. */
    program_options options = {
       .report_bandwidth = test_desc->report_bandwidth,
    };
 
-   for (unsigned i = 1; i < argc - 1; i++) {
+   for (unsigned i = 0; i < argc; i++) {
       if (!parse_option_list(&options, ARRAY_SIZE(common_options), common_options, argv[i]) &&
           !parse_option_list(&options, test_desc->num_options, test_desc->options, argv[i])) {
          printf("Unknown option: %s\n", argv[i]);
@@ -294,7 +281,7 @@ main(int argc, char **argv)
    api_context *ctx = NULL;
 
    for (unsigned i = 0; i < ARRAY_SIZE(apis); i++) {
-      if (!strcmp(api, apis[i].name)) {
+      if (!strcmp(api_name, apis[i].name)) {
          options.api_flags |= apis[i].api_flags;
          ctx = apis[i].create_context(&options);
          break;
@@ -302,9 +289,9 @@ main(int argc, char **argv)
    }
 
    if (!ctx)
-      error("Invalid API or API selection missing in parameters: %s", api);
+      error("Invalid API or API selection missing in parameters: %s", api_name);
 
    puts("Initializing test...");
-   test_desc->execute(ctx, test_name);
+   test_desc->execute(ctx, name_prefix);
    return 0;
 }
