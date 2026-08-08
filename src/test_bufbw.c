@@ -187,12 +187,13 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
 
    /* Run tests. */
    for (unsigned test_type = 0; test_type < num_test_types; test_type++) {
+      unsigned num_indirect_entries = _mesa_hash_table_num_entries(&state->indirect_params_ht);
+
       /* Upload the indirect buffer and set indirect buffer addresses in the hash table before
        * the first indirect test.
        */
-      if (stage == RUN && test_type == TEST_COPY_INDIRECT) {
-         unsigned num_entries = _mesa_hash_table_num_entries(&state->indirect_params_ht);
-         unsigned buf_size = num_entries * 24;
+      if (stage == RUN && test_type == TEST_COPY_INDIRECT && num_indirect_entries) {
+         unsigned buf_size = num_indirect_entries * 24;
          uint64_t *indirect_data = malloc(buf_size);
 
          state->indirect = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
