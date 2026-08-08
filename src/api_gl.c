@@ -871,9 +871,9 @@ gl_set_uniform_buffer_descriptors(api_context *ctx, api_descriptor_set *set, uns
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
    assert(1 <= set->layout->desc.uniform_buffer[binding_index].array_size);
-   set->ubo_id = buffer->id;
-   set->ubo_offset = offset;
-   set->ubo_size = size;
+   set->ubo_id[binding_index] = buffer->id;
+   set->ubo_offset[binding_index] = offset;
+   set->ubo_size[binding_index] = size;
 }
 
 static void
@@ -881,9 +881,9 @@ gl_set_storage_buffer_descriptors(api_context *ctx, api_descriptor_set *set, uns
                                   api_buffer *buffer, uint64_t offset, uint64_t size)
 {
    assert(1 <= set->layout->desc.storage_buffer[binding_index].array_size);
-   set->ssbo_id = buffer->id;
-   set->ssbo_offset = offset;
-   set->ssbo_size = size;
+   set->ssbo_id[binding_index] = buffer->id;
+   set->ssbo_offset[binding_index] = offset;
+   set->ssbo_size[binding_index] = size;
 }
 
 static void
@@ -940,14 +940,14 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
    for (unsigned i = 0; i < MAX_UNIFORM_BUFFER_BINDINGS; i++) {
       if (set->layout->desc.uniform_buffer[i].array_size) {
          glBindBufferRange(GL_UNIFORM_BUFFER, set->layout->desc.uniform_buffer[i].gl_binding,
-                           set->ubo_id, set->ubo_offset, set->ubo_size);
+                           set->ubo_id[i], set->ubo_offset[i], set->ubo_size[i]);
       }
    }
 
    for (unsigned i = 0; i < MAX_STORAGE_BUFFER_BINDINGS; i++) {
       if (set->layout->desc.storage_buffer[i].array_size) {
          glBindBufferRange(GL_SHADER_STORAGE_BUFFER, set->layout->desc.storage_buffer[i].gl_binding,
-                           set->ssbo_id, set->ssbo_offset, set->ssbo_size);
+                           set->ssbo_id[i], set->ssbo_offset[i], set->ssbo_size[i]);
       }
    }
 
@@ -1221,6 +1221,51 @@ gl_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    assert(pipeline);
    gl_bind_unbind_pipeline(ctx, pipeline);
+}
+
+static api_compute_pipeline *
+gl_create_compute_pipeline(api_context *ctx, api_shader *shader,
+                           api_descriptor_set_layout *layout)
+{
+   api_compute_pipeline *pipeline = calloc(1, sizeof(api_compute_pipeline));
+
+   pipeline->prog = glCreateProgram();
+   glAttachShader(pipeline->prog, shader->id);
+   glLinkProgram(pipeline->prog);
+
+   GLint status;
+   glGetProgramiv(pipeline->prog, GL_LINK_STATUS, &status);
+
+   if (!status) {
+      char log[4 * 1024];
+
+      glGetProgramInfoLog(pipeline->prog, ARRAY_SIZE(log), NULL, log);
+      error("Failed to link GLSL program:\n%s", log);
+   }
+
+   gl_check_no_error();
+   return pipeline;
+}
+
+static void
+gl_destroy_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
+{
+   glDeleteProgram(pipeline->prog);
+   free(pipeline);
+}
+
+static void
+gl_bind_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
+{
+   glUseProgram(pipeline->prog);
+   gl_check_no_error();
+}
+
+static void
+gl_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
+{
+   glDispatchCompute(num_x, num_y, num_z);
+   gl_check_no_error();
 }
 
 static void
@@ -1665,6 +1710,11 @@ gl_create_context(const program_options *options)
    ctx->create_gfx_pipeline = gl_create_gfx_pipeline;
    ctx->destroy_gfx_pipeline = gl_destroy_gfx_pipeline;
    ctx->bind_gfx_pipeline = gl_bind_gfx_pipeline;
+
+   ctx->create_compute_pipeline = gl_create_compute_pipeline;
+   ctx->destroy_compute_pipeline = gl_destroy_compute_pipeline;
+   ctx->bind_compute_pipeline = gl_bind_compute_pipeline;
+   ctx->dispatch = gl_dispatch;
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = gl_end_cmdbuf_and_submit;

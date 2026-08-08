@@ -190,13 +190,13 @@ typedef struct {
    api_descriptor_set_layout *layout;
 
 #ifdef GL_PRIVATE
-   GLuint ubo_id;
-   GLintptr ubo_offset;
-   GLsizeiptr ubo_size;
+   GLuint ubo_id[MAX_UNIFORM_BUFFER_BINDINGS];
+   GLintptr ubo_offset[MAX_UNIFORM_BUFFER_BINDINGS];
+   GLsizeiptr ubo_size[MAX_UNIFORM_BUFFER_BINDINGS];
 
-   GLuint ssbo_id;
-   GLintptr ssbo_offset;
-   GLsizeiptr ssbo_size;
+   GLuint ssbo_id[MAX_STORAGE_BUFFER_BINDINGS];
+   GLintptr ssbo_offset[MAX_STORAGE_BUFFER_BINDINGS];
+   GLsizeiptr ssbo_size[MAX_STORAGE_BUFFER_BINDINGS];
 
    GLuint tbo_ids[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS][MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE];
    GLuint tex_ids[MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE];
@@ -555,8 +555,6 @@ typedef struct api_context {
                                                     api_descriptor_set_layout *layout);
    void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
-
-   /* Compute commands and barriers. */
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
 
    /* Command submission. */
