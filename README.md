@@ -4,9 +4,11 @@ The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-rat
 
 # Introduction and Project Vision
 
-This is an engineering-focused non-consumer command-line GPU microbenchmark that measures the performance of various GPU features and specific GPU workloads through APIs and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance. The main goal is to help engineers easily identify inefficiencies in GPUs, driver stacks, and operating systems, and make improvements.
+This is an engineering non-consumer command-line GPU microbenchmark that isolates and measures the performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance. The main goal is to help driver developers identify areas of improvement in drivers and operating systems.
 
 It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, clocks per draw (TBD), rays per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to show how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
+
+This project is for anybody who would like to understand, improve, and validate the performance of their GPU drivers, API/OS implementations, and even silicon design.
 
 Broad support of APIs and API pipeline construction codepaths enables the following comparisons:
 
@@ -27,8 +29,6 @@ Examples:
 - If one driver has 4x higher early depth-test rejection rate than another, HiZ may be disabled for the other driver.
 - If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the blit implementation in that driver may be suboptimal.
 - If Vulkan pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the dynamic state handling in that driver may be suboptimal.
-
-While this project is developed to aid Mesa developers, it can be equally useful to GPU vendors for HW and driver validation (both pre-silicon and post-silicon), operating system vendors, and CI performance-regression testing.
 
 
 # How to Run
