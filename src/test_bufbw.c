@@ -164,7 +164,7 @@ typedef struct {
 } test_state;
 
 static void
-run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *state)
+run(api_context *ctx, enum test_stage stage, test_state *state)
 {
    const unsigned name_indent = 70;
 
@@ -266,7 +266,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
 
                   if (stage == REPORT) {
                      char name[1024];
-                     snprintf(name, sizeof(name), "%s.%s", test_name, subtest);
+                     snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, subtest);
                      printf("%-*s", name_indent, name);
                   }
 
@@ -392,7 +392,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
 }
 
 void
-test_bufbw(api_context *ctx, const char *test_name)
+test_bufbw(api_context *ctx)
 {
    api_queue_type queue;
 
@@ -419,20 +419,20 @@ test_bufbw(api_context *ctx, const char *test_name)
 
    _mesa_hash_table_init(&state.indirect_params_ht, indirect_params_hash, indirect_params_equal);
 
-   run(ctx, test_name, COUNT_TESTS, &state);
+   run(ctx, COUNT_TESTS, &state);
 
    /* Create timestamp queries. */
    state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);
-   run(ctx, test_name, RUN, &state);
+   run(ctx, RUN, &state);
    puts("");
 
    ctx->get_query_results(ctx, state.timestamps);
 
    puts("Units: GB/s");
-   run(ctx, test_name, REPORT, &state);
+   run(ctx, REPORT, &state);
 
    _mesa_hash_table_fini(&state.indirect_params_ht, param_info_entry_delete);
 }

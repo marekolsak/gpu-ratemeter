@@ -210,7 +210,7 @@ print_nothing(cmdbuf_option cmdbuf_option, bool async)
 }
 
 void
-test_sparsebind(api_context *ctx, const char *test_name)
+test_sparsebind(api_context *ctx)
 {
    if (!ctx->has_sparse_buffer)
       error("Sparse buffer support is required or gpu-ratemeter doesn't support sparse buffers for this API.");
@@ -259,7 +259,7 @@ test_sparsebind(api_context *ctx, const char *test_name)
       if (!get_num_bind_flags(test_flags))
          test_flags &= ~(SIZE_REGULAR | BLOCK_REGULAR);
 
-      len += printf("%s", test_name);
+      len += printf("%s", ctx->options.name_prefix);
 
       for (unsigned flag = 0; flag < ARRAY_SIZE(flag_strings); flag++) {
          if ((1 << flag) & test_flags) {

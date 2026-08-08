@@ -319,8 +319,6 @@ typedef struct unique_buffer_set {
 } unique_buffer_set;
 
 typedef struct {
-   const char *test_name;
-
    api_shader *ms[NUM_GEOMETRY_STYLES][NUM_SPECIAL1_ATTRIBUTES][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_shader *vs[NUM_SPECIAL1_ATTRIBUTES][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_shader *fs[MAX_VARYING_SHADERS];
@@ -1464,7 +1462,8 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
 }
 
 static void
-get_test_name(char *out, unsigned out_size, const test_state *state, const test_info *test)
+get_test_name(api_context *ctx, char *out, unsigned out_size, const test_state *state,
+              const test_info *test)
 {
    char cull_info1[32] = {0}, cull_method[32], special2[32];
    const char *geom = NULL;
@@ -1534,7 +1533,7 @@ get_test_name(char *out, unsigned out_size, const test_state *state, const test_
             test->special2 == SPECIAL2_OUTPUT_LAYER ? ".output_layer" :
             test->special2 == SPECIAL2_OUTPUT_VRS1x1 ? ".output_vrs1x1" : "INVALID");
 
-   snprintf(out, out_size, "%s%s%s%s%s", state->test_name, cull_info1, geom,
+   snprintf(out, out_size, "%s%s%s%s%s", ctx->options.name_prefix, cull_info1, geom,
             cull_method, special2);
 }
 
@@ -1545,7 +1544,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
       return;
 
    char test_name[1024];
-   get_test_name(test_name, sizeof(test_name), state, test);
+   get_test_name(ctx, test_name, sizeof(test_name), state, test);
 
    if (!check_filter_string(ctx->options.filter, test_name))
       return;
@@ -1594,11 +1593,9 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
 }
 
 void
-test_prim(api_context *ctx, const char *test_name)
+test_prim(api_context *ctx)
 {
    test_state *state = calloc(1, sizeof(test_state));
-
-   state->test_name = test_name;
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,

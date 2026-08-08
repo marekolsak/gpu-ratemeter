@@ -945,7 +945,7 @@ test_filter(api_context *ctx, unsigned samples, test_flavor test_flavor, const p
 }
 
 static void
-run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
+run_test_pix(api_context *ctx, unsigned samples,
              compiled_shaders_state *compiled_shaders, api_descriptor_set *desc_set,
              test_flavor test_flavor, api_buffer *total_fs_invoc, api_buffer *raster_indexbuf)
 {
@@ -1139,7 +1139,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    }
 
    printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
-   printf("Building pipelines for %s.%s ...", test_name, prefix);
+   printf("Building pipelines for %s.%s ...", ctx->options.name_prefix, prefix);
 
    /* Create pipelines. */
    atomic_uint num_visited_pipelines = 0;
@@ -1444,8 +1444,8 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
       char pipeline_name[256];
       get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, &pipelines[p]);
 
-      char name[256];
-      snprintf(name, sizeof(name), "%s%s", test_name, pipeline_name);
+      char name[512];
+      snprintf(name, sizeof(name), "%s%s", ctx->options.name_prefix, pipeline_name);
       printf("%-*s", name_indent, name);
 
       bool raster = strstr(pipeline_name, "raster");
@@ -1501,7 +1501,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
 }
 
 void
-test_pix(api_context *ctx, const char *test_name)
+test_pix(api_context *ctx)
 {
    compiled_shaders_state compiled_shaders[ARRAY_SIZE(pipelines)] = {0};
    static const unsigned sample_counts[] = {1, 2, 4, 8};
@@ -1711,23 +1711,23 @@ test_pix(api_context *ctx, const char *test_name)
 
       if (ctx->supported_color_sample_counts & samples &&
           (test_flavor == -1 || (test_flavor == TEST_NORMAL && test_samples == samples))) {
-         run_test_pix(ctx, test_name, samples, compiled_shaders, desc_set, TEST_NORMAL, total_fs_invoc,
+         run_test_pix(ctx, samples, compiled_shaders, desc_set, TEST_NORMAL, total_fs_invoc,
                       raster_indexbuf);
       }
    }
 
    if (test_flavor == -1 || test_flavor == TEST_MULTIVIEW) {
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, total_fs_invoc,
+      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, total_fs_invoc,
                    raster_indexbuf);
    }
 
    if (test_flavor == -1 || test_flavor == TEST_IMAGE_3D) {
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, total_fs_invoc,
+      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, total_fs_invoc,
                    raster_indexbuf);
    }
 
    if (test_flavor == -1 || test_flavor == TEST_LINEAR) {
-      run_test_pix(ctx, test_name, 1, compiled_shaders, desc_set, TEST_LINEAR, total_fs_invoc,
+      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_LINEAR, total_fs_invoc,
                    raster_indexbuf);
    }
 }

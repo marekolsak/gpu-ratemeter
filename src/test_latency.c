@@ -369,7 +369,7 @@ set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsig
 }
 
 static void
-run(api_context *ctx, const char *test_name, test_stage stage, test_state *state)
+run(api_context *ctx, test_stage stage, test_state *state)
 {
    if (stage == INIT) {
       /* Build pipelines. */
@@ -484,7 +484,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
                if (stage == REPORT) {
                   char name[1024];
 
-                  snprintf(name, sizeof(name), "%s.%s.%s.%s", test_name,
+                  snprintf(name, sizeof(name), "%s.%s.%s.%s", ctx->options.name_prefix,
                            coherent ? "coherent" : "default", uniform ? "uniform" : "nonuniform",
                            shared_memory ? "shared" : heap_to_string(heap));
                   printf("%-*s,", name_indent, name);
@@ -547,7 +547,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
 }
 
 void
-test_latency(api_context *ctx, const char *test_name)
+test_latency(api_context *ctx)
 {
    if (ctx->options.bda && !ctx->has_buffer_device_address)
       error("Buffer device address support is required.");
@@ -602,14 +602,14 @@ test_latency(api_context *ctx, const char *test_name)
    printf("The number of indirections averaged per subtest: %u\n", state.num_indirections);
    puts("Building compute pipelines...");
 
-   run(ctx, test_name, INIT, &state);
+   run(ctx, INIT, &state);
 
    printf("Executing tests ...");
    fflush(stdout);
-   run(ctx, test_name, RUN, &state);
+   run(ctx, RUN, &state);
    puts("");
 
-   run(ctx, test_name, REPORT, &state);
+   run(ctx, REPORT, &state);
 
    free(state.sequence_tmp);
    free(state.jump_buf_data);

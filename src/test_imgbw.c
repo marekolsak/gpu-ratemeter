@@ -517,7 +517,7 @@ static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_uint = {.uint32 = {23, 45, 89, 107}};
 
 static void
-run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tests,
+run(api_context *ctx, test_stage stage, unsigned *num_tests,
     api_query_pool *timestamps)
 {
    if (stage == REPORT)
@@ -1121,19 +1121,19 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
 }
 
 void
-test_imgbw(api_context *ctx, const char *test_name)
+test_imgbw(api_context *ctx)
 {
    unsigned num_tests = 0;
 
-   run(ctx, test_name, COUNT_TESTS, &num_tests, NULL);
+   run(ctx, COUNT_TESTS, &num_tests, NULL);
 
    api_query_pool *timestamps = ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);
-   run(ctx, test_name, RUN, &num_tests, timestamps);
+   run(ctx, RUN, &num_tests, timestamps);
    puts("");
 
    ctx->get_query_results(ctx, timestamps);
-   run(ctx, test_name, REPORT, NULL, timestamps);
+   run(ctx, REPORT, NULL, timestamps);
 }

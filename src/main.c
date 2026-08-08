@@ -88,7 +88,7 @@ typedef struct {
 
 typedef struct {
    const char *name;
-   void (*execute)(api_context *ctx, const char *test_name);
+   void (*execute)(api_context *ctx);
    bool report_bandwidth;
    unsigned num_options;
    const option_desc *options;
@@ -261,6 +261,8 @@ main(int argc, char **argv)
       .report_bandwidth = test_desc->report_bandwidth,
    };
 
+   snprintf(options.name_prefix, sizeof(options.name_prefix), "%s.%s", api_name, test_name);
+
    for (unsigned i = 0; i < argc; i++) {
       if (!parse_option_list(&options, ARRAY_SIZE(common_options), common_options, argv[i]) &&
           !parse_option_list(&options, test_desc->num_options, test_desc->options, argv[i])) {
@@ -292,6 +294,6 @@ main(int argc, char **argv)
       error("Invalid API or API selection missing in parameters: %s", api_name);
 
    puts("Initializing test...");
-   test_desc->execute(ctx, name_prefix);
+   test_desc->execute(ctx);
    return 0;
 }

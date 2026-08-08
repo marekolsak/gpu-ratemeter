@@ -370,6 +370,8 @@ typedef enum {
 } api_flags;
 
 typedef struct {
+   char name_prefix[32]; /* "api.test" */
+
    /* API and test options. */
    api_flags api_flags;
    bool report_bandwidth;
@@ -644,13 +646,13 @@ api_context *gl_create_context(const program_options *options);
 api_context *vk_create_context(const program_options *options);
 
 /* Tests. */
-void test_bufbw(api_context *ctx, const char *test_name);
-void test_imgbw(api_context *ctx, const char *test_name);
-void test_latency(api_context *ctx, const char *test_name);
-void test_pix(api_context *ctx, const char *test_name);
-void test_prim(api_context *ctx, const char *test_name);
-void test_sanity(api_context *ctx, const char *test_name);
-void test_sparsebind(api_context *ctx, const char *test_name);
+void test_bufbw(api_context *ctx);
+void test_imgbw(api_context *ctx);
+void test_latency(api_context *ctx);
+void test_pix(api_context *ctx);
+void test_prim(api_context *ctx);
+void test_sanity(api_context *ctx);
+void test_sparsebind(api_context *ctx);
 
 /* utils.c */
 bool check_filter_string(const char *filter_string, const char *name);
