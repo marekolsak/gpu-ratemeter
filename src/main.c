@@ -112,12 +112,10 @@ static const option_desc common_options[] = {
 static const option_desc bufbw_options[] = {
    {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
    {OPTION_BOOL, "-transfer", offsetof(program_options, transfer)},
-   {OPTION_STRING, "-filter=", offsetof(program_options, filter)},
 };
 
 static const option_desc imgbw_options[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
-   {OPTION_STRING, "-filter=", offsetof(program_options, filter)},
 };
 
 static const option_desc latency_options[] = {
@@ -140,7 +138,6 @@ static const option_desc pix_options[] = {
 
 static const option_desc prim_options[] = {
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
-   {OPTION_STRING, "-filter=", offsetof(program_options, filter)},
 };
 
 static const option_desc sparsebind_options[] = {

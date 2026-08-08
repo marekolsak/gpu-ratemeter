@@ -856,14 +856,13 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         if (yflip && (is_clear || test_index == TEST_COPY))
                            continue;
 
-                        if (ctx->options.filter) {
-                           char name[128];
-                           get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
-                                            samples, layout, fill_option, region_option);
+                        char name[128];
+                        get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
+                                         samples, layout, fill_option, region_option);
 
-                           if (!check_filter_string(ctx->options.filter, name))
-                              continue;
-                        }
+                        if (ctx->options.regex_subtest_filter &&
+                            !regex_matches(ctx->options.regex_subtest_filter, name))
+                           continue;
 
                         if (stage == REPORT) {
                            print_table_row(ctx, false, test_index, img_type, format_index, samples,

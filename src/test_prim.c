@@ -1546,7 +1546,8 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
    char test_name[1024];
    get_test_name(ctx, test_name, sizeof(test_name), state, test);
 
-   if (!check_filter_string(ctx->options.filter, test_name))
+   if (ctx->options.regex_subtest_filter &&
+       !regex_matches(ctx->options.regex_subtest_filter, test_name))
       return;
 
    switch (test_stage) {

@@ -399,7 +399,7 @@ typedef struct {
    unsigned max_valid_result;
 
    /* String options. */
-   const char *filter;
+   /* None so far. */
 
    /* Memory size options. */
    unsigned spacing;
@@ -657,7 +657,6 @@ void test_sanity(api_context *ctx);
 void test_sparsebind(api_context *ctx);
 
 /* utils.c */
-bool check_filter_string(const char *filter_string, const char *name);
 double get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool);
 void print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
                                            uint64_t num_units, const char *rate_format,

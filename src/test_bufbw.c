@@ -261,7 +261,8 @@ run(api_context *ctx, enum test_stage stage, test_state *state)
                            traversal == MISS ? "miss" : "miss_no_barrier",
                            align_info[align].string);
 
-                  if (!check_filter_string(ctx->options.filter, subtest))
+                  if (ctx->options.regex_subtest_filter &&
+                      !regex_matches(ctx->options.regex_subtest_filter, subtest))
                      continue;
 
                   if (stage == REPORT) {

@@ -39,10 +39,11 @@ Examples:
 ```
 gpu-ratemeter gl.bufbw
 gpu-ratemeter vk.prim
-gpu-ratemeter -lean gl.pix
 gpu-ratemeter -lean vkld.pix
 gpu-ratemeter -lean vkld.pix.noaa.raster
 gpu-ratemeter -lean vkld.pix.multiview.1persp.*samplemask$
+gpu-ratemeter vk.imgbw.clear.*mrt
+gpu-ratemeter vk.imgbw.resolve
 ```
 
 API identifiers:
@@ -77,7 +78,6 @@ Common parameters:
 - `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it (only `bufbw`, `imgbw`, `prim`)
 
 OpenGL parameters:
 - `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
