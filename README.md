@@ -278,8 +278,9 @@ Decoding subtest names:
 - `both=N`: both offsets are aligned to N (N=1 means unaligned)
 
 Optional parameters:
-- `-compute`: Execute on the compute queue.
-- `-transfer`: Execute on the transfer queue.
+- `-compute`: execute on the compute queue
+- `-transfer`: execute on the transfer queue
+- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it
 
 ### `imgbw`: Framebuffer Clear, Image Clear/Copy/Blit, and MSAA Image Clear/Copy/Blit/Resolve Bandwidth (GB/s)
 
@@ -321,7 +322,6 @@ Decoding other identifiers in subtest names:
 - `1s`-`8s`: the number of samples
 - `src_linear`: the source image uses linear tiling
 - `dst_linear`: the destination image uses linear tiling
-
 
 
 ## Miscellaneous Tests

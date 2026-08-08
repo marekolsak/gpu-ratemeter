@@ -237,7 +237,9 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
                   unsigned test_src_offset = align_info[align].src_offset;
                   unsigned test_dst_offset = align_info[align].dst_offset;
 
-                  /* Don't be unaligned by some number from 0 for <= 2 byte alignment. Shift the offset by 4. */
+                  /* Instead of making offsets unaligned by some number from 0 (e.g. 1, 2, 3), make
+                   * them unaligned by some number from 4 (e.g. 5, 6, 7).
+                   */
                   if (test_src_offset && test_src_offset < 4)
                      test_src_offset += 4;
                   if (test_dst_offset && test_dst_offset < 4)
@@ -246,20 +248,24 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
                   if (!is_copy && (test_src_offset != 0 || test_dst_offset % 4))
                      continue;
 
+                  char subtest[512];
+                  snprintf(subtest, sizeof(subtest), "%s.%s%s%s.%s.%s",
+                           test_type == TEST_FILL ? "fill" :
+                           test_type == TEST_COPY ? "copy" :
+                           test_type == TEST_COPY_INDIRECT ? "copy_indirect" : "(error)",
+                           is_copy ? heap_to_string(src->heap) : "",
+                           is_copy ? "_to_" : "",
+                           heap_to_string(dst->heap),
+                           traversal == HIT ? "hit" :
+                           traversal == MISS ? "miss" : "miss_no_barrier",
+                           align_info[align].string);
+
+                  if (!check_filter_string(ctx->options.filter, subtest))
+                     continue;
+
                   if (stage == REPORT) {
                      char name[1024];
-
-                     snprintf(name, sizeof(name), "%s.%s.%s%s%s.%s.%s",
-                              test_name,
-                              test_type == TEST_FILL ? "fill" :
-                              test_type == TEST_COPY ? "copy" :
-                              test_type == TEST_COPY_INDIRECT ? "copy_indirect" : "(error)",
-                              is_copy ? heap_to_string(src->heap) : "",
-                              is_copy ? "_to_" : "",
-                              heap_to_string(dst->heap),
-                              traversal == HIT ? "hit" :
-                              traversal == MISS ? "miss" : "miss_no_barrier",
-                              align_info[align].string);
+                     snprintf(name, sizeof(name), "%s.%s", test_name, subtest);
                      printf("%-*s", name_indent, name);
                   }
 
