@@ -29,12 +29,6 @@
  * - instruction fetch (jump chasing)
  *
  * pix:
- * - to see how a FS execution time affects throughput:
- *   - push constant load / uniform buffer load in FS
- *   - image load in FS
- *   - image sample (bilinear filter) in FS
- *   - or just wait until some number of shader clock cycles have passed?
- *     (this could be a compute test, a pixel throughput test, and a primitive throughput test)
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
@@ -55,6 +49,7 @@
  * - fill the screen in the Morton order instead of linearly
  * - 1-primitive instances/clock
  * - 1-primitive draws in a multidraw, prims/clock == draws/clock
+ * - add cyclesN tests
  */
 
 #include <assert.h>

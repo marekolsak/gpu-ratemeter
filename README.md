@@ -110,7 +110,7 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
 - `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
 
 
-# Tests
+# Test Descriptions
 
 ## Graphics Pipeline Tests
 
@@ -141,6 +141,7 @@ Decoding subtest names:
 - `a2c`: alpha-to-coverage is enabled
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS
 - `rasterN`: fill the screen with triangles of a specific size; N is the percentage of non-helper FS invocations relating to the size of triangles, see the description in the subsection below
+- `cyclesN`: the fragment shader waits for N clock cycles to pass before finishing using the subgroup clock; this shows how fragment shaders of different sizes affect pixel throughput and determines when the GPU is limited by the fragment shader execution time and when it's limited the fixed-function pixel pipeline throughput
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:

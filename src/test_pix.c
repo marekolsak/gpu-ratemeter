@@ -58,6 +58,7 @@ static const char *fs_shared_code =
    "#define HAS_VRS 0 \n"
    "#define HAS_FULLY_COVERED 0 \n"
    "#define HAS_MULTIVIEW 0 \n"
+   "#define HAS_SHADER_CLOCK 0 \n"
    "#define GATHER_TOTAL_FS_INVOC 0 \n"
    "\n"
 
@@ -73,6 +74,12 @@ static const char *fs_shared_code =
 
    "#if HAS_MULTIVIEW \n"
    "#extension GL_EXT_multiview : require \n"
+   "#endif \n"
+   "\n"
+
+   "#if HAS_SHADER_CLOCK \n"
+   "#extension GL_ARB_gpu_shader_int64 : require \n"
+   "#extension GL_ARB_shader_clock : require \n"
    "#endif \n"
    "\n"
 
@@ -135,6 +142,22 @@ static const char *fs_shared_code =
    "} \n"
    "#endif \n"
    "\n"
+
+   "#if HAS_SHADER_CLOCK \n"
+   "bool wait(int cycles) { \n"
+   "   int64_t start = int64_t(clockARB()); \n"
+   "   int64_t end, diff; \n"
+   "   do { \n"
+   "      end = int64_t(clockARB()); \n"
+   "      diff = end - start; \n"
+   /* "end >= start" is a prevention against overflow */
+   "   } while (diff >= 0 && diff < cycles); \n"
+   "   return diff <= cycles; \n"
+   "} \n"
+   "\n"
+   "#endif \n"
+   "\n"
+
 
    "void store_output_color0(vec4 value) { \n"
    "#if IMAGE_STORE \n"
@@ -503,6 +526,22 @@ static const char *fs_shared_code =
    VRS_IMPL(2, 1, helper_invoc), \
    VRS_IMPL(2, 2, helper_invoc)
 
+#define FS_CYCLES(cycles) \
+   "void main() {\n" \
+   "   store_output_color0(vec4(gl_HelperInvocation || wait("#cycles") ? 0.123456789 : 0.1, 0.2, 0.3, 0.4)); \n" \
+   "}"
+
+#define CYCLES(cycles) \
+   {".cycles" #cycles, \
+   "", \
+   "", \
+   "", \
+   "", \
+   "", \
+   \
+   VS_POS_ONLY, \
+   FS_CYCLES(cycles)}
+
 #define VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x) \
    "layout(location = 0) out float out0; \n" \
    "\n" \
@@ -731,6 +770,26 @@ static const pipeline_info pipelines[] = {
    RASTER(52.5, 21, 30, 16),
    RASTER(45.3, 14, 20, 32),
    RASTER(39.9, 35, 50, 16),
+
+   CYCLES(100),
+   CYCLES(150),
+   CYCLES(200),
+   CYCLES(250),
+   CYCLES(300),
+   CYCLES(350),
+   CYCLES(400),
+   CYCLES(500),
+   CYCLES(600),
+   CYCLES(700),
+   CYCLES(800),
+   CYCLES(1000),
+   CYCLES(1200),
+   CYCLES(1400),
+   CYCLES(1600),
+   CYCLES(2000),
+   CYCLES(2400),
+   CYCLES(2800),
+   CYCLES(3200),
 
    /* Constant fill. */
    INPUTS(0, "", "", 0, "", ""),
@@ -1112,6 +1171,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
          bool shading_rate = strstr(pipeline_name, "shading_rate");
          bool fully_covered = strstr(pipeline_name, "fully_covered");
          bool raster = pipelines[p].raster.num_meshes_x != 0;
+         bool cycles = strstr(pipeline_name, "cycles");
 
          if (!format && (helper_invoc || a2c || colormask0 || colormask_x || blend))
             continue;
@@ -1133,6 +1193,9 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
             continue;
 
          if (!ctx->has_fully_covered && fully_covered)
+            continue;
+
+         if (!(ctx->has_shader_subgroup_clock && ctx->has_shader_int64) && cycles)
             continue;
 
          bool require_zbuf = strstr(pipeline_name, "zbuf");
@@ -1487,14 +1550,16 @@ test_pix(api_context *ctx, const char *test_name)
 
       compiled_shaders[p].vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
 
-      char *fs_has_vrs_define = strstr(fs_code, "#define HAS_VRS 0");
+      char *fs_has_vrs_define           = strstr(fs_code, "#define HAS_VRS 0");
       char *fs_has_fully_covered_define = strstr(fs_code, "#define HAS_FULLY_COVERED 0");
-      char *fs_has_multiview_define = strstr(fs_code, "#define HAS_MULTIVIEW 0");
+      char *fs_has_multiview_define     = strstr(fs_code, "#define HAS_MULTIVIEW 0");
+      char *fs_has_shader_clock         = strstr(fs_code, "#define HAS_SHADER_CLOCK 0");
 
       assert(fs_has_vrs_define);
       fs_has_vrs_define[16] = ctx->has_vrs ? '1' : '0';
       fs_has_fully_covered_define[26] = ctx->has_fully_covered ? '1' : '0';
       fs_has_multiview_define[22] = ctx->has_multiview ? '1' : '0';
+      fs_has_shader_clock[25] = ctx->has_shader_subgroup_clock ? '1' : '0';
 
       compiled_shaders[p].fs_out_float = ctx->create_shader(ctx, fs_code, api_shader_fs);
 
