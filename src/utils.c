@@ -62,36 +62,33 @@ print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
                                       const char *bandwidth_format, const char *string_format,
                                       unsigned bandwidth_exp2_divisor)
 {
-   double rate = num_units /  get_time_in_seconds_from_timestamps(ctx, pool);
-
-   /* a comma separator between results */
-   printf(",");
+   double result = num_units / get_time_in_seconds_from_timestamps(ctx, pool);
 
    if (ctx->options.report_bandwidth) {
-      rate /= 1ull << bandwidth_exp2_divisor;
-
-      if (ctx->options.max_valid_result && rate > ctx->options.max_valid_result)
-         printf(string_format, "error");
-      else
-         printf(bandwidth_format, rate);
+      result /= 1ull << bandwidth_exp2_divisor;
    } else {
       /* If the frequency is set, print the results in units per clock cycle, else print it
        * in billions per second.
        */
       if (ctx->options.freq_mhz)
-         rate *= 1.0 / (ctx->options.freq_mhz * 1000000.0);
+         result *= 1.0 / (ctx->options.freq_mhz * 1000000.0);
       else
-         rate *= 1.0 / 1000000000;
-
-      /* If max_rate is set, print the results as % of the max_rate. */
-      if (ctx->options.max_rate)
-         rate *= 100.0 / ctx->options.max_rate;
-
-      if (ctx->options.max_valid_result && rate > ctx->options.max_valid_result)
-         printf(string_format, "error");
-      else
-         printf(rate_format, rate);
+         result *= 1.0 / 1000000000;
    }
+
+   /* If the base rate is set, print the results as % of the base rate. */
+   if (ctx->options.max_rate)
+      result *= 100.0 / ctx->options.max_rate;
+
+   /* a comma separator between results */
+   printf(",");
+
+   if (ctx->options.max_valid_result && result > ctx->options.max_valid_result)
+      printf(string_format, "error");
+   else if (ctx->options.report_bandwidth)
+      printf(bandwidth_format, result);
+   else
+      printf(rate_format, result);
 }
 
 void printflike(1, 2)
