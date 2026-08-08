@@ -468,7 +468,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, test_state *state
       puts("");
    }
 
-   unsigned test_index = 0;
+   atomic_uint test_index = 0;
 
    for (unsigned shared_memory = 0; shared_memory <= 1; shared_memory++) {
       for (unsigned coherent = 0; coherent <= 1; coherent++) {

@@ -12,7 +12,6 @@
 #include <assert.h>
 #include <math.h>
 #include <stdarg.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -113,7 +112,7 @@ strdup(const char *s)
 }
 
 void
-print_progress(unsigned num_items, unsigned *num_processed_items, unsigned print_period)
+print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned print_period)
 {
    unsigned num = atomic_fetch_add(num_processed_items, 1);
 

@@ -183,7 +183,7 @@ run(api_context *ctx, const char *test_name, enum test_stage stage, test_state *
 
    const bool has_indirect = ctx->queue_has_copy_memory_indirect[state->queue];
    const unsigned num_test_types = 2 + has_indirect;
-   unsigned num_visited_tests = 0;
+   atomic_uint num_visited_tests = 0;
 
    /* Run tests. */
    for (unsigned test_type = 0; test_type < num_test_types; test_type++) {

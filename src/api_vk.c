@@ -12,7 +12,6 @@
 #include <assert.h>
 #include <alloca.h>
 #include <limits.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

@@ -524,7 +524,7 @@ run(api_context *ctx, const char *test_name, test_stage stage, unsigned *num_tes
       print_table_row(true, 0, 0, 0, 0, 0, 0, 0);
 
    misc_state misc_state = {0};
-   unsigned num_visited_tests = 0;
+   atomic_uint num_visited_tests = 0;
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       bool is_clear = test_index == TEST_CLEAR_FB ||

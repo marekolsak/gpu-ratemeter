@@ -1142,7 +1142,7 @@ run_test_pix(api_context *ctx, const char *test_name, unsigned samples,
    printf("Building pipelines for %s.%s ...", test_name, prefix);
 
    /* Create pipelines. */
-   unsigned num_visited_pipelines = 0;
+   atomic_uint num_visited_pipelines = 0;
 
 #pragma omp parallel for if (ctx->allow_parallel_create_pipeline) collapse(2) schedule(static, 50)
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {

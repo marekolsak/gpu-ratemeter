@@ -225,7 +225,7 @@ test_sparsebind(api_context *ctx, const char *test_name)
    printf("Executing tests ...");
    fflush(stdout);
 
-   unsigned num_visited_tests = 0;
+   atomic_uint num_visited_tests = 0;
 
    for (unsigned i = 0; i < num_tests; i++) {
       for (unsigned async = 0; async < 2; async++) {

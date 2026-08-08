@@ -14,6 +14,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdnoreturn.h>
 
@@ -468,7 +469,7 @@ typedef struct api_context {
    bool queue_has_copy_memory_indirect[api_num_queues];
 
    /* Dynamic info. */
-   uint32_t device_mem_usage_mb;
+   atomic_uint device_mem_usage_mb;
 
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);
@@ -660,7 +661,7 @@ void print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *poo
                                            unsigned bandwidth_exp2_divisor);
 noreturn void error(const char *format, ...) printflike(1, 2);
 char *strdup(const char *s);
-void print_progress(unsigned num_items, unsigned *num_processed_items, unsigned print_period);
+void print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned print_period);
 void write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels);
 void run_image_viewer(const char *image_filename);
 unsigned get_pixel_size_from_format(VkFormat format);
