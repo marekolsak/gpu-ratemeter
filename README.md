@@ -38,12 +38,13 @@ Examples:
 
 ```
 gpu-ratemeter gl.bufbw
+gpu-ratemeter vk.imgbw.clear.*mrt
+gpu-ratemeter vk.imgbw.resolve
 gpu-ratemeter vk.prim
 gpu-ratemeter -lean vkld.pix
 gpu-ratemeter -lean vkld.pix.noaa.raster
 gpu-ratemeter -lean vkld.pix.multiview.1persp.*samplemask$
-gpu-ratemeter vk.imgbw.clear.*mrt
-gpu-ratemeter vk.imgbw.resolve
+gpu-ratemeter -spacing=128 -maxsize=1M -clockbits=20 vk.latency
 ```
 
 API identifiers:

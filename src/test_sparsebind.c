@@ -203,6 +203,43 @@ print_na(api_context *ctx, test_flags flags, cmdbuf_option cmdbuf_option, bool a
    return !(flags & ~(NO_BIND | SIZE_REGULAR | BLOCK_REGULAR)) && cmdbuf_option == CMDBUF_NONE;
 }
 
+static unsigned
+get_subtest_name(api_context *ctx, char *out, unsigned test_flags)
+{
+   unsigned len = 0;
+
+   if (!get_num_bind_flags(test_flags))
+      test_flags &= ~(SIZE_REGULAR | BLOCK_REGULAR);
+
+   for (unsigned flag = 0; flag < ARRAY_SIZE(flag_strings); flag++) {
+      if ((1 << flag) & test_flags) {
+         if (len)
+            len += sprintf(out + len, ".");
+
+         if (flag_strings[flag]) {
+            for (unsigned c = 0; flag_strings[flag][c]; c++)
+               len += sprintf(out + len, "%c", tolower(flag_strings[flag][c]));
+         } else {
+            if ((1 << flag) & (SIZE_REGULAR | SIZE_4X))
+               len += sprintf(out + len, "size%um", get_buffer_size(ctx, test_flags) >> 20);
+            else if ((1 << flag) & (BLOCK_REGULAR | BLOCK_8X))
+               len += sprintf(out + len, "block%uk", get_sparse_block_size(ctx, test_flags) >> 10);
+            else
+               error("missing flag string");
+         }
+      }
+   }
+
+   return len;
+}
+
+static bool
+skip(api_context *ctx, const char *subtest)
+{
+   return ctx->options.regex_subtest_filter &&
+          !regex_matches(ctx->options.regex_subtest_filter, subtest);
+}
+
 static bool
 print_nothing(cmdbuf_option cmdbuf_option, bool async)
 {
@@ -228,6 +265,12 @@ test_sparsebind(api_context *ctx)
    atomic_uint num_visited_tests = 0;
 
    for (unsigned i = 0; i < num_tests; i++) {
+      char subtest[256];
+      get_subtest_name(ctx, subtest, tests[i]);
+
+      if (skip(ctx, subtest))
+         continue;
+
       for (unsigned async = 0; async < 2; async++) {
          for (unsigned cmdbuf = 0; cmdbuf < NUM_CMDBUF_OPTIONS; cmdbuf++) {
             print_progress(num_tests * 6, &num_visited_tests, 20);
@@ -253,31 +296,13 @@ test_sparsebind(api_context *ctx)
    printf("%-*s,%9s,%9s,%9s,%9s,%9s\n", name_indent, "Command buffer", "none", "empty", "simple", "empty", "simple");
 
    for (unsigned i = 0; i < num_tests; i++) {
-      unsigned len = 0;
-      unsigned test_flags = tests[i];
+      char subtest[256];
+      get_subtest_name(ctx, subtest, tests[i]);
 
-      if (!get_num_bind_flags(test_flags))
-         test_flags &= ~(SIZE_REGULAR | BLOCK_REGULAR);
+      if (skip(ctx, subtest))
+         continue;
 
-      len += printf("%s", ctx->options.name_prefix);
-
-      for (unsigned flag = 0; flag < ARRAY_SIZE(flag_strings); flag++) {
-         if ((1 << flag) & test_flags) {
-            len += printf(".");
-
-            if (flag_strings[flag]) {
-               for (unsigned c = 0; flag_strings[flag][c]; c++)
-                  len += printf("%c", tolower(flag_strings[flag][c]));
-            } else {
-               if ((1 << flag) & (SIZE_REGULAR | SIZE_4X))
-                  len += printf("size%um", get_buffer_size(ctx, test_flags) >> 20);
-               else if ((1 << flag) & (BLOCK_REGULAR | BLOCK_8X))
-                  len += printf("block%uk", get_sparse_block_size(ctx, test_flags) >> 10);
-               else
-                  error("missing flag string");
-            }
-         }
-      }
+      unsigned len = printf("%s.%s", ctx->options.name_prefix, subtest);
 
       assert(len <= name_indent);
       printf("%*s", name_indent - len, "");

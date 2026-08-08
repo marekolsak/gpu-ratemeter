@@ -481,12 +481,19 @@ run(api_context *ctx, test_stage stage, test_state *state)
                if ((shared_memory && coherent) || !jump_buf)
                   continue;
 
+               char subtest[512];
+               snprintf(subtest, sizeof(subtest), "%s.%s.%s",
+                        coherent ? "coherent" : "default", uniform ? "uniform" : "nonuniform",
+                        shared_memory ? "shared" : heap_to_string(heap));
+
+               if (ctx->options.regex_subtest_filter &&
+                   !regex_matches(ctx->options.regex_subtest_filter, subtest))
+                  continue;
+
                if (stage == REPORT) {
                   char name[1024];
 
-                  snprintf(name, sizeof(name), "%s.%s.%s.%s", ctx->options.name_prefix,
-                           coherent ? "coherent" : "default", uniform ? "uniform" : "nonuniform",
-                           shared_memory ? "shared" : heap_to_string(heap));
+                  snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, subtest);
                   printf("%-*s,", name_indent, name);
                }
 

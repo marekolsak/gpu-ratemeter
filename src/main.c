@@ -275,7 +275,13 @@ main(int argc, char **argv)
    };
 
    snprintf(options.name_prefix, sizeof(options.name_prefix), "%s.%s", api_name, test_name);
-   options.regex_subtest_filter = filter ? regex_compile(filter) : NULL;
+
+   if (filter) {
+      char filter_pattern[2048];
+      snprintf(filter_pattern, sizeof(filter_pattern), "^%s", filter);
+
+      options.regex_subtest_filter = regex_compile(filter_pattern);
+   }
 
    for (unsigned i = 0; i < argc; i++) {
       if (!parse_option_list(&options, ARRAY_SIZE(common_options), common_options, argv[i]) &&
