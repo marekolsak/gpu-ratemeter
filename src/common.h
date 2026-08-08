@@ -371,6 +371,7 @@ typedef enum {
 
 typedef struct {
    char name_prefix[32]; /* "api.test" */
+   const void *regex_subtest_filter;
 
    /* API and test options. */
    api_flags api_flags;
@@ -400,7 +401,6 @@ typedef struct {
    /* String options. */
    const char *filter;
    const char *format;
-   const char *subset;
 
    /* Memory size options. */
    unsigned spacing;

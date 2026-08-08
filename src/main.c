@@ -55,6 +55,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "common.h"
@@ -133,9 +134,7 @@ static const option_desc pix_options[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-samplerate", offsetof(program_options, samplerate)},
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
-   {OPTION_STRING, "-filter=", offsetof(program_options, filter)},
    {OPTION_STRING, "-format=", offsetof(program_options, format)},
-   {OPTION_STRING, "-subset=", offsetof(program_options, subset)},
 };
 
 static const option_desc prim_options[] = {
@@ -229,14 +228,24 @@ main(int argc, char **argv)
 
    /* Parse the test name. */
    const void *re_split2 = regex_compile("^([^.]+)\\.([^.]+)$");
-   char *re_groups[2];
-   unsigned num_re_groups = regex_groups(re_split2, name_arg, re_groups, ARRAY_SIZE(re_groups));
+   const void *re_split3 = regex_compile("^([^.]+)\\.([^.]+)\\.(.*)$");
+   char *re_groups[3];
+   unsigned num_re_groups;
 
-   if (num_re_groups != 2)
-      error("Cannot parse the test name: %s (the form should be api.test)\n", name_arg);
+   num_re_groups = regex_groups(re_split2, name_arg, re_groups, ARRAY_SIZE(re_groups));
+   if (num_re_groups != 2) {
+      for (unsigned i = 0; i < num_re_groups; i++)
+         free(re_groups[i]);
+
+      num_re_groups = regex_groups(re_split3, name_arg, re_groups, ARRAY_SIZE(re_groups));
+   }
+
+   if (num_re_groups < 2)
+      error("Cannot parse the test name: %s (the form should be api.test[.regex])\n", name_arg);
 
    const char *api_name = re_groups[0];
    const char *test_name = re_groups[1];
+   const char *filter = num_re_groups == 3 ? re_groups[2] : NULL;
    char name_prefix[32];
    snprintf(name_prefix, sizeof(name_prefix), "%s.%s", api_name, test_name);
 
@@ -262,6 +271,7 @@ main(int argc, char **argv)
    };
 
    snprintf(options.name_prefix, sizeof(options.name_prefix), "%s.%s", api_name, test_name);
+   options.regex_subtest_filter = filter ? regex_compile(filter) : NULL;
 
    for (unsigned i = 0; i < argc; i++) {
       if (!parse_option_list(&options, ARRAY_SIZE(common_options), common_options, argv[i]) &&
@@ -292,6 +302,9 @@ main(int argc, char **argv)
 
    if (!ctx)
       error("Invalid API or API selection missing in parameters: %s", api_name);
+
+   for (unsigned i = 0; i < num_re_groups; i++)
+      free(re_groups[i]);
 
    puts("Initializing test...");
    test_desc->execute(ctx);

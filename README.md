@@ -30,7 +30,9 @@ Examples of result interpretation:
 
 # How to Run
 
-`gpu-ratemeter [optional parameters] [api].[test]`
+`gpu-ratemeter [optional parameters] [api].[test][.regex]`
+
+Choose `api` and `test` from the options below. Optional `regex` filters which tests to run.
 
 Examples:
 
@@ -38,7 +40,9 @@ Examples:
 gpu-ratemeter gl.bufbw
 gpu-ratemeter vk.prim
 gpu-ratemeter -lean gl.pix
-gpu-ratemeter -lean vk.pix
+gpu-ratemeter -lean vkld.pix
+gpu-ratemeter -lean vkld.pix.noaa.raster
+gpu-ratemeter -lean vkld.pix.multiview.1persp.*samplemask$
 ```
 
 API identifiers:
@@ -73,7 +77,7 @@ Common parameters:
 - `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
-- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it (only `bufbw`, `imgbw`, `pix`, `pixbw`, `prim`)
+- `-filter=STRING`: only run subtests containing this exact string; if `STRING` ends with $, the subtest name must end with it (only `bufbw`, `imgbw`, `prim`)
 
 OpenGL parameters:
 - `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
@@ -107,7 +111,6 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-samplerate`: report samples/clock instead of pixels/clock
-- `-subset=STRING`: Test only one subset. If `STRING` is number 1, 2, 4, or 8, test only the subset with this number of samples. If `STRING` is `multiview`, `image3d`, or `linear`, test only the corresponding subset.
 
 
 # Test Descriptions

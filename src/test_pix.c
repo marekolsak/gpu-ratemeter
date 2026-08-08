@@ -735,7 +735,7 @@ static const pipeline_info pipelines[] = {
    VRS(1), /* helper_invoc=1 */
 
    /* To gather statistics on AMD (they are incorrect by default due to using clip_invocation instead of clip_primitives):
-    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean -subset=1 -filter=raster gl.pix
+    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean gl.pix.noaa.raster
     *
     * There must be a multiple of 7 quads (14 triangles, 16 vertices) per row unless there is only
     * 1 row. If there are multiple meshes, the number of rows per mesh must be even. The number of
@@ -941,7 +941,8 @@ test_filter(api_context *ctx, unsigned samples, test_flavor test_flavor, const p
    char pipeline_name[256];
    get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, pipeline);
 
-   return check_filter_string(ctx->options.filter, pipeline_name);
+   return !ctx->options.regex_subtest_filter ||
+          regex_matches(ctx->options.regex_subtest_filter, pipeline_name);
 }
 
 static void
@@ -1671,63 +1672,22 @@ test_pix(api_context *ctx)
    ctx->upload_buffer_data(ctx, raster_indexbuf, 0, raster_indexbuf_size, indices);
    free(indices);
 
-   /* Determine the subset to test. */
-   int test_flavor = -1;
-   int test_samples = -1;
-
-   if (ctx->options.subset) {
-      for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
-         char samples_str[2] = {'0' + sample_counts[s]};
-
-         if (!strcmp(ctx->options.subset, samples_str)) {
-            test_flavor = TEST_NORMAL;
-            test_samples = sample_counts[s];
-            break;
-         }
-      }
-
-      if (!strcmp(ctx->options.subset, "multiview")) {
-         test_flavor = TEST_MULTIVIEW;
-         test_samples = 1;
-      }
-
-      if (!strcmp(ctx->options.subset, "image3d")) {
-         test_flavor = TEST_IMAGE_3D;
-         test_samples = 1;
-      }
-
-      if (!strcmp(ctx->options.subset, "linear")) {
-         test_flavor = TEST_LINEAR;
-         test_samples = 1;
-      }
-
-      if (test_flavor == -1)
-         error("-subset: invalid value");
-   }
-
    /* Run tests. */
    for (unsigned s = 0; s < ARRAY_SIZE(sample_counts); s++) {
       unsigned samples = sample_counts[s];
 
-      if (ctx->supported_color_sample_counts & samples &&
-          (test_flavor == -1 || (test_flavor == TEST_NORMAL && test_samples == samples))) {
+      if (ctx->supported_color_sample_counts & samples) {
          run_test_pix(ctx, samples, compiled_shaders, desc_set, TEST_NORMAL, total_fs_invoc,
                       raster_indexbuf);
       }
    }
 
-   if (test_flavor == -1 || test_flavor == TEST_MULTIVIEW) {
-      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, total_fs_invoc,
-                   raster_indexbuf);
-   }
+   run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_MULTIVIEW, total_fs_invoc,
+                raster_indexbuf);
 
-   if (test_flavor == -1 || test_flavor == TEST_IMAGE_3D) {
-      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, total_fs_invoc,
-                   raster_indexbuf);
-   }
+   run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_IMAGE_3D, total_fs_invoc,
+                raster_indexbuf);
 
-   if (test_flavor == -1 || test_flavor == TEST_LINEAR) {
-      run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_LINEAR, total_fs_invoc,
-                   raster_indexbuf);
-   }
+   run_test_pix(ctx, 1, compiled_shaders, desc_set, TEST_LINEAR, total_fs_invoc,
+                raster_indexbuf);
 }

@@ -846,7 +846,7 @@ regex_compile(const char *pattern)
        PCRE2_UCHAR message[256];
        pcre2_get_error_message(err, message, sizeof message);
 
-       error("regex '%s' has error at offset %zu: %s\n", pattern, (size_t)error_offset,
+       error("Regular expression '%s' has error at offset %zu: %s\n", pattern, (size_t)error_offset,
              (char *)message);
    }
 
