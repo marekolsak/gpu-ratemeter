@@ -81,7 +81,6 @@ static const struct {
 typedef enum {
    OPTION_BOOL,
    OPTION_UINT,
-   OPTION_STRING,
    OPTION_MEMSIZE,
    OPTION_REGEX,
 } option_type;
@@ -173,12 +172,6 @@ parse_option(program_options *options, const option_desc *option, const char *ar
       if (!strncmp(arg, option->name, len)) {
          sscanf(arg + len, "%u",
                 (unsigned*)((uint8_t*)options + option->offset));
-         return true;
-      }
-      return false;
-   case OPTION_STRING:
-      if (!strncmp(arg, option->name, len)) {
-         *(const char**)((uint8_t*)options + option->offset) = arg + len;
          return true;
       }
       return false;
