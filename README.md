@@ -1,10 +1,6 @@
-[[_TOC_]]
+# gpu-ratemeter — GPU Performance Microbenchmark
 
-The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-ratemeter.
-
-# Introduction and Project Vision
-
-This is an engineering non-consumer command-line GPU microbenchmark that isolates and measures the performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
+This is an engineering non-consumer command-line GPU microbenchmark that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
 
 The project has 2 goals:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
@@ -31,6 +27,9 @@ Examples of result interpretation:
 - If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the blit implementation in that driver may be suboptimal.
 - If Vulkan pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the dynamic state handling in that driver may be suboptimal.
 
+The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-ratemeter. An indexable mirror is at https://github.com/marekolsak/gpu-ratemeter.
+
+[[_TOC_]]
 
 # How to Run
 
