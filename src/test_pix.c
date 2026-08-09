@@ -931,7 +931,7 @@ get_pipeline_name(char *out, unsigned max_out_length, unsigned samples, test_fla
 
    get_pipeline_name_prefix(prefix, sizeof(prefix), samples, test_flavor);
 
-   snprintf(out, max_out_length, ".%s%s%s%s%s%s%s", prefix, pipeline->name1, pipeline->name2,
+   snprintf(out, max_out_length, "%s%s%s%s%s%s%s", prefix, pipeline->name1, pipeline->name2,
             pipeline->name3, pipeline->name4, pipeline->name5, pipeline->name6);
 }
 
@@ -963,17 +963,17 @@ run_test_pix(api_context *ctx, unsigned samples,
       get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, &pipelines[p]);
 
       /* The pipeline name determines the states. */
-      bool colormask0 = strstr(pipeline_name, ".colormask=0");
-      bool colormask_x = strstr(pipeline_name, ".colormask=x");
+      bool colormask0 = strstr(pipeline_name, "colormask=0");
+      bool colormask_x = strstr(pipeline_name, "colormask=x");
       bool sample_shading = strstr(pipeline_name, "_sample") || /* per-sample interpolation */
                             strstr(pipeline_name, "sampleid") ||
                             strstr(pipeline_name, "samplepos");
-      bool cull_back = strstr(pipeline_name, ".cull_back");
+      bool cull_back = strstr(pipeline_name, "cull_back");
 
       if (!pipelines[p].fs_source ||
           !test_filter(ctx, samples, test_flavor, &pipelines[p]) ||
-          (!multiview && strstr(pipeline_name, ".view_index")) ||
-          (multiview && strstr(pipeline_name, ".layer")) ||
+          (!multiview && strstr(pipeline_name, "view_index")) ||
+          (multiview && strstr(pipeline_name, "layer")) ||
           (sample_shading && samples == 1 && !strstr(pipeline_name, "1persp_sample"))) {
          skip_pipeline[p] = true;
          continue;
@@ -1025,11 +1025,11 @@ run_test_pix(api_context *ctx, unsigned samples,
          .sample_shading = sample_shading,
          .samplemask = (1 << samples) - 1,
          .depth_enabled = strstr(pipeline_name, "zbuf") && !strstr(pipeline_name, "z_disabled"),
-         .depth_write_enabled = strstr(pipeline_name, ".zwrite"),
-         .depth_compare_op = strstr(pipeline_name, ".ztest_never") ? VK_COMPARE_OP_NEVER :
-                             strstr(pipeline_name, ".ztest_less") ? VK_COMPARE_OP_LESS :
-                             strstr(pipeline_name, ".ztest_equal") ? VK_COMPARE_OP_EQUAL :
-                             strstr(pipeline_name, ".ztest_notequal") ? VK_COMPARE_OP_NOT_EQUAL :
+         .depth_write_enabled = strstr(pipeline_name, "zwrite"),
+         .depth_compare_op = strstr(pipeline_name, "ztest_never") ? VK_COMPARE_OP_NEVER :
+                             strstr(pipeline_name, "ztest_less") ? VK_COMPARE_OP_LESS :
+                             strstr(pipeline_name, "ztest_equal") ? VK_COMPARE_OP_EQUAL :
+                             strstr(pipeline_name, "ztest_notequal") ? VK_COMPARE_OP_NOT_EQUAL :
                                                                         VK_COMPARE_OP_ALWAYS,
          .alpha_to_coverage = strstr(pipeline_name, "a2c"),
          .colormask = colormask0 ? 0 : colormask_x ? 0x1 : 0xf,
@@ -1166,8 +1166,8 @@ run_test_pix(api_context *ctx, unsigned samples,
          /* The pipeline name determines the states. */
          bool helper_invoc = strstr(pipeline_name, "helper_invoc");
          bool a2c = strstr(pipeline_name, "a2c");
-         bool colormask0 = strstr(pipeline_name, ".colormask=0");
-         bool colormask_x = strstr(pipeline_name, ".colormask=x");
+         bool colormask0 = strstr(pipeline_name, "colormask=0");
+         bool colormask_x = strstr(pipeline_name, "colormask=x");
          bool blend = strstr(pipeline_name, "blend");
          bool shading_rate = strstr(pipeline_name, "shading_rate");
          bool fully_covered = strstr(pipeline_name, "fully_covered");
@@ -1402,7 +1402,7 @@ run_test_pix(api_context *ctx, unsigned samples,
       }
    }
 
-   const unsigned name_indent = 87;
+   const unsigned name_indent = 86;
    printf("%-*s", name_indent, "Formats");
 
    unsigned off = 0;
@@ -1446,7 +1446,7 @@ run_test_pix(api_context *ctx, unsigned samples,
       get_pipeline_name(pipeline_name, sizeof(pipeline_name), samples, test_flavor, &pipelines[p]);
 
       char name[512];
-      snprintf(name, sizeof(name), "%s%s", ctx->options.name_prefix, pipeline_name);
+      snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, pipeline_name);
       printf("%-*s", name_indent, name);
 
       bool raster = strstr(pipeline_name, "raster");
