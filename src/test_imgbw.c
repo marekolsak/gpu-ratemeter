@@ -558,6 +558,31 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                   continue;
 
                for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
+                  bool filter_match = false;
+
+                  /* Check the subtest regex filter. We don't know the fill and region, so check
+                   * all of them.
+                   */
+                  for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
+                     for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
+                        char name[128];
+                        get_subtest_name(ctx, name, sizeof(name),
+                                         test_index, img_type, format_index, samples, layout,
+                                         fill_option, region_option);
+
+                        if (!ctx->options.regex_subtest_filter ||
+                            regex_matches(ctx->options.regex_subtest_filter, name)) {
+                           filter_match = true;
+                           break;
+                        }
+                     }
+                     if (filter_match)
+                        break;
+                  }
+
+                  if (!filter_match)
+                     continue;
+
                   /* Skip invalid combinations and unimportant tests. */
                   if (layout != LAYOUT_DEFAULT &&
                       (test_index != TEST_COPY || samples >= 2 || multiple_attachments ||
@@ -751,6 +776,27 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                   }
 
                   for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
+                     bool filter_match = false;
+
+                     /* Check the subtest regex filter. We don't know the region, so check all of
+                      * them.
+                      */
+                     for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
+                        char name[128];
+                        get_subtest_name(ctx, name, sizeof(name),
+                                         test_index, img_type, format_index, samples, layout,
+                                         fill_option, region_option);
+
+                        if (!ctx->options.regex_subtest_filter ||
+                            regex_matches(ctx->options.regex_subtest_filter, name)) {
+                           filter_match = true;
+                           break;
+                        }
+                     }
+
+                     if (!filter_match)
+                        continue;
+
                      /* Skip invalid and unimportant tests. */
                      if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                         continue;
