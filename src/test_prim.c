@@ -1462,8 +1462,8 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
 }
 
 static void
-get_test_name(api_context *ctx, char *out, unsigned out_size, const test_state *state,
-              const test_info *test)
+get_subtest_name(api_context *ctx, char *out, unsigned out_size, const test_state *state,
+                 const test_info *test)
 {
    char cull_info1[32] = {0}, cull_method[32], special2[32];
    const char *geom = NULL;
@@ -1507,11 +1507,11 @@ get_test_name(api_context *ctx, char *out, unsigned out_size, const test_state *
    }
 
    if (test->cull_method == SMALL_TRIS) {
-      snprintf(cull_info1, sizeof(cull_info1), ".%u_small_tris_pp",
+      snprintf(cull_info1, sizeof(cull_info1), "%u_small_tris_pp",
                (unsigned)(2.0 / (triangle_sizes_in_pixels[test->small_triangle_size_index] *
                                  triangle_sizes_in_pixels[test->small_triangle_size_index])));
    } else {
-      snprintf(cull_info1, sizeof(cull_info1), ".cull_%u%%", test->cull_percentage);
+      snprintf(cull_info1, sizeof(cull_info1), "cull_%u%%", test->cull_percentage);
    }
 
    snprintf(cull_method, sizeof(cull_method), "%s",
@@ -1533,7 +1533,7 @@ get_test_name(api_context *ctx, char *out, unsigned out_size, const test_state *
             test->special2 == SPECIAL2_OUTPUT_LAYER ? ".output_layer" :
             test->special2 == SPECIAL2_OUTPUT_VRS1x1 ? ".output_vrs1x1" : "INVALID");
 
-   snprintf(out, out_size, "%s%s%s%s%s", ctx->options.name_prefix, cull_info1, geom,
+   snprintf(out, out_size, "%s%s%s%s", cull_info1, geom,
             cull_method, special2);
 }
 
@@ -1543,11 +1543,11 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
    if (test_stage != REPORT && get_mesh_wg_size(test->geom_style) > ctx->max_mesh_workgroup_size)
       return;
 
-   char test_name[1024];
-   get_test_name(ctx, test_name, sizeof(test_name), state, test);
+   char subtest[1024];
+   get_subtest_name(ctx, subtest, sizeof(subtest), state, test);
 
    if (ctx->options.regex_subtest_filter &&
-       !regex_matches(ctx->options.regex_subtest_filter, test_name))
+       !regex_matches(ctx->options.regex_subtest_filter, subtest))
       return;
 
    switch (test_stage) {
@@ -1572,7 +1572,8 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
       break;
 
    case REPORT: {
-      printf("%-62s", test_name);
+      printf("%s.%-*s", ctx->options.name_prefix, (int)(61 - strlen(ctx->options.name_prefix)),
+             subtest);
 
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          if (!state->fs[v])
