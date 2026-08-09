@@ -481,10 +481,9 @@ get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_inde
                  VkImageType img_type, unsigned format_index, unsigned samples, unsigned layout,
                  unsigned fill_option, unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%s.%ud.%s.%us.fill_%s%s.region_%s",
-            ctx->options.name_prefix, test_strings[test_index], img_type + 1,
-            formats[format_index].name, samples, fill_strings[fill_option], layout_strings[layout],
-            region_strings[region_option]);
+   snprintf(out, max_len, "%s.%ud.%s.%us.fill_%s%s.region_%s",
+            test_strings[test_index], img_type + 1, formats[format_index].name, samples,
+            fill_strings[fill_option], layout_strings[layout], region_strings[region_option]);
 }
 
 static void
@@ -505,11 +504,12 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
 
       puts("");
    } else {
-      char name[128];
+      char subtest[128];
 
-      get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index, samples, layout,
+      get_subtest_name(ctx, subtest, sizeof(subtest), test_index, img_type, format_index, samples, layout,
                        fill_option, region_option);
-      printf("%-*s", name_indent, name);
+      printf("%s.%-*s",
+             ctx->options.name_prefix, (int)(name_indent - strlen(ctx->options.name_prefix) - 1), subtest);
    }
 }
 
@@ -1127,6 +1127,9 @@ test_imgbw(api_context *ctx)
    unsigned num_tests = 0;
 
    run(ctx, COUNT_TESTS, &num_tests, NULL);
+
+   if (!num_tests)
+      return;
 
    api_query_pool *timestamps = ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
 
