@@ -650,6 +650,7 @@ api_context *vk_create_context(const program_options *options);
 /* Tests. */
 void test_bufbw(api_context *ctx);
 void test_imgbw(api_context *ctx);
+void test_iobw(api_context *ctx);
 void test_latency(api_context *ctx);
 void test_pix(api_context *ctx);
 void test_prim(api_context *ctx);

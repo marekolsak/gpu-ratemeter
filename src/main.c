@@ -147,6 +147,7 @@ static const option_desc prim_options[] = {
 static const test_desc tests[] = {
    {"bufbw", test_bufbw, true, ARRAY_SIZE(bufbw_options), bufbw_options},
    {"imgbw", test_imgbw, true, ARRAY_SIZE(imgbw_options), imgbw_options},
+   //{"iobw", test_iobw, true, 0, NULL},
    {"latency", test_latency, false, ARRAY_SIZE(latency_options), latency_options},
    {"pix", test_pix, false, ARRAY_SIZE(pix_options), pix_options},
    {"pixbw", test_pix, true, ARRAY_SIZE(pix_options), pix_options},
