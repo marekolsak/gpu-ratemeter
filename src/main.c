@@ -80,8 +80,7 @@ static const struct {
 
 typedef enum {
    OPTION_BOOL,
-   OPTION_UINT,
-   OPTION_MEMSIZE,
+   OPTION_UINT64,
    OPTION_REGEX,
 } option_type;
 
@@ -101,15 +100,15 @@ typedef struct {
 
 static const option_desc common_options[] = {
    /* Common to all tests. */
-   {OPTION_UINT, "-baserate=", offsetof(program_options, base_rate)},
-   {OPTION_UINT, "-maxvalidresult=", offsetof(program_options, max_valid_result)},
+   {OPTION_UINT64, "-baserate=", offsetof(program_options, base_rate)},
+   {OPTION_UINT64, "-maxvalidresult=", offsetof(program_options, max_valid_result)},
 
    /* OpenGL only */
    {OPTION_BOOL, "-gl-tiling-linear", offsetof(program_options, gl_tiling_linear)},
 
    /* Vulkan only */
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
-   {OPTION_UINT, "-device=", offsetof(program_options, device)},
+   {OPTION_UINT64, "-device=", offsetof(program_options, device)},
 };
 
 static const option_desc bufbw_options[] = {
@@ -126,21 +125,21 @@ static const option_desc latency_options[] = {
    {OPTION_BOOL, "-int8", offsetof(program_options, int8)},
    {OPTION_BOOL, "-sparse-bound", offsetof(program_options, sparse_bound)},
    {OPTION_BOOL, "-sparse-unbound", offsetof(program_options, sparse_unbound)},
-   {OPTION_UINT, "-clockbits=", offsetof(program_options, clock_bits)},
-   {OPTION_MEMSIZE, "-spacing=", offsetof(program_options, spacing)},
-   {OPTION_MEMSIZE, "-maxsize=", offsetof(program_options, max_size)},
+   {OPTION_UINT64, "-clockbits=", offsetof(program_options, clock_bits)},
+   {OPTION_UINT64, "-maxsize=", offsetof(program_options, max_size)},
+   {OPTION_UINT64, "-spacing=", offsetof(program_options, spacing)},
 };
 
 static const option_desc pix_options[] = {
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-samplerate", offsetof(program_options, samplerate)},
-   {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
+   {OPTION_UINT64, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_REGEX, "-format=", offsetof(program_options, regex_format)},
 };
 
 static const option_desc prim_options[] = {
-   {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
+   {OPTION_UINT64, "-freq=", offsetof(program_options, freq_mhz)},
 };
 
 static const test_desc tests[] = {
@@ -168,14 +167,7 @@ parse_option(program_options *options, const option_desc *option, const char *ar
          return true;
       }
       return false;
-   case OPTION_UINT:
-      if (!strncmp(arg, option->name, len)) {
-         sscanf(arg + len, "%u",
-                (unsigned*)((uint8_t*)options + option->offset));
-         return true;
-      }
-      return false;
-   case OPTION_MEMSIZE:
+   case OPTION_UINT64:
       if (!strncmp(arg, option->name, len)) {
          uint64_t *value = (uint64_t*)((uint8_t*)options + option->offset);
          const char *tmp_arg = arg + len;

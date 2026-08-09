@@ -80,6 +80,8 @@ API identifiers:
 
 ### Parameters
 
+All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera, respectively.
+
 Common parameters:
 - `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
@@ -98,7 +100,6 @@ Vulkan parameters:
 
 `latency` parameters:
 - `-maxsize=N` (**required**): The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
-Use `K`, `M`, `G` suffixes for kilo, mega, giga, respectively.
 - `-spacing=N` (**required**): All load addresses are multiples of this number. This should be a power of two and <= cache line size. To make the test faster, it's recommended to set this exactly to the cache line size.
 `maxsize / spacing` is the number of executed load indirections of each subtest, so it affects test length, and it also implies that the shader visits every load
 address that's a multiple of `spacing` only once in the largest buffer. Thus, larger spacing reduces the number of loads needed to traverse the largest buffer, while very small spacing with very large buffers can lead to a GPU timeout.

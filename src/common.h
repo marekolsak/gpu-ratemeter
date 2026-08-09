@@ -378,7 +378,7 @@ typedef struct {
    bool report_bandwidth;
 
    /* All other options have test-specific meaning. */
-   /* Bool options. */
+   /* BOOL options. */
    bool bda;
    bool compute;
    bool gl_tiling_linear;
@@ -391,21 +391,16 @@ typedef struct {
    bool sparse_unbound;
    bool transfer;
 
-   /* Uint options. */
-   unsigned clock_bits;
-   unsigned device; /* device index */
-   unsigned freq_mhz;
-   unsigned base_rate;
-   unsigned max_valid_result;
-
-   /* String options. */
-   /* None so far. */
-
-   /* Memory size options. */
-   unsigned spacing;
+   /* UINT64 options. */
+   uint64_t base_rate;
+   uint64_t clock_bits;
+   uint64_t device; /* device index */
+   uint64_t freq_mhz;
+   uint64_t max_valid_result;
    uint64_t max_size;
+   uint64_t spacing;
 
-   /* Regular expression options. */
+   /* REGEX regular expression options. */
    const void *regex_format;
 } program_options;
 

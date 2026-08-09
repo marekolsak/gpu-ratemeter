@@ -11,6 +11,7 @@
 
 #include <assert.h>
 #include <alloca.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -2186,7 +2187,7 @@ vk_create_context(const program_options *options)
 
    printf("Physical devices: %u\n", count);
    if (ctx->options.device >= count)
-      error("Device %u doesn't exist.", ctx->options.device);
+      error("Device %"PRIu64" doesn't exist.", ctx->options.device);
 
    VkPhysicalDevice *devices = alloca(sizeof(devices[0]) * count);
    vk_check(vkEnumeratePhysicalDevices(instance, &count, devices));

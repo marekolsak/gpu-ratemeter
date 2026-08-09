@@ -52,7 +52,7 @@ create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, u
 
    int len = snprintf(source, ARRAY_SIZE(source),
                       "#version 450 \n"
-                      "#define CLOCK_BITS %u \n"
+                      "#define CLOCK_BITS %"PRIu64" \n"
                       "#define SPACING %u \n"
                       "#define MAX_UINTS %uu \n"
                       "#define UNIFORM %s \n"
