@@ -611,6 +611,9 @@ test_latency(api_context *ctx)
 
    run(ctx, INIT, &state);
 
+   if (!state.num_tests)
+      return;
+
    printf("Executing tests ...");
    fflush(stdout);
    run(ctx, RUN, &state);

@@ -423,6 +423,9 @@ test_bufbw(api_context *ctx)
 
    run(ctx, COUNT_TESTS, &state);
 
+   if (!state.num_tests)
+      return;
+
    /* Create timestamp queries. */
    state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
 
