@@ -8,7 +8,7 @@ This is an engineering non-consumer command-line GPU microbenchmark that isolate
 
 The project has 2 goals:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
-2. Infer detailed information about undocumented GPU architectures through highly artifical tests.
+2. Infer detailed information about undocumented GPU architectures through highly artificial tests.
 
 It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, rays per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to show how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
