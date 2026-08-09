@@ -2,7 +2,7 @@
 
 This is an engineering non-consumer command-line GPU microbenchmark that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
 
-The project has 2 goals:
+The project has the following goals:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
 2. Infer detailed information about undocumented GPU architectures through highly artificial tests.
 
@@ -27,7 +27,9 @@ Examples of result interpretation:
 - If a driver sustains only 300 GB/s for image blits while the maximum memory bandwidth is 500 GB/s, the blit implementation in that driver may be suboptimal.
 - If Vulkan pipeline objects using dynamic state are 2x slower than equivalent objects using static state, the dynamic state handling in that driver may be suboptimal.
 
-The official repository is hosted at https://gitlab.freedesktop.org/mesa/gpu-ratemeter. An indexable mirror is at https://github.com/marekolsak/gpu-ratemeter.
+The official repository is at https://gitlab.freedesktop.org/mesa/gpu-ratemeter. An indexable robot-friendly mirror is at https://github.com/marekolsak/gpu-ratemeter.
+
+# Table of Contents
 
 [[_TOC_]]
 
@@ -148,7 +150,7 @@ Decoding subtest names:
 - `a2c`: alpha-to-coverage is enabled
 - `vrs1x2`, `vrs2x1`, `vrs2x2`: the given amount of VRS
 - `rasterN`: fill the screen with triangles of a specific size; N is the percentage of non-helper FS invocations relating to the size of triangles, see the description in the subsection below
-- `cyclesN`: the fragment shader waits for N clock cycles to pass before finishing using the subgroup clock; this shows how fragment shaders of different sizes affect pixel throughput and determines when the GPU is limited by the fragment shader execution time and when it's limited the fixed-function pixel pipeline throughput
+- `cyclesN`: the fragment shader waits for N clock cycles to pass before finishing using the subgroup clock; this measures how fragment shaders of different sizes affect pixel throughput and shows when the GPU is limited by the fragment shader execution time and when it's limited by the fixed-function pixel pipeline throughput
 - `const_fill`: the color output is a constant color
 - `cull_back`: back-face culling is enabled (with no effect - the full-screen triangle is front-facing)
 - Used system values are indicated as follows:

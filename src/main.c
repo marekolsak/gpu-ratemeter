@@ -6,13 +6,13 @@
 /* TODO:
  *
  * Tests:
- * - iobw: shader input and output throughput in GB/s, including transform feedback (port shader-io-rate)
  * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword, clocks/command
  * - rt: ray tracing performance in rays/clock
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
+ * - remove redundant tests from piglit and radeonsi
  *
  * APIs:
  * - DX12
@@ -25,10 +25,14 @@
  * - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  * - no barrier, uncached
  *
+ * - iobw: shader input and output throughput in GB/s, including transform feedback
+ *   - finish porting from GL
+ *
  * latency:
  * - instruction fetch (jump chasing)
  *
  * pix:
+ * - for cycles tests, try to run FS with increased register usage
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
@@ -140,9 +144,6 @@ static const option_desc prim_options[] = {
    {OPTION_UINT, "-freq=", offsetof(program_options, freq_mhz)},
 };
 
-static const option_desc sparsebind_options[] = {
-};
-
 static const test_desc tests[] = {
    {"bufbw", test_bufbw, true, ARRAY_SIZE(bufbw_options), bufbw_options},
    {"imgbw", test_imgbw, true, ARRAY_SIZE(imgbw_options), imgbw_options},
@@ -151,7 +152,7 @@ static const test_desc tests[] = {
    {"pixbw", test_pix, true, ARRAY_SIZE(pix_options), pix_options},
    {"prim", test_prim, false, ARRAY_SIZE(prim_options), prim_options},
    {"sanity", test_sanity, false, 0, NULL},
-   {"sparsebind", test_sparsebind, true, ARRAY_SIZE(sparsebind_options), sparsebind_options},
+   {"sparsebind", test_sparsebind, true, 0, NULL},
 };
 
 static bool
