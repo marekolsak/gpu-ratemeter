@@ -19,19 +19,23 @@
  * - DX11
  *
  * imgbw:
+ * - D32F clear with Z outside [0, 1]
+ * - consider reporting pixels/clock
  * - 2D array images
  * - transfer queue
  * - buffer-to-image, image-to-buffer
  * - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  * - no barrier, uncached
  *
- * - iobw: shader input and output throughput in GB/s, including transform feedback
- *   - finish porting from GL
+ * iobw (Shader Input and Output Bandwidth in GB/s):
+ * - finish porting from GL
+ * - write README
  *
  * latency:
  * - instruction fetch (jump chasing)
  *
  * pix:
+ * - consider enabling bandwidth results as a parameter instead of having separate pixbw
  * - for cycles tests, try to run FS with increased register usage
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead

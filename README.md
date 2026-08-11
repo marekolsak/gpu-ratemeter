@@ -2,7 +2,7 @@
 
 This is an engineering non-consumer command-line GPU microbenchmark that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
 
-The project has the following goals:
+Some of the project goals are:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
 2. Infer detailed information about undocumented GPU architectures through highly artificial tests.
 
