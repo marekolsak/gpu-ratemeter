@@ -32,7 +32,7 @@
 #define NUM_VERTICES_PER_ITER	(1000 * 3)
 #define MAX_VERTICES_PER_DRAW	(INT32_MAX - 1) /* divisible by 3 */
 
-enum {
+typedef enum {
    TEST_VS_IN,
    TEST_VS_OUT_XFB,
    TEST_VS_OUT_FS,
@@ -40,11 +40,7 @@ enum {
    TEST_TCS_OUT,
    TEST_TCS_PATCH_OUT,
    NUM_TEST_SETS,
-};
-
-static VkPrimitiveTopology topology;
-static unsigned max_vertices_per_draw;
-static bool uses_xfb;
+} test_type;
 
 /* Declare num_comps components of IO in vec4s except the last one, whose type
  * is the number of components left.
@@ -178,24 +174,51 @@ generate_input_reduce_fs(char *code, unsigned max_size, unsigned num_comps,
    return offset;
 }
 
+#define NUM_ITERATIONS           100
+
+typedef struct {
+   api_framebuffer *fb;
+   api_query_pool *timestamps;
+} test_state;
+
 static void
-draw(unsigned iterations)
+run_test(api_context *ctx, test_state *state, test_type test, unsigned max_vertices_per_draw)
 {
-   uint64_t num_vertices = iterations * (uint64_t)NUM_VERTICES_PER_ITER;
+   const uint64_t num_vertices = NUM_ITERATIONS * (uint64_t)NUM_VERTICES_PER_ITER;
+   const unsigned warmup_iterations = NUM_ITERATIONS / 4;
 
-   assert(max_vertices_per_draw % 3 == 0);
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = state->fb});
 
-   for (uint64_t start = 0; start < num_vertices; start += max_vertices_per_draw) {
-      if (uses_xfb)
-         glBeginTransformFeedback(topology);
-      glDrawArrays(topology, 0, MIN2(num_vertices - start, max_vertices_per_draw));
-      if (uses_xfb)
-         glEndTransformFeedback();
+   for (unsigned i = 0; i < warmup_iterations + NUM_ITERATIONS; i++) {
+      if (i == warmup_iterations) {
+         ctx->end_render_pass(ctx);
+
+         ctx->write_next_query_value(ctx, state->timestamps);
+         ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = state->fb});
+      }
+
+      assert(max_vertices_per_draw % 3 == 0);
+
+      for (uint64_t start = 0; start < num_vertices; start += max_vertices_per_draw) {
+         if (test == TEST_VS_OUT_XFB)
+            ctx->begin_transform_feedback(ctx);
+
+         ctx->draw(ctx, &(api_draw_desc){
+                      .count = MIN2(num_vertices - start, max_vertices_per_draw),
+                      .instance_count = 1,
+                   });
+
+         if (test == TEST_VS_OUT_XFB)
+            ctx->end_transform_feedback(ctx);
+      }
    }
+
+   ctx->end_render_pass(ctx);
+   ctx->write_next_query_value(ctx, state->timestamps);
 }
 
 static void
-test_and_print_result(unsigned vertex_size, unsigned test)
+print_result(api_context *ctx, test_state *state, unsigned vertex_size, test_type test)
 {
    double iters_per_sec = perf_measure_gpu_rate(draw, 0.01);
    double verts_per_sec = iters_per_sec * NUM_VERTICES_PER_ITER;
@@ -225,7 +248,7 @@ test_iobw(api_context *ctx)
                          "}\n";
    api_shader *dummy_fs = ctx->create_shader(ctx, dummy_fs_code, api_shader_fs);
 
-   for (unsigned test = 0; test < NUM_TEST_SETS; test++) {
+   for (test_type test = 0; test < NUM_TEST_SETS; test++) {
       /*if (skip_test)
          continue;*/
 
@@ -253,8 +276,11 @@ test_iobw(api_context *ctx)
             prog_vs_in[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
+                                           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                            .vs = vs,
                                            .fs = dummy_fs,
+                                           .depth_enabled = true,
+                                           .depth_compare_op = VK_COMPARE_OP_NEVER,
                                         });
          }
          break;
@@ -287,7 +313,9 @@ test_iobw(api_context *ctx)
             prog_vs_out_xfb[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
+                                           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                            .vs = vs,
+                                           .rasterizer_discard = true,
                                            .fs = dummy_fs
                                         });
          }
@@ -313,6 +341,7 @@ test_iobw(api_context *ctx)
             prog_vs_out_fs[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
+                                           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                            .vs = vs,
                                            .fs = fs,
                                         });
@@ -368,6 +397,7 @@ test_iobw(api_context *ctx)
                prog_gs_out[amp_factor][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
+                                              .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                               .vs = vs,
                                               .gs = gs,
                                               .fs = fs,
@@ -433,6 +463,8 @@ test_iobw(api_context *ctx)
                prog_tcs_out[tess_level_outer][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
+                                              .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+                                              .patch_control_points = 3,
                                               .vs = vs,
                                               .tcs = tcs,
                                               .tes = tes,
@@ -497,6 +529,8 @@ test_iobw(api_context *ctx)
                prog_tcs_patch_out[tess_level_outer][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
+                                              .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+                                              .patch_control_points = 3,
                                               .vs = vs,
                                               .tcs = tcs,
                                               .tes = tes,
@@ -505,6 +539,8 @@ test_iobw(api_context *ctx)
             }
          }
          break;
+      default:
+         error("invalid case");
       }
    }
 
@@ -515,8 +551,6 @@ test_iobw(api_context *ctx)
    /*****************
     * Run the test.
     *****************/
-
-   /* TODO: Bind a FB_SIZE x FB_SIZE framebuffer with an RGBA8 color attachment and D32F depth attachment. */
 
    GLuint vao;
    glGenVertexArrays(1, &vao);
@@ -529,16 +563,29 @@ test_iobw(api_context *ctx)
    glBufferData(GL_ARRAY_BUFFER, 16, zeroed, GL_STATIC_DRAW);
    glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-   glPatchParameteri(GL_PATCH_VERTICES, 3);
-   glClearDepth(0.5);
+   test_state state = {0};
 
-   for (unsigned test = 0; test < NUM_TEST_SETS; test++) {
+   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                                           FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                           api_heap_device);
+   api_image *zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
+                                        FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                        api_heap_device);
+   state.fb = ctx->create_framebuffer(ctx, 1, &colorbuf, zsbuf, FB_SIZE, FB_SIZE, 1, 0x1);
+
+   /* Clear the framebuffer. */
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                             .fb = state.fb,
+                             .clear = true,
+                             .clear_values.zs.depth = 0.5,
+                          });
+   ctx->end_render_pass(ctx);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+
+   for (test_type test = 0; test < NUM_TEST_SETS; test++) {
       /*if (skip_test)
          continue;*/
-
-      glDepthMask(GL_TRUE);
-      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      glDepthMask(GL_FALSE);
 
       /* Reset vertex attributes to stride=0. */
       for (unsigned i = 0; i < MAX_VEC4S; i++) {
@@ -549,23 +596,7 @@ test_iobw(api_context *ctx)
       }
       glBindVertexBuffer(0, buf_single_vertex, 0, 0);
 
-      /* Set other states. */
-      if (test == TEST_VS_IN) {
-         glEnable(GL_DEPTH_TEST);
-         glDepthFunc(GL_NEVER);
-      } else {
-         glDisable(GL_DEPTH_TEST);
-      }
-
-      if (test == TEST_VS_OUT_XFB)
-         glEnable(GL_RASTERIZER_DISCARD);
-      else
-         glDisable(GL_RASTERIZER_DISCARD);
-
-      topology = test == TEST_TCS_OUT || test == TEST_TCS_PATCH_OUT ?
-                    VK_PRIMITIVE_TOPOLOGY_PATCH_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-      max_vertices_per_draw = MAX_VERTICES_PER_DRAW;
-      uses_xfb = false;
+      unsigned max_vertices_per_draw = MAX_VERTICES_PER_DRAW;
 
       switch (test) {
       case TEST_VS_IN:
@@ -625,7 +656,8 @@ test_iobw(api_context *ctx)
                   max_vertices_per_draw -= max_vertices_per_draw % 3;
                }
 
-               test_and_print_result(vertex_size, test);
+               run_test(ctx, &state, test, max_vertices_per_draw);
+               print_result(ctx, &state, vertex_size, test);
 
                if (interleaved) {
                   glDeleteBuffers(1, &buf_interleaved);
@@ -642,7 +674,6 @@ test_iobw(api_context *ctx)
          /* VS output stores via transform feedback (VS inputs have stride=0, rasterizer discard) */
          puts("VS OUTPUTS VIA XFB");
          puts("Vec4s, Interleaved");
-         uses_xfb = true;
 
          for (unsigned num_comps = 1; num_comps <= MAX_COMPS; num_comps++) {
             unsigned vertex_size = num_comps * 4;
@@ -653,14 +684,15 @@ test_iobw(api_context *ctx)
             glBufferData(GL_ARRAY_BUFFER, BO_ALLOC_SIZE, NULL, GL_STATIC_DRAW);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-            glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, xfb_buf);
+            ctx->bind_transform_feedback_buffer(ctx, xfb_buf, 0, xfb_buf->size);
 
             max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
             max_vertices_per_draw -= max_vertices_per_draw % 3;
 
             printf("%5.2f", num_comps / 4.0);
             ctx->bind_gfx_pipeline(ctx, prog_vs_out_xfb[num_comps - 1]);
-            test_and_print_result(vertex_size, test);
+            run_test(ctx, &state, test, max_vertices_per_draw);
+            print_result(ctx, &state, vertex_size, test);
             puts("");
 
             glDeleteBuffers(1, &xfb_buf);
@@ -677,7 +709,8 @@ test_iobw(api_context *ctx)
 
             printf("%5.2f", num_comps / 4.0);
             ctx->bind_gfx_pipeline(ctx, prog_vs_out_fs[num_comps - 1]);
-            test_and_print_result(vertex_size, test);
+            run_test(ctx, &state, test, max_vertices_per_draw);
+            print_result(ctx, &state, vertex_size, test);
             puts("");
          }
          break;
@@ -693,7 +726,8 @@ test_iobw(api_context *ctx)
             printf("%5.2f", num_comps / 4.0);
             for (unsigned amp_factor = 0; amp_factor < 3; amp_factor++) {
                ctx->bind_gfx_pipeline(ctx, prog_gs_out[amp_factor][num_comps - 1]);
-               test_and_print_result(vertex_size * (amp_factor + 1), test);
+               run_test(ctx, &state, test, max_vertices_per_draw);
+               print_result(ctx, &state, vertex_size * (amp_factor + 1), test);
             }
             puts("");
          }
@@ -710,7 +744,8 @@ test_iobw(api_context *ctx)
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
                ctx->bind_gfx_pipeline(ctx, prog_tcs_out[tf][num_comps - 1]);
-               test_and_print_result(vertex_size, test);
+               run_test(ctx, &state, test, max_vertices_per_draw);
+               print_result(ctx, &state, vertex_size, test);
             }
             puts("");
          }
@@ -726,7 +761,8 @@ test_iobw(api_context *ctx)
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
                ctx->bind_gfx_pipeline(ctx, prog_tcs_patch_out[tf][num_comps - 1]);
-               test_and_print_result(patch_size, test);
+               run_test(ctx, &state, test, max_vertices_per_draw);
+               print_result(ctx, &state, patch_size, test);
             }
             puts("");
          }
