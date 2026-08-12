@@ -255,6 +255,8 @@ get_gl_internalformat(VkFormat format)
    case VK_FORMAT_R32G32B32A32_SINT:
       return GL_RGBA32I;
 
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
+      return GL_DEPTH_COMPONENT24;
    case VK_FORMAT_D32_SFLOAT:
       return GL_DEPTH_COMPONENT32F;
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
@@ -339,6 +341,7 @@ get_gl_format(VkFormat format)
    case VK_FORMAT_R32G32B32A32_SINT:
       return GL_RGBA_INTEGER;
 
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
    case VK_FORMAT_D32_SFLOAT:
       return GL_DEPTH_COMPONENT;
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
@@ -423,6 +426,7 @@ get_gl_type(VkFormat format)
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
       return GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
 
+   case VK_FORMAT_X8_D24_UNORM_PACK32:
    case VK_FORMAT_R32_UINT:
    case VK_FORMAT_R32G32_UINT:
    case VK_FORMAT_R32G32B32_UINT:
