@@ -227,6 +227,7 @@ typedef struct {
 typedef struct {
    VkPrimitiveTopology topology;
    bool primitive_restart;
+   unsigned patch_control_points;
 
    VkCullModeFlags cull_mode;
    unsigned clipdist_enable_mask; /* GL only */
@@ -620,6 +621,7 @@ typedef struct api_context {
    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+   PFN_vkCmdSetPatchControlPointsEXT vkCmdSetPatchControlPointsEXT;
    PFN_vkCmdBindTransformFeedbackBuffersEXT vkCmdBindTransformFeedbackBuffersEXT;
    PFN_vkCmdBeginTransformFeedbackEXT vkCmdBeginTransformFeedbackEXT;
    PFN_vkCmdEndTransformFeedbackEXT vkCmdEndTransformFeedbackEXT;

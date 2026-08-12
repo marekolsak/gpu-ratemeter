@@ -1113,6 +1113,9 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
    else
       glDisable(GL_PRIMITIVE_RESTART);
 
+   if (pipeline->desc.tes)
+      glPatchParameteri(GL_PATCH_VERTICES, pipeline->desc.patch_control_points);
+
    for (unsigned i = 0; i < pipeline->desc.num_vb_desc; i++) {
       glEnableVertexAttribArray(i);
       glVertexAttribBinding(i, i);

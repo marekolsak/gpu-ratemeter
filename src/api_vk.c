@@ -1279,6 +1279,9 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
          dyn_states_vi[check_incr(dyn_states_vi)] = VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY;
       }
 
+      if (desc->tes)
+         dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT;
+
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE;
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_CULL_MODE;
       dyn_states_prerast[check_incr(dyn_states_prerast)] = VK_DYNAMIC_STATE_POLYGON_MODE_EXT;
@@ -1346,6 +1349,10 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
          .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
          .topology = desc->topology, /* the topology class must still match dynamic state */
          .primitiveRestartEnable = uses_dynamic_state ? false : desc->primitive_restart,
+      },
+      .pTessellationState = &(VkPipelineTessellationStateCreateInfo){
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+         .patchControlPoints = uses_dynamic_state ? 0 : desc->patch_control_points,
       },
       .pRasterizationState = &(VkPipelineRasterizationStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -2324,6 +2331,13 @@ vk_create_context(const program_options *options)
    };
 
    /* EXT extensions. */
+   VkPhysicalDeviceExtendedDynamicState2FeaturesEXT EXT_extended_dynamic_state2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT,
+   };
+   VkPhysicalDeviceExtendedDynamicState2FeaturesEXT enabled_EXT_extended_dynamic_state2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT,
+   };
+
    VkPhysicalDeviceExtendedDynamicState3FeaturesEXT EXT_extended_dynamic_state3 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT,
    };
@@ -2406,6 +2420,7 @@ vk_create_context(const program_options *options)
    check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
 
    check_add_ext_no_features(VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME);
+   check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME, EXT_extended_dynamic_state2);
    check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME, EXT_extended_dynamic_state3);
    check_add_ext(VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME, EXT_graphics_pipeline_library);
    check_add_ext(VK_EXT_MESH_SHADER_EXTENSION_NAME, EXT_mesh_shader);
@@ -2638,6 +2653,10 @@ vk_create_context(const program_options *options)
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       require(Vulkan13.dynamicRendering);
 
+      //require(EXT_extended_dynamic_state2.extendedDynamicState2);
+      //require(EXT_extended_dynamic_state2.extendedDynamicState2LogicOp);
+      require(EXT_extended_dynamic_state2.extendedDynamicState2PatchControlPoints);
+
       //require(EXT_extended_dynamic_state3.extendedDynamicState3TessellationDomainOrigin);
       //require(EXT_extended_dynamic_state3.extendedDynamicState3DepthClampEnable);
       require(EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode);
@@ -2707,6 +2726,8 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdCopyMemoryIndirectKHR);
    if (enabled_KHR_fragment_shading_rate.pipelineFragmentShadingRate)
       GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
+   if (enabled_EXT_extended_dynamic_state2.extendedDynamicState2PatchControlPoints)
+      GET_PROC_ADDR(vkCmdSetPatchControlPointsEXT);
    if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode)
       GET_PROC_ADDR(vkCmdSetPolygonModeEXT);
    if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3RasterizationSamples)
