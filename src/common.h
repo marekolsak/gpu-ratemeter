@@ -570,6 +570,11 @@ typedef struct api_context {
    void (*end_render_pass)(struct api_context *ctx);
    void (*clear_attachments)(struct api_context *ctx, api_clear_attachments_desc *desc);
 
+   void (*bind_transform_feedback_buffer)(struct api_context *ctx, api_buffer *buf,
+                                          uint64_t offset, uint64_t size);
+   void (*begin_transform_feedback)(struct api_context *ctx);
+   void (*end_transform_feedback)(struct api_context *ctx);
+
    void (*bind_vertex_buffers)(struct api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets);
    void (*bind_index_buffer)(struct api_context *ctx, api_buffer *ib);
    void (*draw)(struct api_context *ctx, const api_draw_desc *desc);
@@ -615,6 +620,9 @@ typedef struct api_context {
    PFN_vkCmdSetColorWriteMaskEXT vkCmdSetColorWriteMaskEXT;
    PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
    PFN_vkCmdSetVertexInputEXT vkCmdSetVertexInputEXT;
+   PFN_vkCmdBindTransformFeedbackBuffersEXT vkCmdBindTransformFeedbackBuffersEXT;
+   PFN_vkCmdBeginTransformFeedbackEXT vkCmdBeginTransformFeedbackEXT;
+   PFN_vkCmdEndTransformFeedbackEXT vkCmdEndTransformFeedbackEXT;
 
    /* Command buffers. */
    VkCommandBuffer cmd_buffers[api_num_queues][MAX_COMMAND_BUFFERS];

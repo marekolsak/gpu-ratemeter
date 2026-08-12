@@ -1933,6 +1933,28 @@ vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
 }
 
 static void
+vk_bind_transform_feedback_buffer(api_context *ctx, api_buffer *buf, uint64_t offset,
+                                  uint64_t size)
+{
+   if (buf) {
+      ctx->vkCmdBindTransformFeedbackBuffersEXT(ctx->current_cmd_buffer, 0, 1, &buf->buffer,
+                                                &offset, &size);
+   }
+}
+
+static void
+vk_begin_transform_feedback(api_context *ctx)
+{
+   ctx->vkCmdBeginTransformFeedbackEXT(ctx->current_cmd_buffer, 0, 0, NULL, NULL);
+}
+
+static void
+vk_end_transform_feedback(api_context *ctx)
+{
+   ctx->vkCmdEndTransformFeedbackEXT(ctx->current_cmd_buffer, 0, 0, NULL, NULL);
+}
+
+static void
 vk_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets)
 {
    VkBuffer buffers[MAX_VERTEX_BUFFERS];
@@ -2703,6 +2725,11 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdDrawMeshTasksEXT);
    if (enabled_EXT_vertex_input_dynamic_state.vertexInputDynamicState)
       GET_PROC_ADDR(vkCmdSetVertexInputEXT);
+   if (enabled_EXT_transform_feedback.transformFeedback) {
+      GET_PROC_ADDR(vkCmdBindTransformFeedbackBuffersEXT);
+      GET_PROC_ADDR(vkCmdBeginTransformFeedbackEXT);
+      GET_PROC_ADDR(vkCmdEndTransformFeedbackEXT);
+   }
 #undef GET_PROC_ADDR
 
    /* Get the queues. */

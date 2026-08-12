@@ -1298,7 +1298,7 @@ gl_wait_idle_before_deallocation(api_context *ctx)
 }
 
 static void
-gl_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
+gl_clear_attachments(api_context *ctx, api_clear_attachments_desc *desc)
 {
    assert(desc->box.z == 0 && desc->box.depth == ctx->fb->layers);
    bool scissor = desc->box.x > 0 || desc->box.y > 0 ||
@@ -1380,6 +1380,57 @@ gl_end_render_pass(api_context *ctx)
 {
    ctx->prev_fb = ctx->fb;
    ctx->fb = NULL;
+}
+
+static void
+gl_bind_transform_feedback_buffer(api_context *ctx, api_buffer *buf, uint64_t offset,
+                                  uint64_t size)
+{
+   if (buf)
+      glBindBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, buf->id, offset, size);
+   else
+      glBindBufferRange(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0, 0, 0);
+}
+
+static void
+gl_begin_transform_feedback(api_context *ctx)
+{
+   assert(!ctx->current_pipeline->desc.ms);
+
+   if (ctx->current_pipeline->desc.gs || ctx->current_pipeline->desc.tes)
+      error("gl: transform feedback with TES and GS unimplemented");
+
+   GLenum prim;
+
+   switch (ctx->current_pipeline->prim_mode) {
+   case GL_POINTS:
+      prim = GL_POINTS;
+      break;
+   case GL_LINES:
+   case GL_LINE_LOOP:
+   case GL_LINE_STRIP:
+   case GL_LINES_ADJACENCY:
+   case GL_LINE_STRIP_ADJACENCY:
+      prim = GL_LINES;
+      break;
+   case GL_TRIANGLES:
+   case GL_TRIANGLE_STRIP:
+   case GL_TRIANGLE_FAN:
+   case GL_TRIANGLES_ADJACENCY:
+   case GL_TRIANGLE_STRIP_ADJACENCY:
+      prim = GL_TRIANGLES;
+      break;
+   default:
+      error("gl: invalid pipeline input topology for transform feedback");
+   }
+
+   glBeginTransformFeedback(prim);
+}
+
+static void
+gl_end_transform_feedback(api_context *ctx)
+{
+   glEndTransformFeedback();
 }
 
 static void
@@ -1728,6 +1779,10 @@ gl_create_context(const program_options *options)
    ctx->begin_render_pass = gl_begin_render_pass;
    ctx->end_render_pass = gl_end_render_pass;
    ctx->clear_attachments = gl_clear_attachments;
+
+   ctx->bind_transform_feedback_buffer = gl_bind_transform_feedback_buffer;
+   ctx->begin_transform_feedback = gl_begin_transform_feedback;
+   ctx->end_transform_feedback = gl_end_transform_feedback;
 
    ctx->bind_vertex_buffers = gl_bind_vertex_buffers;
    ctx->bind_index_buffer = gl_bind_index_buffer;
