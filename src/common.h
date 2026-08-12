@@ -240,6 +240,9 @@ typedef struct {
    api_descriptor_set_layout *desc_set_layout;
    api_shader *ms;
    api_shader *vs;
+   api_shader *tcs;
+   api_shader *tes;
+   api_shader *gs;
    api_shader *fs;
 
    uint8_t vrs_fragment_size[2];

@@ -983,6 +983,12 @@ gl_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
       glAttachShader(pipeline->prog, desc->ms->id);
    if (desc->vs)
       glAttachShader(pipeline->prog, desc->vs->id);
+   if (desc->tcs)
+      glAttachShader(pipeline->prog, desc->tcs->id);
+   if (desc->tes)
+      glAttachShader(pipeline->prog, desc->tes->id);
+   if (desc->gs)
+      glAttachShader(pipeline->prog, desc->gs->id);
    if (desc->fs)
       glAttachShader(pipeline->prog, desc->fs->id);
    glLinkProgram(pipeline->prog);

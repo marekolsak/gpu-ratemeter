@@ -1245,13 +1245,19 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
    };
 
    /* Shaders. */
-   VkPipelineShaderStageCreateInfo stages[5], prerast_stages[4], fs_stages[1];
+   VkPipelineShaderStageCreateInfo stages[7], prerast_stages[6], fs_stages[1];
    unsigned num_stages = 0, num_prerast_stages = 0, num_fs_stages = 0;
 
    if (desc->ms)
       stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->ms->stage_info;
    if (desc->vs)
       stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->vs->stage_info;
+   if (desc->tcs)
+      stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->tcs->stage_info;
+   if (desc->tes)
+      stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->tes->stage_info;
+   if (desc->gs)
+      stages[num_stages++] = prerast_stages[num_prerast_stages++] = desc->gs->stage_info;
 
    if (desc->fs && !desc->rasterizer_discard)
       stages[num_stages++] = fs_stages[num_fs_stages++] = desc->fs->stage_info;
