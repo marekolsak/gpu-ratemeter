@@ -200,7 +200,7 @@ If we run the `cyclesN` subtests with different forced SIMD occupancy settings, 
 that for every pipeline state combination and SIMD occupancy, there is fragment shader execution time T
 in clock cycles such that if a fragment shader takes between 0 and T time to execute, the observed performance
 is always the same. If a fragment shader takes more time to execute than T, the observed performance decreases
-inversely with the fragment shader execution time.
+inversely with T.
 
 Time T can be calculated from pixel throughput and SIMD occupancy, and pixel throughput can be calculated
 from pipeline states. (In fact, the pixel throughput equation of a specific GPU or GPU architecture can be
