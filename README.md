@@ -191,7 +191,7 @@ Memory bandwidth can affect both, but let's put that aside.
 
 If the pixel pipeline is the limiting factor, then shader compiler improvements may not
 affect performance at all. Such improvements may improve power consumptions since shorter shaders
-consume less power, and they may also help other shader stages that run in parallel with fragment
+consume less power, and they may also allow other shader stages to run in parallel with fragment
 shaders because fragment shaders that finish sooner make HW resources available to those other
 shader stages sooner, but *observed performance* may be unaffected if the pixel pipeline keeps
 being the limiting factor.
