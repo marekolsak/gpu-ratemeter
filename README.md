@@ -86,6 +86,7 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 - `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
+- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf) (only `imgbw`, `pix`)
 
 #### OpenGL parameters
 
@@ -121,7 +122,6 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
 - `-bw`: print memory bandwidth in GB/s instead of pixels/clock; only subtests that only write the color buffer are executed (this can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth)
 - `-format=REGEX`: only test the image formats matching the regular expression
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
-- `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
 - `-samplerate`: report samples/clock instead of pixels/clock
 
 
