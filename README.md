@@ -6,7 +6,7 @@ Some of the project goals are:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
 2. Infer detailed information about undocumented GPU architectures through highly artificial tests.
 
-It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, rays per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to show how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
+It produces CSV output and reports GPU performance in pixels per clock, samples per clock, primitives per clock, ray intersections per clock (TBD), memory throughput, latencies, etc. with different combinations of pipeline states, shaders, and different types of draw/compute/blit/RT/etc. operations to show how observed GPU performance is affected by the choice of drivers (closed source, open source / Mesa), APIs (DX11, DX12, GL, VK), API translation and forwarding layers (DXVK, VKD3D, Zink, WSL2, VirtIO), and operating systems (Android, Linux, Windows).
 
 This project is for anybody who would like to understand, improve, and validate the performance of their GPU drivers and API/OS implementations.
 
@@ -68,7 +68,6 @@ API identifiers:
 |--------------|-------:|-------:|
 | **Graphics Pipeline Tests**    |
 | `pix`        | **✓**  | **✓**  |
-| `pixbw`      | **✓**  | **✓**  |
 | `prim`       | **✓**  | **✓**  |
 | **Shader Tests**               |
 | `latency`    | **✓**  | **✓**  |
@@ -82,23 +81,28 @@ API identifiers:
 
 All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera, respectively.
 
-Common parameters:
+#### Common parameters
+
 - `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
 
-OpenGL parameters:
+#### OpenGL parameters
+
 - `-gl-tiling-linear`: indicate that regular GL textures are allocated as linear if `GL_LINEAR_TILING_EXT` is set; this also sets `MESA_DEBUG=api-tiling-linear` to make Mesa not ignore `GL_LINEAR_TILING_EXT` for regular GL textures
 
-Vulkan parameters:
+#### Vulkan parameters
+
 - `-device=N`: the device index of the device to use (default: 0), Vulkan only
 - `-no-validator`: disable the Vulkan validation layer (the layer is enabled by default)
 
-`bufbw` parameters:
+#### `bufbw` parameters
+
 - `-compute`: execute on the compute queue
 - `-transfer`: execute on the transfer queue
 
-`latency` parameters:
+#### `latency` parameters
+
 - `-maxsize=N` (**required**): The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.
 - `-spacing=N` (**required**): All load addresses are multiples of this number. This should be a power of two and <= cache line size. To make the test faster, it's recommended to set this exactly to the cache line size.
 `maxsize / spacing` is the number of executed load indirections of each subtest, so it affects test length, and it also implies that the shader visits every load
@@ -113,7 +117,8 @@ is never loaded if the spacing is large enough to skip them, reducing cache util
 - `-sparse-unbound`: The whole buffer is sparse and its whole range is unbound.
   * Good starting parameters: `-maxsize=16M -spacing=64` (optimal if the last level cache size is 8 MB and the cache line size is 64)
 
-`pix`, `pixbw` parameters:
+#### `pix` parameters
+- `-bw`: print memory bandwidth in GB/s instead of pixels/clock; only subtests that only write the color buffer are executed (this can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth)
 - `-format=REGEX`: only test the image formats matching the regular expression
 - `-lean`: don't test 8bpp, 16bpp, and rgb10a2 image formats
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf)
@@ -173,9 +178,9 @@ Decoding subtest names:
   - `Ncentroid`: N inputs with perspective interpolation at centroid
   - `Nlinear`: N inputs with linear (`noperspective`) interpolation at center
 
-#### Rasterizer efficiency subtests
+#### Rasterizer Efficiency Subtests
 
-`raster` are subtests executed as part of `pix` that measure how much helper invocations and triangle
+The `raster` subtests measure how much helper invocations and triangle
 sizes negatively impact pixel throughput and when primitive throughput starts becoming the limiting
 factor. While all other subtests use a single fullscreen triangle and 0 helper invocations,
 the `raster` subtests draw a mesh of equally-sized roughly equilateral triangles. Each subsequent
@@ -210,9 +215,6 @@ The pipeline statistics of each subtest are in the table below. Unlike standard 
 | raster45.3                    |         2313032 |              45.3 % |       186502 |         2.37² |               5.6 |                 12.4 |
 | raster39.9                    |         2626632 |              39.9 % |       290786 |         1.90² |               3.6 |                  9.0 |
 
-### `pixbw`: Color Buffer Write Bandwidth (GB/s)
-
-Same as `pix`, but it prints the memory bandwidth in GB/s instead of pixels/clock. This can be used to determine whether pixel throughput is limited by fixed-function logic or memory bandwidth. Subtests from `pix` that use a Z buffer or don't write the color buffer are skipped.
 
 ### `prim`: Primitive Throughput (primitives/clock)
 

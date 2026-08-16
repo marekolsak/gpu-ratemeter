@@ -35,7 +35,6 @@
  * - instruction fetch (jump chasing)
  *
  * pix:
- * - consider enabling bandwidth results as a parameter instead of having separate pixbw
  * - for cycles tests, try to run FS with increased register usage
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
@@ -138,6 +137,7 @@ static const option_desc pix_options[] = {
    {OPTION_BOOL, "-lean", offsetof(program_options, lean)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-samplerate", offsetof(program_options, samplerate)},
+   {OPTION_BOOL, "-bw", offsetof(program_options, report_bandwidth)},
    {OPTION_UINT64, "-freq=", offsetof(program_options, freq_mhz)},
    {OPTION_REGEX, "-format=", offsetof(program_options, regex_format)},
 };
@@ -152,7 +152,6 @@ static const test_desc tests[] = {
    //{"iobw", test_iobw, true, 0, NULL},
    {"latency", test_latency, false, ARRAY_SIZE(latency_options), latency_options},
    {"pix", test_pix, false, ARRAY_SIZE(pix_options), pix_options},
-   {"pixbw", test_pix, true, ARRAY_SIZE(pix_options), pix_options},
    {"prim", test_prim, false, ARRAY_SIZE(prim_options), prim_options},
    {"sanity", test_sanity, false, 0, NULL},
    {"sparsebind", test_sparsebind, true, 0, NULL},
@@ -261,10 +260,7 @@ main(int argc, char **argv)
    printf("Test name: %s\n", name_prefix);
 
    /* Parse options. */
-   program_options options = {
-      .report_bandwidth = test_desc->report_bandwidth,
-   };
-
+   program_options options = {0};
    snprintf(options.name_prefix, sizeof(options.name_prefix), "%s.%s", api_name, test_name);
 
    if (filter) {
@@ -289,6 +285,8 @@ main(int argc, char **argv)
          error(" ");
       }
    }
+
+   options.report_bandwidth |= test_desc->report_bandwidth;
 
    puts("Initializing API...");
    api_context *ctx = NULL;
