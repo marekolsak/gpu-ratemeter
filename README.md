@@ -187,11 +187,11 @@ There are 2 major factors that limit observed performance:
 1. Fragment shader execution time
 2. Pixel pipeline throughput (fixed-function logic with a fixed per-clock-cycle throughput)
 
-Memory bandwidth can limit both, but let's put that aside.
+Memory bandwidth can affect both, but let's put that aside.
 
 If the pixel pipeline is the limiting factor, then shader compiler improvements may not
 affect performance at all. Such improvements may improve power consumptions since shorter shaders
-consume less power, and they may help other shader stages that run in parallel with fragment
+consume less power, and they may also help other shader stages that run in parallel with fragment
 shaders because fragment shaders that finish sooner make HW resources available to those other
 shader stages sooner, but *observed performance* may be unaffected if the pixel pipeline keeps
 being the limiting factor.
@@ -204,8 +204,8 @@ inversely with the fragment shader execution time.
 
 Time T can be calculated from pixel throughput and SIMD occupancy, and pixel throughput can be calculated
 from pipeline states. (In fact, the pixel throughput equation of a specific GPU or GPU architecture can be
-inferred from all other `pix` subtests.) Once T is known for a specific fragment shader, we only need to gather
-the average execution time of all fragment shaders we have to make the judgement call as to which fragment
+inferred from `pix` results.) Once T is known for a specific fragment shader, we only need to gather
+the average execution time of our fragment shaders to make the judgement call as to which fragment
 shaders are worth optimizing.
 
 #### Rasterizer Efficiency Subtests
