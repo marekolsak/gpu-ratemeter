@@ -204,9 +204,8 @@ inversely with T.
 
 Time T can be calculated from pixel throughput and SIMD occupancy, and pixel throughput can be calculated
 from pipeline states. (In fact, the pixel throughput equation of a specific GPU or GPU architecture can be
-inferred from `pix` results.) Once T is known for a specific fragment shader, we only need to gather
-the average execution time of our fragment shaders to make the judgement call as to which fragment
-shaders are worth optimizing.
+inferred from `pix` results.) Once T is known for a specific set of fragment shaders, then we only need to gather
+their average execution time to make the judgement call as to which fragment shaders are worth optimizing.
 
 #### Rasterizer Efficiency Subtests
 
