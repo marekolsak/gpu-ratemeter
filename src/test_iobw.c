@@ -32,6 +32,24 @@
 #define NUM_VERTICES_PER_ITER	(1000 * 3)
 #define MAX_VERTICES_PER_DRAW	(INT32_MAX - 1) /* divisible by 3 */
 
+#define DEFAULT_VB_FORMATS { \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT, \
+   VK_FORMAT_R32G32B32A32_SFLOAT}
+
 typedef enum {
    TEST_VS_IN,
    TEST_VS_OUT_XFB,
@@ -183,7 +201,8 @@ typedef struct {
    api_buffer *buf_scratch_separate[MAX_VEC4S];
 
    /* Indexed by the number of input/output compon;ents - 1. */
-   api_gfx_pipeline *pipe_vs_in[MAX_COMPS];
+   api_gfx_pipeline *pipe_vs_in_interleaved[MAX_COMPS];
+   api_gfx_pipeline *pipe_vs_in_separate[MAX_COMPS];
    api_gfx_pipeline *pipe_vs_out_xfb[MAX_COMPS];
    api_gfx_pipeline *pipe_vs_out_fs[MAX_COMPS];
    api_gfx_pipeline *pipe_gs_out[3][MAX_COMPS]; /* max_vertices = (first_index + 1) * 3; */
@@ -294,6 +313,8 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
          /* VS input loads (all VS inputs are read, but all primitives are culled) */
          for (unsigned num_comps = 1; num_comps <= MAX_COMPS; num_comps++) {
             char vs_code[2048];
+            unsigned num_vec4s = ALIGN_POT(num_comps, 4) / 4;
+            unsigned vertex_size = num_comps * 4;
             unsigned offset;
 
             /* Generate the VS. */
@@ -310,15 +331,46 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
 
             api_shader *vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
 
-            state->pipe_vs_in[num_comps - 1] =
-               ctx->create_gfx_pipeline(ctx,
-                                        &(api_gfx_pipeline_desc){
-                                           .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                           .vs = vs,
-                                           .fs = dummy_fs,
-                                           .depth_enabled = true,
-                                           .depth_compare_op = VK_COMPARE_OP_NEVER,
-                                        });
+            api_gfx_pipeline_desc desc = {
+               .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+
+               .num_vb_desc = num_vec4s,
+
+               .vs = vs,
+               .fs = dummy_fs,
+               .depth_enabled = true,
+               .depth_compare_op = VK_COMPARE_OP_NEVER,
+            };
+
+            static const VkFormat sized_vb_formats[4] = {
+               VK_FORMAT_R32_SFLOAT,
+               VK_FORMAT_R32G32_SFLOAT,
+               VK_FORMAT_R32G32B32_SFLOAT,
+               VK_FORMAT_R32G32B32A32_SFLOAT
+            };
+
+            /* Initialize interleaved VB attribs. */
+            for (unsigned i = 0; i < num_vec4s; i++) {
+               unsigned format_dw_size = i == num_vec4s - 1 && num_comps % 4 ? num_comps % 4 : 4;
+
+               desc.vb_strides[i] = vertex_size;
+               desc.vb_formats[i] = sized_vb_formats[format_dw_size - 1];
+               desc.vb_index[i] = 0;
+               desc.vb_rel_offset[i] = i * 16;
+            }
+
+            state->pipe_vs_in_interleaved[num_comps - 1] = ctx->create_gfx_pipeline(ctx, &desc);
+
+            /* Initialize separate VB attribs. */
+            for (unsigned i = 0; i < num_vec4s; i++) {
+               unsigned format_dw_size = i == num_vec4s - 1 && num_comps % 4 ? num_comps % 4 : 4;
+
+               desc.vb_strides[i] = format_dw_size * 4;;
+               desc.vb_index[i] = i;
+               desc.vb_rel_offset[i] = 0;
+            }
+
+            state->pipe_vs_in_separate[num_comps - 1] = ctx->create_gfx_pipeline(ctx, &desc);
          }
          break;
 
@@ -353,6 +405,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
                                            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+
+                                           .num_vb_desc = ALIGN_POT(num_comps, 4) / 4,
+                                           .vb_formats = DEFAULT_VB_FORMATS,
+
                                            .vs = vs,
                                            .rasterizer_discard = true,
                                            .fs = dummy_fs
@@ -381,6 +437,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
                                            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+
+                                           .num_vb_desc = ALIGN_POT(num_comps, 4) / 4,
+                                           .vb_formats = DEFAULT_VB_FORMATS,
+
                                            .vs = vs,
                                            .fs = fs,
                                         });
@@ -437,6 +497,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+
+                                              .num_vb_desc = ALIGN_POT(num_comps, 4) / 4,
+                                              .vb_formats = DEFAULT_VB_FORMATS,
+
                                               .vs = vs,
                                               .gs = gs,
                                               .fs = fs,
@@ -504,6 +568,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
                                               .patch_control_points = 3,
+
+                                              .num_vb_desc = ALIGN_POT(num_comps, 4) / 4,
+                                              .vb_formats = DEFAULT_VB_FORMATS,
+
                                               .vs = vs,
                                               .tcs = tcs,
                                               .tes = tes,
@@ -570,6 +638,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
                                               .patch_control_points = 3,
+
+                                              .num_vb_desc = ALIGN_POT(num_comps, 4) / 4,
+                                              .vb_formats = DEFAULT_VB_FORMATS,
+
                                               .vs = vs,
                                               .tcs = tcs,
                                               .tes = tes,
@@ -588,15 +660,6 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
       /*if (skip_test)
          continue;*/
 
-      /* Reset vertex attributes to stride=0. */
-      for (unsigned i = 0; i < MAX_VEC4S; i++) {
-         glEnableVertexAttribArray(i);
-         glBindVertexBuffer(i, 0, 0, 0);
-         glVertexAttribBinding(i, 0);
-         glVertexAttribFormat(i, 4, GL_FLOAT, false, 0);
-      }
-      glBindVertexBuffer(0, state.buf_single_vertex, 0, 0);
-
       switch (test) {
       case TEST_VS_IN:
          /* VS input loads (all VS inputs are read, but all primitives are culled) */
@@ -604,39 +667,24 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
          puts("Vec4s, Separate, Interleaved");
 
          for (unsigned num_comps = 1; num_comps <= MAX_COMPS; num_comps++) {
-            unsigned num_vec4s = ALIGN_POT(num_comps, 4) / 4;
             unsigned vertex_size = num_comps * 4;
 
             printf("%5.2f", num_comps / 4.0);
-
-            ctx->bind_gfx_pipeline(ctx, state->pipe_vs_in[num_comps - 1]);
 
             for (unsigned interleaved = 0; interleaved < 2; interleaved++) {
                unsigned max_vertices_per_draw;
 
                if (interleaved) {
-                  glBindVertexBuffer(0, state->buf_scratch, 0, vertex_size);
-
-                  for (unsigned i = 0; i < num_vec4s; i++) {
-                     glVertexAttribBinding(i, 0);
-                     glVertexAttribFormat(i, i == num_vec4s - 1 && num_comps % 4 ?
-                                             num_comps % 4 : 4, GL_FLOAT, false,
-                                          i * 16);
-                  }
+                  ctx->bind_vertex_buffers(ctx, state->buf_scratch, (uint64_t[1]){0});
+                  ctx->bind_gfx_pipeline(ctx, state->pipe_vs_in_interleaved[num_comps - 1]);
 
                   max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
                   max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
                } else {
-                  for (unsigned i = 0; i < num_vec4s; i++) {
-                     unsigned stride = i == num_vec4s - 1 && num_comps % 4 ?
-                                        num_comps % 4 : 4;
+                  ctx->bind_vertex_buffers(ctx, state->buf_scratch_separate, (uint64_t[16]){0});
+                  ctx->bind_gfx_pipeline(ctx, state->pipe_vs_in_separate[num_comps - 1]);
 
-                     glBindVertexBuffer(i, state->buf_scratch_separate[i], 0, stride * 4);
-                     glVertexAttribBinding(i, i);
-                     glVertexAttribFormat(i, stride, GL_FLOAT, false, 0);
-                  }
-
-                  max_vertices_per_draw = sep_buf_size / 16;
+                  max_vertices_per_draw = state->buf_scratch_separate[0]->size / 16;
                   max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
                }
 
@@ -658,6 +706,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
             unsigned max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
             max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
 
+            ctx->bind_vertex_buffers(ctx, state->buf_single_vertex, (uint64_t[16]){0});
             ctx->bind_transform_feedback_buffer(ctx, state->buf_scratch, 0, state->buf_scratch->size);
             ctx->bind_gfx_pipeline(ctx, state->pipe_vs_out_xfb[num_comps - 1]);
 
@@ -676,8 +725,10 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
          for (unsigned num_comps = 1; num_comps <= MAX_COMPS; num_comps++) {
             unsigned vertex_size = num_comps * 4;
 
-            printf("%5.2f", num_comps / 4.0);
+            ctx->bind_vertex_buffers(ctx, state->buf_single_vertex, (uint64_t[16]){0});
             ctx->bind_gfx_pipeline(ctx, state->pipe_vs_out_fs[num_comps - 1]);
+
+            printf("%5.2f", num_comps / 4.0);
             run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
             print_result(ctx, state, vertex_size, test);
             puts("");
@@ -694,6 +745,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned amp_factor = 0; amp_factor < 3; amp_factor++) {
+               ctx->bind_vertex_buffers(ctx, state->buf_single_vertex, (uint64_t[16]){0});
                ctx->bind_gfx_pipeline(ctx, state->pipe_gs_out[amp_factor][num_comps - 1]);
                run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
                print_result(ctx, state, vertex_size * (amp_factor + 1), test);
@@ -712,6 +764,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
+               ctx->bind_vertex_buffers(ctx, state->buf_single_vertex, (uint64_t[16]){0});
                ctx->bind_gfx_pipeline(ctx, state->pipe_tcs_out[tf][num_comps - 1]);
                run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
                print_result(ctx, state, vertex_size, test);
@@ -719,6 +772,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
             puts("");
          }
          break;
+
       case TEST_TCS_PATCH_OUT:
          /* TCS output stores into TES (VS inputs have stride=0, all TES inputs are read, but all primitives are culled) */
          puts("TCS PATCH OUTPUTS (gl_TessLevelOuter[0] = Level, all other levels are 1)");
@@ -729,6 +783,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
+               ctx->bind_vertex_buffers(ctx, state->buf_single_vertex, (uint64_t[16]){0});
                ctx->bind_gfx_pipeline(ctx, state->pipe_tcs_patch_out[tf][num_comps - 1]);
                run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
                print_result(ctx, state, patch_size, test);
@@ -736,6 +791,9 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
             puts("");
          }
          break;
+
+      default:
+         error("invalid case");
       }
    }
 }

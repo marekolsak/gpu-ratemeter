@@ -222,7 +222,7 @@ typedef struct {
 #endif
 } api_shader;
 
-#define MAX_VERTEX_BUFFERS 11
+#define MAX_VERTEX_BUFFERS 16
 
 typedef struct {
    VkPrimitiveTopology topology;
