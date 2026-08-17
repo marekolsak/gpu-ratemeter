@@ -453,12 +453,6 @@ static const char *fill_strings[] = {
    [FILL_RANDOM_FRAGMENTED8] = "fragmented8",
 };
 
-typedef enum {
-   COUNT_TESTS,
-   RUN,
-   REPORT,
-} test_stage;
-
 static void
 verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned format_index,
                unsigned layout, unsigned fill_option)
@@ -925,7 +919,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            report_na = true;
 
                         for (unsigned set = 0; set < num_image_sets; set++) {
-                           if (stage == COUNT_TESTS)
+                           if (stage == INIT_AND_COUNT_TESTS)
                               (*num_tests)++;
 
                            if (report_na || sets[set].exceeds_limits) {
@@ -1172,7 +1166,7 @@ test_imgbw(api_context *ctx)
 {
    unsigned num_tests = 0;
 
-   run(ctx, COUNT_TESTS, &num_tests, NULL);
+   run(ctx, INIT_AND_COUNT_TESTS, &num_tests, NULL);
 
    if (!num_tests)
       return;

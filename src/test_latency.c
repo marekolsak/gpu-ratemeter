@@ -12,12 +12,6 @@
 
 #include "common.h"
 
-typedef enum {
-   INIT,
-   RUN,
-   REPORT,
-} test_stage;
-
 typedef struct {
    unsigned min_size;
    unsigned num_indirections;
@@ -371,7 +365,7 @@ set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsig
 static void
 run(api_context *ctx, test_stage stage, test_state *state)
 {
-   if (stage == INIT) {
+   if (stage == INIT_AND_COUNT_TESTS) {
       /* Build pipelines. */
       state->layout =
          ctx->create_descriptor_set_layout(ctx,
@@ -507,7 +501,7 @@ run(api_context *ctx, test_stage stage, test_state *state)
                for (unsigned size = state->min_size; size <= max_size;
                     size = get_next_size(size)) {
                   switch (stage) {
-                  case INIT:
+                  case INIT_AND_COUNT_TESTS:
                      break;
 
                   case RUN:
@@ -549,7 +543,7 @@ run(api_context *ctx, test_stage stage, test_state *state)
       }
    }
 
-   if (stage == INIT)
+   if (stage == INIT_AND_COUNT_TESTS)
       state->num_tests = test_index;
 }
 
@@ -609,7 +603,7 @@ test_latency(api_context *ctx)
    printf("The number of indirections averaged per subtest: %u\n", state.num_indirections);
    puts("Building compute pipelines...");
 
-   run(ctx, INIT, &state);
+   run(ctx, INIT_AND_COUNT_TESTS, &state);
 
    if (!state.num_tests)
       return;

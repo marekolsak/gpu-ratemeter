@@ -75,12 +75,6 @@ enum special_attribute2 {
    NUM_SPECIAL2_ATTRIBUTES,
 };
 
-enum test_stage {
-   INIT,
-   RUN,
-   REPORT,
-};
-
 static const double triangle_sizes_in_pixels[] = {
    2,       /* this means that each quad (2 triangles) occupies 2x2 pixels */
    0.1428,  /* small triangle tests use these small numbers */
@@ -1538,7 +1532,7 @@ get_subtest_name(api_context *ctx, char *out, unsigned out_size, const test_stat
 }
 
 static void
-run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const test_info *test)
+run_test(api_context *ctx, test_state *state, test_stage test_stage, const test_info *test)
 {
    if (test_stage != REPORT && get_mesh_wg_size(test->geom_style) > ctx->max_mesh_workgroup_size)
       return;
@@ -1551,7 +1545,7 @@ run_test(api_context *ctx, test_state *state, enum test_stage test_stage, const 
       return;
 
    switch (test_stage) {
-   case INIT:
+   case INIT_AND_COUNT_TESTS:
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          create_pipeline(ctx, state, test, v);
 
@@ -1659,7 +1653,7 @@ test_prim(api_context *ctx)
 
    puts("Creating buffers and building pipelines...");
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++)
-      run_test(ctx, state, INIT, &tests[i]);
+      run_test(ctx, state, INIT_AND_COUNT_TESTS, &tests[i]);
 
    printf("GPU memory allocated: %u MB\n", ctx->device_mem_usage_mb);
    printf("Executing tests ...");

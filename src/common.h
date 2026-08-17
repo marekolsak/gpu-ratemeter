@@ -644,6 +644,12 @@ typedef struct api_context {
 #endif
 } api_context;
 
+typedef enum {
+   INIT_AND_COUNT_TESTS,
+   RUN,
+   REPORT,
+} test_stage;
+
 #define printflike(a, b) __attribute__((format(printf, (a), (b))))
 
 /* static_assert that can be used inside expressions. */

@@ -112,12 +112,6 @@ static const struct align_info_t align_info[] = {
    ALIGN_SRC_DST(1, 2),
 };
 
-enum test_stage {
-   COUNT_TESTS,
-   RUN,
-   REPORT,
-};
-
 typedef struct {
    uint64_t dst_address;
    uint64_t src_address;
@@ -164,7 +158,7 @@ typedef struct {
 } test_state;
 
 static void
-run(api_context *ctx, enum test_stage stage, test_state *state)
+run(api_context *ctx, test_stage stage, test_state *state)
 {
    const unsigned name_indent = 70;
 
@@ -280,7 +274,7 @@ run(api_context *ctx, enum test_stage stage, test_state *state)
                         continue;
                      }
 
-                     if (stage == COUNT_TESTS)
+                     if (stage == INIT_AND_COUNT_TESTS)
                         state->num_tests++;
 
                      const unsigned execution_size = EXECUTION_SIZE / (uses_hostmem ? HOSTMEM_TEST_REDUCTION : 1);
@@ -421,7 +415,7 @@ test_bufbw(api_context *ctx)
 
    _mesa_hash_table_init(&state.indirect_params_ht, indirect_params_hash, indirect_params_equal);
 
-   run(ctx, COUNT_TESTS, &state);
+   run(ctx, INIT_AND_COUNT_TESTS, &state);
 
    if (!state.num_tests)
       return;
