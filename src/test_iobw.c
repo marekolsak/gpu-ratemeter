@@ -25,8 +25,8 @@
 /* this must be a power of two to prevent precision issues */
 #define FB_SIZE 1024
 
-#define MAX_COMPS (16 * 4)
-#define MAX_VEC4S (ALIGN_POT(MAX_COMPS, 4) / 4)
+#define MAX_VEC4S 16
+#define MAX_COMPS (MAX_VEC4S * 4)
 
 #define BO_ALLOC_SIZE		(64 * 1024 * 1024)
 #define NUM_VERTICES_PER_ITER	(1000 * 3)
@@ -178,11 +178,24 @@ generate_input_reduce_fs(char *code, unsigned max_size, unsigned num_comps,
 
 typedef struct {
    api_framebuffer *fb;
+   api_buffer *buf_single_vertex;
+   api_buffer *buf_scratch;
+   api_buffer *buf_scratch_separate[MAX_VEC4S];
+
+   /* Indexed by the number of input/output compon;ents - 1. */
+   api_gfx_pipeline *pipe_vs_in[MAX_COMPS];
+   api_gfx_pipeline *pipe_vs_out_xfb[MAX_COMPS];
+   api_gfx_pipeline *pipe_vs_out_fs[MAX_COMPS];
+   api_gfx_pipeline *pipe_gs_out[3][MAX_COMPS]; /* max_vertices = (first_index + 1) * 3; */
+   api_gfx_pipeline *pipe_tcs_out[3][MAX_COMPS]; /* gl_TessLevelOuter[0] = first_index; */
+   api_gfx_pipeline *pipe_tcs_patch_out[3][MAX_COMPS]; /* gl_TessLevelOuter[0] = first_index; */
+
    api_query_pool *timestamps;
-} test_state;
+   unsigned num_tests;
+} iobw_test_state;
 
 static void
-run_test(api_context *ctx, test_state *state, test_type test, unsigned max_vertices_per_draw)
+run_test(api_context *ctx, iobw_test_state *state, test_type test, unsigned max_vertices_per_draw)
 {
    const uint64_t num_vertices = NUM_ITERATIONS * (uint64_t)NUM_VERTICES_PER_ITER;
    const unsigned warmup_iterations = NUM_ITERATIONS / 4;
@@ -218,7 +231,7 @@ run_test(api_context *ctx, test_state *state, test_type test, unsigned max_verti
 }
 
 static void
-print_result(api_context *ctx, test_state *state, unsigned vertex_size, test_type test)
+print_result(api_context *ctx, iobw_test_state *state, unsigned vertex_size, test_type test)
 {
    double iters_per_sec = perf_measure_gpu_rate(draw, 0.01);
    double verts_per_sec = iters_per_sec * NUM_VERTICES_PER_ITER;
@@ -229,16 +242,40 @@ print_result(api_context *ctx, test_state *state, unsigned vertex_size, test_typ
    printf(", %8.2f", GBps);
 }
 
-void
-test_iobw(api_context *ctx)
+static void
+run(api_context *ctx, test_stage stage, iobw_test_state *state)
 {
-   /* Indexed by the number of input/output components - 1. */
-   api_gfx_pipeline *prog_vs_in[MAX_COMPS] = {0};
-   api_gfx_pipeline *prog_vs_out_xfb[MAX_COMPS] = {0};
-   api_gfx_pipeline *prog_vs_out_fs[MAX_COMPS] = {0};
-   api_gfx_pipeline *prog_gs_out[3][MAX_COMPS] = {0}; /* max_vertices = (first_index + 1) * 3; */
-   api_gfx_pipeline *prog_tcs_out[3][MAX_COMPS] = {0}; /* gl_TessLevelOuter[0] = first_index; */
-   api_gfx_pipeline *prog_tcs_patch_out[3][MAX_COMPS] = {0}; /* gl_TessLevelOuter[0] = first_index; */
+   /* Create buffers. */
+   static float zeroed[4];
+   state->buf_single_vertex = ctx->create_buffer(ctx, 16, api_heap_device, 0);
+   ctx->upload_buffer_data(ctx, state->buf_single_vertex, 0, 16, zeroed);
+
+   /* Don't initialize the buffer data. It's read, but never used meaningfully. */
+   state->buf_scratch = ctx->create_buffer(ctx, BO_ALLOC_SIZE, api_heap_device, 0);
+
+   for (unsigned i = 0; i < MAX_VEC4S; i++) {
+      state->buf_scratch_separate[i] = ctx->create_buffer(ctx, BO_ALLOC_SIZE / MAX_VEC4S,
+                                                          api_heap_device, 0);
+   }
+
+   /* Create the framebuffer. */
+   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                                           FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                           api_heap_device);
+   api_image *zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
+                                        FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                                        api_heap_device);
+   state->fb = ctx->create_framebuffer(ctx, 1, &colorbuf, zsbuf, FB_SIZE, FB_SIZE, 1, 0x1);
+
+   /* Clear the framebuffer. */
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                             .fb = state->fb,
+                             .clear = true,
+                             .clear_values.zs.depth = 0.5,
+                          });
+   ctx->end_render_pass(ctx);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    puts("Compiling shaders...");
 
@@ -273,7 +310,7 @@ test_iobw(api_context *ctx)
 
             api_shader *vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
 
-            prog_vs_in[num_comps - 1] =
+            state->pipe_vs_in[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
                                            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -295,6 +332,8 @@ test_iobw(api_context *ctx)
             offset = generate_passthrough_vs(vs_code, sizeof(vs_code), num_comps, false);
             assert(offset < sizeof(vs_code));
 
+            /* TODO: Port this into GLSL xfb_* qualifiers. */
+#if 0
             /* Generate the list of xfb varyings. */
             const char *varying_ptrs[MAX_VEC4S];
             char varyings[MAX_VEC4S][32];
@@ -304,13 +343,13 @@ test_iobw(api_context *ctx)
                varying_ptrs[i] = varyings[i];
             }
 
+            glTransformFeedbackVaryings(prog, (num_comps + 3) / 4, varying_ptrs,
+                                        GL_INTERLEAVED_ATTRIBS);
+#endif
+
             api_shader *vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
 
-            /* TODO: Port this into GLSL xfb_* qualifiers. */
-            /*glTransformFeedbackVaryings(prog, (num_comps + 3) / 4, varying_ptrs,
-                                        GL_INTERLEAVED_ATTRIBS);*/
-
-            prog_vs_out_xfb[num_comps - 1] =
+            state->pipe_vs_out_xfb[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
                                            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -338,7 +377,7 @@ test_iobw(api_context *ctx)
             api_shader *vs = ctx->create_shader(ctx, vs_code, api_shader_vs);
             api_shader *fs = ctx->create_shader(ctx, fs_code, api_shader_fs);
 
-            prog_vs_out_fs[num_comps - 1] =
+            state->pipe_vs_out_fs[num_comps - 1] =
                ctx->create_gfx_pipeline(ctx,
                                         &(api_gfx_pipeline_desc){
                                            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -394,7 +433,7 @@ test_iobw(api_context *ctx)
                api_shader *gs = ctx->create_shader(ctx, gs_code, api_shader_gs);
                api_shader *fs = ctx->create_shader(ctx, fs_code, api_shader_fs);
 
-               prog_gs_out[amp_factor][num_comps - 1] =
+               state->pipe_gs_out[amp_factor][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -460,7 +499,7 @@ test_iobw(api_context *ctx)
                api_shader *tcs = ctx->create_shader(ctx, tcs_code, api_shader_tcs);
                api_shader *tes = ctx->create_shader(ctx, tes_code, api_shader_tes);
 
-               prog_tcs_out[tess_level_outer][num_comps - 1] =
+               state->pipe_tcs_out[tess_level_outer][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
@@ -526,7 +565,7 @@ test_iobw(api_context *ctx)
                api_shader *tcs = ctx->create_shader(ctx, tcs_code, api_shader_tcs);
                api_shader *tes = ctx->create_shader(ctx, tes_code, api_shader_tes);
 
-               prog_tcs_patch_out[tess_level_outer][num_comps - 1] =
+               state->pipe_tcs_patch_out[tess_level_outer][num_comps - 1] =
                   ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
@@ -544,46 +583,8 @@ test_iobw(api_context *ctx)
       }
    }
 
-   puts("");
-   puts("All numbers are in GB/s.");
-   puts("");
-
-   /*****************
-    * Run the test.
-    *****************/
-
-   GLuint vao;
-   glGenVertexArrays(1, &vao);
-   glBindVertexArray(vao);
-
-   static float zeroed[4];
-   GLuint buf_single_vertex;
-   glGenBuffers(1, &buf_single_vertex);
-   glBindBuffer(GL_ARRAY_BUFFER, buf_single_vertex);
-   glBufferData(GL_ARRAY_BUFFER, 16, zeroed, GL_STATIC_DRAW);
-   glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-   test_state state = {0};
-
-   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
-                                           FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
-                                           api_heap_device);
-   api_image *zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
-                                        FB_SIZE, FB_SIZE, 1, 1, VK_IMAGE_TILING_OPTIMAL,
-                                        api_heap_device);
-   state.fb = ctx->create_framebuffer(ctx, 1, &colorbuf, zsbuf, FB_SIZE, FB_SIZE, 1, 0x1);
-
-   /* Clear the framebuffer. */
-   ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                             .fb = state.fb,
-                             .clear = true,
-                             .clear_values.zs.depth = 0.5,
-                          });
-   ctx->end_render_pass(ctx);
-   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
-
    for (test_type test = 0; test < NUM_TEST_SETS; test++) {
+      // TODO:
       /*if (skip_test)
          continue;*/
 
@@ -594,9 +595,7 @@ test_iobw(api_context *ctx)
          glVertexAttribBinding(i, 0);
          glVertexAttribFormat(i, 4, GL_FLOAT, false, 0);
       }
-      glBindVertexBuffer(0, buf_single_vertex, 0, 0);
-
-      unsigned max_vertices_per_draw = MAX_VERTICES_PER_DRAW;
+      glBindVertexBuffer(0, state.buf_single_vertex, 0, 0);
 
       switch (test) {
       case TEST_VS_IN:
@@ -610,19 +609,13 @@ test_iobw(api_context *ctx)
 
             printf("%5.2f", num_comps / 4.0);
 
-            ctx->bind_gfx_pipeline(ctx, prog_vs_in[num_comps - 1]);
+            ctx->bind_gfx_pipeline(ctx, state->pipe_vs_in[num_comps - 1]);
 
             for (unsigned interleaved = 0; interleaved < 2; interleaved++) {
-               GLuint buf_interleaved = 0, buf_separate[MAX_VEC4S] = {0};
+               unsigned max_vertices_per_draw;
 
                if (interleaved) {
-                  /* Don't initialize the buffer data. It's read, but never used meaningfully. */
-                  glGenBuffers(1, &buf_interleaved);
-                  glBindBuffer(GL_ARRAY_BUFFER, buf_interleaved);
-                  glBufferData(GL_ARRAY_BUFFER, BO_ALLOC_SIZE, NULL, GL_STATIC_DRAW);
-                  glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-                  glBindVertexBuffer(0, buf_interleaved, 0, vertex_size);
+                  glBindVertexBuffer(0, state->buf_scratch, 0, vertex_size);
 
                   for (unsigned i = 0; i < num_vec4s; i++) {
                      glVertexAttribBinding(i, 0);
@@ -632,39 +625,23 @@ test_iobw(api_context *ctx)
                   }
 
                   max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
-                  max_vertices_per_draw -= max_vertices_per_draw % 3;
+                  max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
                } else {
-                  unsigned sep_buf_size = (BO_ALLOC_SIZE * 4) / num_comps;
-                  sep_buf_size = ALIGN_POT(sep_buf_size, 16);
-
                   for (unsigned i = 0; i < num_vec4s; i++) {
-                     unsigned size = i == num_vec4s - 1 && num_comps % 4 ?
+                     unsigned stride = i == num_vec4s - 1 && num_comps % 4 ?
                                         num_comps % 4 : 4;
 
-                     /* Don't initialize the buffer data. It's read, but never used meaningfully. */
-                     glGenBuffers(1, &buf_separate[i]);
-                     glBindBuffer(GL_ARRAY_BUFFER, buf_separate[i]);
-                     glBufferData(GL_ARRAY_BUFFER, sep_buf_size, NULL, GL_STATIC_DRAW);
-                     glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-                     glBindVertexBuffer(i, buf_separate[i], 0, size * 4);
+                     glBindVertexBuffer(i, state->buf_scratch_separate[i], 0, stride * 4);
                      glVertexAttribBinding(i, i);
-                     glVertexAttribFormat(i, size, GL_FLOAT, false, 0);
+                     glVertexAttribFormat(i, stride, GL_FLOAT, false, 0);
                   }
 
                   max_vertices_per_draw = sep_buf_size / 16;
-                  max_vertices_per_draw -= max_vertices_per_draw % 3;
+                  max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
                }
 
-               run_test(ctx, &state, test, max_vertices_per_draw);
-               print_result(ctx, &state, vertex_size, test);
-
-               if (interleaved) {
-                  glDeleteBuffers(1, &buf_interleaved);
-               } else {
-                  for (unsigned i = 0; i < num_vec4s; i++)
-                     glDeleteBuffers(1, &buf_separate[i]);
-               }
+               run_test(ctx, state, test, max_vertices_per_draw);
+               print_result(ctx, state, vertex_size, test);
             }
             puts("");
          }
@@ -677,25 +654,17 @@ test_iobw(api_context *ctx)
 
          for (unsigned num_comps = 1; num_comps <= MAX_COMPS; num_comps++) {
             unsigned vertex_size = num_comps * 4;
-            GLuint xfb_buf;
 
-            glGenBuffers(1, &xfb_buf);
-            glBindBuffer(GL_ARRAY_BUFFER, xfb_buf);
-            glBufferData(GL_ARRAY_BUFFER, BO_ALLOC_SIZE, NULL, GL_STATIC_DRAW);
-            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            unsigned max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
+            max_vertices_per_draw -= max_vertices_per_draw % 3; /* round down to a multiple of 3 */
 
-            ctx->bind_transform_feedback_buffer(ctx, xfb_buf, 0, xfb_buf->size);
-
-            max_vertices_per_draw = BO_ALLOC_SIZE / vertex_size;
-            max_vertices_per_draw -= max_vertices_per_draw % 3;
+            ctx->bind_transform_feedback_buffer(ctx, state->buf_scratch, 0, state->buf_scratch->size);
+            ctx->bind_gfx_pipeline(ctx, state->pipe_vs_out_xfb[num_comps - 1]);
 
             printf("%5.2f", num_comps / 4.0);
-            ctx->bind_gfx_pipeline(ctx, prog_vs_out_xfb[num_comps - 1]);
-            run_test(ctx, &state, test, max_vertices_per_draw);
-            print_result(ctx, &state, vertex_size, test);
+            run_test(ctx, state, test, max_vertices_per_draw);
+            print_result(ctx, state, vertex_size, test);
             puts("");
-
-            glDeleteBuffers(1, &xfb_buf);
          }
          break;
 
@@ -708,9 +677,9 @@ test_iobw(api_context *ctx)
             unsigned vertex_size = num_comps * 4;
 
             printf("%5.2f", num_comps / 4.0);
-            ctx->bind_gfx_pipeline(ctx, prog_vs_out_fs[num_comps - 1]);
-            run_test(ctx, &state, test, max_vertices_per_draw);
-            print_result(ctx, &state, vertex_size, test);
+            ctx->bind_gfx_pipeline(ctx, state->pipe_vs_out_fs[num_comps - 1]);
+            run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
+            print_result(ctx, state, vertex_size, test);
             puts("");
          }
          break;
@@ -725,9 +694,9 @@ test_iobw(api_context *ctx)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned amp_factor = 0; amp_factor < 3; amp_factor++) {
-               ctx->bind_gfx_pipeline(ctx, prog_gs_out[amp_factor][num_comps - 1]);
-               run_test(ctx, &state, test, max_vertices_per_draw);
-               print_result(ctx, &state, vertex_size * (amp_factor + 1), test);
+               ctx->bind_gfx_pipeline(ctx, state->pipe_gs_out[amp_factor][num_comps - 1]);
+               run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
+               print_result(ctx, state, vertex_size * (amp_factor + 1), test);
             }
             puts("");
          }
@@ -743,9 +712,9 @@ test_iobw(api_context *ctx)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
-               ctx->bind_gfx_pipeline(ctx, prog_tcs_out[tf][num_comps - 1]);
-               run_test(ctx, &state, test, max_vertices_per_draw);
-               print_result(ctx, &state, vertex_size, test);
+               ctx->bind_gfx_pipeline(ctx, state->pipe_tcs_out[tf][num_comps - 1]);
+               run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
+               print_result(ctx, state, vertex_size, test);
             }
             puts("");
          }
@@ -760,13 +729,34 @@ test_iobw(api_context *ctx)
 
             printf("%5.2f", num_comps / 4.0);
             for (unsigned tf = 0; tf < 3; tf++) {
-               ctx->bind_gfx_pipeline(ctx, prog_tcs_patch_out[tf][num_comps - 1]);
-               run_test(ctx, &state, test, max_vertices_per_draw);
-               print_result(ctx, &state, patch_size, test);
+               ctx->bind_gfx_pipeline(ctx, state->pipe_tcs_patch_out[tf][num_comps - 1]);
+               run_test(ctx, state, test, MAX_VERTICES_PER_DRAW);
+               print_result(ctx, state, patch_size, test);
             }
             puts("");
          }
          break;
       }
    }
+}
+
+void
+test_iobw(api_context *ctx)
+{
+   iobw_test_state state = {0};
+
+   run(ctx, INIT_AND_COUNT_TESTS, &state);
+
+   if (!state.num_tests)
+      return;
+
+   state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
+
+   printf("Executing tests ...");
+   fflush(stdout);
+   run(ctx, RUN, &state);
+   puts("");
+
+   ctx->get_query_results(ctx, state.timestamps);
+   run(ctx, REPORT, &state);
 }
