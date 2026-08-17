@@ -323,7 +323,7 @@ typedef struct {
    api_descriptor_set_layout *ms_desc_set_layout[MAX_VARYING_SHADERS];
    api_gfx_pipeline *pipelines[NUM_GEOMETRY_STYLES][NUM_CULL_METHODS][NUM_SPECIAL2_ATTRIBUTES][MAX_VARYING_SHADERS];
    api_query_pool *timestamps;
-} test_state;
+} prim_test_state;
 
 static api_shader *
 compile_fs(api_context *ctx, unsigned num_varyings)
@@ -657,7 +657,7 @@ compile_ms(api_context *ctx, unsigned num_varyings, enum geometry_style geom_sty
 }
 
 static void
-compile_shaders(api_context *ctx, test_state *state)
+compile_shaders(api_context *ctx, prim_test_state *state)
 {
    for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
       if (v == 5 || v == 7)
@@ -1072,7 +1072,7 @@ get_buffer_set_index(enum geometry_style geom_style, enum cull_method cull_metho
 }
 
 static void
-init_buffers(api_context *ctx, test_state *state, const test_info *test)
+init_buffers(api_context *ctx, prim_test_state *state, const test_info *test)
 {
    const unsigned max_indices = 8100000 * 3;
    const unsigned max_vertices = max_indices;
@@ -1287,7 +1287,7 @@ run_draws(api_context *ctx, unsigned num_iterations, enum geometry_style geom_st
 }
 
 static void
-run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const test_info *test,
+run_pipeline(api_context *ctx, prim_test_state *state, unsigned num_iterations, const test_info *test,
              unsigned num_varyings)
 {
    buffer_set_index set = get_buffer_set_index(test->geom_style, test->cull_method, test->small_triangle_size_index,
@@ -1343,7 +1343,7 @@ run_pipeline(api_context *ctx, test_state *state, unsigned num_iterations, const
 }
 
 static void
-create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsigned num_varyings)
+create_pipeline(api_context *ctx, prim_test_state *state, const test_info *test, unsigned num_varyings)
 {
    if (!state->fs[num_varyings])
       return;
@@ -1456,7 +1456,7 @@ create_pipeline(api_context *ctx, test_state *state, const test_info *test, unsi
 }
 
 static void
-get_subtest_name(api_context *ctx, char *out, unsigned out_size, const test_state *state,
+get_subtest_name(api_context *ctx, char *out, unsigned out_size, const prim_test_state *state,
                  const test_info *test)
 {
    char cull_info1[32] = {0}, cull_method[32], special2[32];
@@ -1532,7 +1532,7 @@ get_subtest_name(api_context *ctx, char *out, unsigned out_size, const test_stat
 }
 
 static void
-run_test(api_context *ctx, test_state *state, test_stage test_stage, const test_info *test)
+run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const test_info *test)
 {
    if (test_stage != REPORT && get_mesh_wg_size(test->geom_style) > ctx->max_mesh_workgroup_size)
       return;
@@ -1591,7 +1591,7 @@ run_test(api_context *ctx, test_state *state, test_stage test_stage, const test_
 void
 test_prim(api_context *ctx)
 {
-   test_state *state = calloc(1, sizeof(test_state));
+   prim_test_state *state = calloc(1, sizeof(prim_test_state));
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,

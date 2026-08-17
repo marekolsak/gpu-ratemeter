@@ -155,10 +155,10 @@ typedef struct {
    api_buffer *hostmem;
    api_buffer *indirect;
    struct hash_table indirect_params_ht;
-} test_state;
+} bufbw_test_state;
 
 static void
-run(api_context *ctx, test_stage stage, test_state *state)
+run(api_context *ctx, test_stage stage, bufbw_test_state *state)
 {
    const unsigned name_indent = 70;
 
@@ -403,7 +403,7 @@ test_bufbw(api_context *ctx)
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 
-   test_state state = {0};
+   bufbw_test_state state = {0};
 
    /* Create buffers. */
    /* We allocate enough memory and cycle through the whole range to prevent caching. */

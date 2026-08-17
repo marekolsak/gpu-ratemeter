@@ -27,7 +27,7 @@ typedef struct {
 
    api_buffer *result_buf;
    uint64_t *results;
-} test_state;
+} latency_test_state;
 
 static unsigned
 get_spacing(api_context *ctx, bool shared_memory)
@@ -326,7 +326,7 @@ generate_sequence(uint32_t *array, unsigned base, unsigned n)
 }
 
 static void
-set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsigned size,
+set_jump_buffer_data(api_context *ctx, latency_test_state *state, api_buffer *buf, unsigned size,
                      bool shared_memory)
 {
    unsigned spacing = get_spacing(ctx, shared_memory);
@@ -363,7 +363,7 @@ set_jump_buffer_data(api_context *ctx, test_state *state, api_buffer *buf, unsig
 }
 
 static void
-run(api_context *ctx, test_stage stage, test_state *state)
+run(api_context *ctx, test_stage stage, latency_test_state *state)
 {
    if (stage == INIT_AND_COUNT_TESTS) {
       /* Build pipelines. */
@@ -596,7 +596,7 @@ test_latency(api_context *ctx)
             num_indirections, min_indirections);
    }
 
-   test_state state = {0};
+   latency_test_state state = {0};
    state.min_size = MAX2(ctx->options.spacing * 4, 1024);
    state.num_indirections = num_indirections;
 
