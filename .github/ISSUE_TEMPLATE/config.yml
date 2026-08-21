@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: File an issue on https://gitlab.freedesktop.org/mesa/gpu-ratemeter
+    url: https://gitlab.freedesktop.org/mesa/gpu-ratemeter/-/work_items
+    about: This GitHub repository is only a mirror.
