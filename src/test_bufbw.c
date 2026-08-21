@@ -11,7 +11,7 @@
 #include "common.h"
 #include "extras/hash_table.h"
 
-#define MIN_SIZE                 512
+#define MIN_SIZE                 8
 #define MAX_SIZE                 (256 * 1024 * 1024)
 
 /* This divides the maximum size and execution time of host memory tests by this number
@@ -141,7 +141,7 @@ static unsigned
 next_size(unsigned size)
 {
    int order = logbase2(size) - 3;
-   assert(order >= 2);
+   assert(order >= 0);
 
    return ALIGN_POT((unsigned)(size * SIZE_STEP_MUL), 1 << order);
 }
@@ -370,7 +370,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                          */
                         uint64_t num_bytes = (uint64_t)size * num_runs *
                                              (is_copy && dst_heap_index == src_heap_index ? 2 : 1);
-                        print_throughput_from_next_timestamps(ctx, state->timestamps, num_bytes, NULL, "%8.2f", "%8s", 30);
+                        print_throughput_from_next_timestamps(ctx, state->timestamps, num_bytes, NULL, "%8.3f", "%8s", 30);
                      }
 
                      if (stage == RUN)
