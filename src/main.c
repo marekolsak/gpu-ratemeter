@@ -30,6 +30,7 @@
  * iobw (Shader Input and Output Bandwidth in GB/s):
  * - finish porting from GL
  * - write README
+ * - mesh shaders (also with non-power-of-two workgroup sizes)
  *
  * latency:
  * - instruction fetch (jump chasing)
@@ -61,10 +62,8 @@
  * - add cyclesN tests
  * - task/mesh:
  *   - mesh shaders with cross-invocation output stores
- *   - mesh shaders with an odd number of per-vertex stores per subgroup
- *   - mesh shaders with rasterizer discard and remove all exports in the driver to measure pure wave launch rate
  *   - task shader (test a low number of mesh workgroups per TS invocation)
- * - add an option to print pixel throughput
+ * - add -pix option to print pixel throughput
  */
 
 #include <assert.h>

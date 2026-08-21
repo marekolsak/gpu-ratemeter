@@ -30,15 +30,16 @@ enum geometry_style {
    GEOM_TRI_STRIP,                 /* triangle strips always reuse the last 2 vertices */
    GEOM_TRI_STRIP_INDEXED,         /* same but there is an identity index buffer that doesn't serve any purpose */
    GEOM_TRI_STRIP_INDEXED_PRIM_RESTART, /* same but primitive restart is enabled and the restart index is never used */
-   GEOM_MESH4_REUSE2,              /* workgroup size 4, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH7_REUSE2,              /* workgroup size 7, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH8_REUSE2,              /* workgroup size 8, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH16_REUSE2,             /* workgroup size 16, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH32_REUSE2,             /* workgroup size 32, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH64_REUSE2,             /* workgroup size 64, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH128_REUSE2,            /* workgroup size 128, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH192_REUSE2,            /* workgroup size 192, reuse 2 vertices from 2 previous triangles */
-   GEOM_MESH256_REUSE2,            /* workgroup size 256, reuse 2 vertices from 2 previous triangles */
+   /* workgroup size N, reuse 2 vertices from 2 previous triangles */
+   GEOM_MESH4_REUSE2,
+   GEOM_MESH8_REUSE2,
+   GEOM_MESH16_REUSE2,
+   GEOM_MESH30_REUSE2,
+   GEOM_MESH32_REUSE2,
+   GEOM_MESH64_REUSE2,
+   GEOM_MESH128_REUSE2,
+   GEOM_MESH192_REUSE2,
+   GEOM_MESH256_REUSE2,
    NUM_GEOMETRY_STYLES,
 };
 
@@ -103,6 +104,7 @@ static test_info tests[] = {
    {100, GEOM_MESH4_REUSE2, CULL_BACK},
    {100, GEOM_MESH8_REUSE2, CULL_BACK},
    {100, GEOM_MESH16_REUSE2, CULL_BACK},
+   {100, GEOM_MESH30_REUSE2, CULL_BACK},
    {100, GEOM_MESH32_REUSE2, CULL_BACK},
    {100, GEOM_MESH64_REUSE2, CULL_BACK},
    {100, GEOM_MESH128_REUSE2, CULL_BACK},
@@ -123,6 +125,7 @@ static test_info tests[] = {
    {50, GEOM_TRI_LIST_REUSE1_INDEXED, CULL_BACK},
    {50, GEOM_TRI_LIST_REUSE2_INDEXED, CULL_BACK},
    {50, GEOM_TRI_STRIP, CULL_BACK},
+   {50, GEOM_MESH30_REUSE2, CULL_BACK},
    {50, GEOM_MESH32_REUSE2, CULL_BACK},
    {50, GEOM_MESH64_REUSE2, CULL_BACK},
    {50, GEOM_MESH128_REUSE2, CULL_BACK},
@@ -136,6 +139,7 @@ static test_info tests[] = {
    {0, GEOM_MESH4_REUSE2, CULL_NONE},
    {0, GEOM_MESH8_REUSE2, CULL_NONE},
    {0, GEOM_MESH16_REUSE2, CULL_NONE},
+   {0, GEOM_MESH30_REUSE2, CULL_NONE},
    {0, GEOM_MESH32_REUSE2, CULL_NONE},
    {0, GEOM_MESH64_REUSE2, CULL_NONE},
    {0, GEOM_MESH128_REUSE2, CULL_NONE},
@@ -494,9 +498,9 @@ static unsigned
 get_mesh_wg_size(enum geometry_style geom_style)
 {
    return geom_style == GEOM_MESH4_REUSE2 ? 4 :
-          geom_style == GEOM_MESH7_REUSE2 ? 7 :
           geom_style == GEOM_MESH8_REUSE2 ? 8 :
           geom_style == GEOM_MESH16_REUSE2 ? 16 :
+          geom_style == GEOM_MESH30_REUSE2 ? 30 :
           geom_style == GEOM_MESH32_REUSE2 ? 32 :
           geom_style == GEOM_MESH64_REUSE2 ? 64 :
           geom_style == GEOM_MESH128_REUSE2 ? 128 :
@@ -863,6 +867,7 @@ gen_triangle_tile(unsigned num_quads_per_dim, double prim_size_in_pixels, unsign
             }
 
             if (mesh_wg_size) {
+               assert(mesh_wg_size % 2 == 0);
                num_vertices_per_group += 2;
                num_prims_per_group += 2;
 
@@ -1516,14 +1521,14 @@ get_subtest_name(api_context *ctx, char *out, unsigned out_size, const prim_test
    case GEOM_MESH4_REUSE2:
       geom = ".mesh4.reuse2";
       break;
-   case GEOM_MESH7_REUSE2:
-      geom = ".mesh8.reuse2";
-      break;
    case GEOM_MESH8_REUSE2:
       geom = ".mesh8.reuse2";
       break;
    case GEOM_MESH16_REUSE2:
       geom = ".mesh16.reuse2";
+      break;
+   case GEOM_MESH30_REUSE2:
+      geom = ".mesh30.reuse2";
       break;
    case GEOM_MESH32_REUSE2:
       geom = ".mesh32.reuse2";
