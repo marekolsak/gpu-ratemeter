@@ -272,7 +272,8 @@ main(int argc, char **argv)
 
    if (filter) {
       char filter_pattern[2048];
-      snprintf(filter_pattern, sizeof(filter_pattern), "^%s", filter);
+      /* If the regex starts with *, make it ^.* instead of ^*. */
+      snprintf(filter_pattern, sizeof(filter_pattern), "^%s%s", filter[0] == '*' ? "." : "", filter);
 
       options.regex_subtest_filter = regex_compile(filter_pattern);
    }
