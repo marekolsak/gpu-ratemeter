@@ -33,11 +33,13 @@
  *
  * latency:
  * - instruction fetch (jump chasing)
+ * - reduce run times by varying the number of indirections
  *
  * pix:
- * - for cycles tests, try to run FS with increased register usage
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
+ * - depth test with Z outside [0, 1] enabled, but not actually outside [0, 1]
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
+ * - (maybe) for cycles tests, FS with different register usage (need a register usage control fiels in SPIR-V)
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - (maybe) stencil/HiS
@@ -45,18 +47,24 @@
  *
  * prim:
  * - VS + transform feedback
- * - GS passthrough + transform feedback
- * - GS passthrough
- * - GS that only emits max_vertices / 2, max_vertices / 4, etc.
- * - GS that only broadcasts one triangle to multiple layers
- * - TES?
- * - GL clip planes
- * - multiview
- * - task shader (test a low number of mesh workgroups per TS invocation)
- * - fill the screen in the Morton order instead of linearly
- * - 1-primitive instances/clock
- * - 1-primitive draws in a multidraw, prims/clock == draws/clock
+ * - GS:
+ *   - passthrough
+ *   - passthrough + transform feedback
+ *   - GS that only emits max_vertices / 2, max_vertices / 4, etc.
+ *   - GS that only broadcasts one triangle to multiple layers
+ * - (maybe) TES
+ * - (maybe) GL clip planes
+ * - (maybe) multiview
+ * - (maybe) fill the screen in the Morton order instead of linearly
+ * - 1-primitive instances = instances/clock
+ * - 1-primitive draws and multidraws, prims/clock == draws/clock
  * - add cyclesN tests
+ * - task/mesh:
+ *   - mesh shaders with cross-invocation output stores
+ *   - mesh shaders with an odd number of per-vertex stores per subgroup
+ *   - smaller mesh workgroups (4, 8, 16)
+ *   - mesh shaders with rasterizer discard and remove all exports in the driver to measure pure wave launch rate
+ *   - task shader (test a low number of mesh workgroups per TS invocation)
  */
 
 #include <assert.h>

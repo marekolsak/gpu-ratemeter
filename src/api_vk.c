@@ -3015,6 +3015,10 @@ vk_create_context(const program_options *options)
    ctx->end_render_pass = vk_end_render_pass;
    ctx->clear_attachments = vk_clear_attachments;
 
+   ctx->bind_transform_feedback_buffer = vk_bind_transform_feedback_buffer;
+   ctx->begin_transform_feedback = vk_begin_transform_feedback;
+   ctx->end_transform_feedback = vk_end_transform_feedback;
+
    ctx->bind_vertex_buffers = vk_bind_vertex_buffers;
    ctx->bind_index_buffer = vk_bind_index_buffer;
    ctx->draw = vk_draw;
