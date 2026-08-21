@@ -62,9 +62,9 @@
  * - task/mesh:
  *   - mesh shaders with cross-invocation output stores
  *   - mesh shaders with an odd number of per-vertex stores per subgroup
- *   - smaller mesh workgroups (4, 8, 16)
  *   - mesh shaders with rasterizer discard and remove all exports in the driver to measure pure wave launch rate
  *   - task shader (test a low number of mesh workgroups per TS invocation)
+ * - add an option to print pixel throughput
  */
 
 #include <assert.h>

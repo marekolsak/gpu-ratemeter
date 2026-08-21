@@ -1456,10 +1456,10 @@ gl_bind_index_buffer(api_context *ctx, api_buffer *ib)
 static void
 gl_draw(api_context *ctx, const api_draw_desc *desc)
 {
-   assert(desc->count && (desc->mesh_shader || desc->instance_count));
+   assert((desc->mesh_groups_x || desc->mesh_groups_y) != !!desc->count);
 
-   if (desc->mesh_shader) {
-      glDrawMeshTasksEXT(desc->count, 1, 1);
+   if (desc->mesh_groups_x || desc->mesh_groups_y) {
+      glDrawMeshTasksEXT(desc->mesh_groups_x, desc->mesh_groups_y, 1);
    } else if (desc->indexed) {
       glDrawElementsInstanced(ctx->current_pipeline->prim_mode, desc->count, GL_UNSIGNED_INT, NULL,
                               desc->instance_count);

@@ -296,10 +296,11 @@ typedef struct {
 
 typedef struct {
    bool indexed;
-   bool mesh_shader;
    unsigned count;
    unsigned instance_count;
    unsigned first_vertex;
+   unsigned mesh_groups_x;
+   unsigned mesh_groups_y;
 } api_draw_desc;
 
 typedef enum {
