@@ -450,6 +450,7 @@ typedef struct api_context {
    bool has_fully_covered;
    bool has_image_tiling_linear;
    bool has_multiview;
+   bool has_resolve_image_layers;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
    bool has_shader_int8;

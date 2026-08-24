@@ -1673,6 +1673,7 @@ gl_create_context(const program_options *options)
    ctx->has_clear_image_region = true;
    ctx->has_depth_msaa_resolve = true;
    ctx->has_image_tiling_linear = options->gl_tiling_linear;
+   ctx->has_resolve_image_layers = false;
    ctx->has_resolve_image_yflip = true;
    ctx->has_shader_int8 = false;
    ctx->has_shader_int64 = GLAD_GL_ARB_gpu_shader_int64;

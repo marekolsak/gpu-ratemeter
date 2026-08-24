@@ -2857,6 +2857,7 @@ vk_create_context(const program_options *options)
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
    ctx->has_image_tiling_linear = true;
    ctx->has_multiview = Vulkan11.multiview;
+   ctx->has_resolve_image_layers = true;
    ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;
    ctx->has_shader_int64 = Vulkan10.features.shaderInt64;
