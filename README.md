@@ -207,6 +207,9 @@ from pipeline states. (In fact, the pixel throughput equation of a specific GPU 
 inferred from `pix` results.) Once T is known for a specific set of fragment shaders, then we only need to gather
 their average execution time to make the judgement call as to which fragment shaders are worth optimizing.
 
+The implication is that `pix` results are representative of all fragment shaders and graphics pipeline
+configurations where the FS execution time is <= T and memory bandwidth is not a limitation.
+
 #### Rasterizer Efficiency Subtests
 
 The `raster` subtests measure how much helper invocations and triangle

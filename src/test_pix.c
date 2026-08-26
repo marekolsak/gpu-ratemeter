@@ -996,6 +996,7 @@ run_test_pix(api_context *ctx, unsigned samples,
       if ((test_flavor == TEST_IMAGE_3D || test_flavor == TEST_LINEAR) &&
           (strstr(pipeline_name, "vrs") ||
            strstr(pipeline_name, "raster") ||
+           strstr(pipeline_name, "cycles") ||
            strstr(pipeline_name, "zbuf") ||
            strstr(pipeline_name, "output") ||
            strstr(pipeline_name, "face") ||

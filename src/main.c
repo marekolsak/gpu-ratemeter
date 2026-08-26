@@ -5,27 +5,33 @@
 
 /* TODO:
  *
+ * HLSL plan:
+ * - add DXC as a dependency, implement HLSL->SPIR-V
+ * - rewrite all GLSL shaders to HLSL to prepare for DX12
+ * - use HLSL->SPIR-V for GL & VK
+ *
  * Tests:
- * - bufbwtiny - tiny buffer clears and copies (4-32 B), clocks/dword, clocks/command
- * - rt: ray tracing performance in rays/clock
+ * - rt: ray tracing performance in intersections/clock
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
  * - sampler: image load and filter rate
- * - remove redundant tests from piglit and radeonsi
+ * - state: state changes such as pipeline binds to measure CP overhead
+ * // remove redundant tests from piglit and radeonsi
  *
  * APIs:
  * - DX12
  * - DX11
  *
  * imgbw:
+ * - clear_framebuffer/attachment followed by solid-colored draw with full overwrite
  * - D32F clear with Z outside [0, 1]
- * - consider reporting pixels/clock
- * - 2D array images
+ * - add -pix option to print pixel throughput
+ * - 2D array images (only MSAA resolves done)
  * - transfer queue
  * - buffer-to-image, image-to-buffer
  * - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
- * - no barrier, uncached
+ * - (maybe) no barrier, uncached
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
  * - finish porting from GL
@@ -35,12 +41,15 @@
  * latency:
  * - instruction fetch (jump chasing)
  * - reduce run times by varying the number of indirections
+ * - image load and image sample latency with and without DCC
  *
  * pix:
+ * - skip VRS subtests for msaa8
+ * - skip a2c and samplemask output subtests for gl/noaa?
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - depth test with Z outside [0, 1] enabled, but not actually outside [0, 1]
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
- * - (maybe) for cycles tests, FS with different register usage (need a register usage control fiels in SPIR-V)
+ * - (maybe) for cycles tests, FS with different register usage (need a register usage control field in SPIR-V)
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
  * - (maybe) stencil/HiS
