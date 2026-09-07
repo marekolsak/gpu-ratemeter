@@ -440,7 +440,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
       state->results = malloc(state->result_buf->size);
       ctx->get_buffer_data(ctx, state->result_buf, 0, state->result_buf->size, state->results);
 
-      printf("%-*s,", name_indent, "Size");
+      fprintf(ctx->output, "%-*s,", name_indent, "Size");
 
       for (unsigned size = state->min_size; size <= ctx->options.max_size; size = get_next_size(size)) {
          unsigned number = 0;
@@ -453,13 +453,13 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
             }
          }
 
-         printf("%*u", max_digits - !!order, number);
+         fprintf(ctx->output, "%*u", max_digits - !!order, number);
          if (order)
-            printf("%c", " KMGE"[order]);
-         printf(",");
+            fprintf(ctx->output, "%c", " KMGE"[order]);
+         fprintf(ctx->output, ",");
       }
 
-      puts("");
+      fprintf(ctx->output, "\n");
    }
 
    atomic_uint test_index = 0;
@@ -488,7 +488,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                   char name[1024];
 
                   snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, subtest);
-                  printf("%-*s,", name_indent, name);
+                  fprintf(ctx->output, "%-*s,", name_indent, name);
                }
 
                /* Int8 uses 8-bit shared memory addresses, but the jump buffer is initialized
@@ -523,9 +523,9 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                      uint64_t clock_cycles = state->results[test_index * 2] / state->num_indirections;
 
                      if (clock_cycles >= pow(10, max_digits + 1))
-                        printf("%*s,", max_digits, "n/a");
+                        fprintf(ctx->output, "%*s,", max_digits, "n/a");
                      else
-                        printf("%*u,", max_digits, (unsigned)clock_cycles);
+                        fprintf(ctx->output, "%*u,", max_digits, (unsigned)clock_cycles);
                      break;
                   }
                   }
@@ -537,7 +537,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                }
 
                if (stage == REPORT)
-                  puts("");
+                  fprintf(ctx->output, "\n");
             }
          }
       }

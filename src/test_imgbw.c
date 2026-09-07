@@ -506,22 +506,22 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
    const unsigned name_indent = 82;
 
    if (header) {
-      printf("%-*s", name_indent, "Size");
+      fprintf(ctx->output, "%-*s", name_indent, "Size");
 
       for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
          unsigned shift = size >= (1 << 20) ? 20 : 10;
 
-         printf(",%8u%cB", (unsigned)(size >> shift), shift == 20 ? 'M' : 'K');
+         fprintf(ctx->output, ",%8u%cB", (unsigned)(size >> shift), shift == 20 ? 'M' : 'K');
       }
 
-      puts("");
+      fprintf(ctx->output, "\n");
    } else {
       char subtest[128];
 
       get_subtest_name(ctx, subtest, sizeof(subtest), test_index, img_type, format_index, samples,
                        layer_count_option, layout, fill_option, region_option);
-      printf("%s.%-*s",
-             ctx->options.name_prefix, (int)(name_indent - strlen(ctx->options.name_prefix) - 1), subtest);
+      fprintf(ctx->output, "%s.%-*s",
+              ctx->options.name_prefix, (int)(name_indent - strlen(ctx->options.name_prefix) - 1), subtest);
    }
 }
 
@@ -963,7 +963,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     print_progress(*num_tests, &num_visited_tests, 20);
 
                                  if (stage == REPORT)
-                                    printf(",%10s", "n/a");
+                                    fprintf(ctx->output, ",%10s", "n/a");
 
                                  continue;
                               }
@@ -1170,7 +1170,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            if (stage == REPORT)
-                              printf("\n");
+                              fprintf(ctx->output, "\n");
                         }
                      }
 

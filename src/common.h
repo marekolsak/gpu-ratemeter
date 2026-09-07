@@ -16,6 +16,7 @@
 
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdnoreturn.h>
 
 #ifndef VK_PRIVATE
@@ -407,6 +408,9 @@ typedef struct {
 
    /* REGEX regular expression options. */
    const void *regex_format;
+
+   /* STRING options. */
+   const char *output_file;
 } program_options;
 
 typedef enum {
@@ -431,6 +435,9 @@ typedef enum {
 
 typedef struct api_context {
    program_options options;
+
+   /* Output file for benchmark results. */
+   FILE *output;
 
    /* Core properties. */
    bool has_heap[api_num_heaps];

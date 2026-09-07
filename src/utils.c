@@ -63,14 +63,14 @@ print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
       result *= 100.0 / ctx->options.base_rate;
 
    /* a comma separator between results */
-   printf(",");
+   fprintf(ctx->output, ",");
 
    if (ctx->options.max_valid_result && result > ctx->options.max_valid_result)
-      printf(string_format, "error");
+      fprintf(ctx->output, string_format, "error");
    else if (ctx->options.report_bandwidth)
-      printf(bandwidth_format, result);
+      fprintf(ctx->output, bandwidth_format, result);
    else
-      printf(rate_format, result);
+      fprintf(ctx->output, rate_format, result);
 }
 
 void printflike(1, 2)

@@ -292,8 +292,8 @@ test_sparsebind(api_context *ctx)
 
    const unsigned name_indent = 64;
 
-   printf("%-*s,%9s,%9s,%9s,%9s,%9s\n", name_indent, "Async sparse bind queue", "no", "no", "no", "yes", "yes");
-   printf("%-*s,%9s,%9s,%9s,%9s,%9s\n", name_indent, "Command buffer", "none", "empty", "simple", "empty", "simple");
+   fprintf(ctx->output, "%-*s,%9s,%9s,%9s,%9s,%9s\n", name_indent, "Async sparse bind queue", "no", "no", "no", "yes", "yes");
+   fprintf(ctx->output, "%-*s,%9s,%9s,%9s,%9s,%9s\n", name_indent, "Command buffer", "none", "empty", "simple", "empty", "simple");
 
    for (unsigned i = 0; i < num_tests; i++) {
       char subtest[256];
@@ -302,10 +302,10 @@ test_sparsebind(api_context *ctx)
       if (skip_subtest(ctx, subtest))
          continue;
 
-      unsigned len = printf("%s.%s", ctx->options.name_prefix, subtest);
+      unsigned len = fprintf(ctx->output, "%s.%s", ctx->options.name_prefix, subtest);
 
       assert(len <= name_indent);
-      printf("%*s", name_indent - len, "");
+      fprintf(ctx->output, "%*s", name_indent - len, "");
 
       for (unsigned async = 0; async < 2; async++) {
          for (unsigned cmdbuf = 0; cmdbuf < NUM_CMDBUF_OPTIONS; cmdbuf++) {
@@ -313,7 +313,7 @@ test_sparsebind(api_context *ctx)
                continue;
 
             if (print_na(ctx, tests[i], cmdbuf, async)) {
-               printf(",      n/a");
+               fprintf(ctx->output, ",      n/a");
                continue;
             }
 
@@ -321,6 +321,6 @@ test_sparsebind(api_context *ctx)
                                                   NULL, "%9.0f", "%9s", 0);
          }
       }
-      puts("");
+      fprintf(ctx->output, "\n");
    }
 }

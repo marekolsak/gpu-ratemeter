@@ -1615,8 +1615,8 @@ run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const 
       break;
 
    case REPORT: {
-      printf("%s.%-*s", ctx->options.name_prefix, (int)(61 - strlen(ctx->options.name_prefix)),
-             subtest);
+      fprintf(ctx->output, "%s.%-*s", ctx->options.name_prefix,
+              (int)(61 - strlen(ctx->options.name_prefix)), subtest);
 
       for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
          if (!state->fs[v])
@@ -1627,11 +1627,11 @@ run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const 
                                                   NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
                                                   ctx->options.base_rate ? "%6.1f" : "%6.2f", NULL, "%6s", 0);
          } else {
-            printf(",   n/a");
+            fprintf(ctx->output, ",   n/a");
          }
       }
 
-      printf("\n");
+      fprintf(ctx->output, "\n");
       break;
    }
    }
@@ -1722,12 +1722,12 @@ test_prim(api_context *ctx)
           ctx->options.freq_mhz ? "primitives/clock" :
                                   "billion primitives/second");
 
-   printf("%-62s", "Number of vec4 varyings");
+   fprintf(ctx->output, "%-62s", "Number of vec4 varyings");
    for (unsigned v = 0; v < MAX_VARYING_SHADERS; v++) {
       if (state->fs[v])
-         printf(",     %u", v);
+         fprintf(ctx->output, ",     %u", v);
    }
-   puts("");
+   fprintf(ctx->output, "\n");
 
    for (unsigned i = 0; i < ARRAY_SIZE(tests); i++)
       run_test(ctx, state, REPORT, &tests[i]);

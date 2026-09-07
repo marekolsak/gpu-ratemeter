@@ -1403,7 +1403,7 @@ run_test_pix(api_context *ctx, unsigned samples,
    }
 
    const unsigned name_indent = 86;
-   printf("%-*s", name_indent, "Formats");
+   fprintf(ctx->output, "%-*s", name_indent, "Formats");
 
    unsigned off = 0;
 
@@ -1433,9 +1433,9 @@ run_test_pix(api_context *ctx, unsigned samples,
          assert(len == 7 && off > 0);
       }
 
-      printf(",%*s", len, formats[f].name);
+      fprintf(ctx->output, ",%*s", len, formats[f].name);
    }
-   puts("");
+   fprintf(ctx->output, "\n");
 
    /* Print results. */
    for (unsigned p = 0; p < ARRAY_SIZE(pipelines); p++) {
@@ -1447,7 +1447,7 @@ run_test_pix(api_context *ctx, unsigned samples,
 
       char name[512];
       snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, pipeline_name);
-      printf("%-*s", name_indent, name);
+      fprintf(ctx->output, "%-*s", name_indent, name);
 
       bool raster = strstr(pipeline_name, "raster");
 
@@ -1456,7 +1456,7 @@ run_test_pix(api_context *ctx, unsigned samples,
             continue;
 
          if (!fbs[f].pipelines[p]) {
-            printf(",    n/a");
+            fprintf(ctx->output, ",    n/a");
             continue;
          }
 
@@ -1471,7 +1471,7 @@ run_test_pix(api_context *ctx, unsigned samples,
          print_throughput_from_next_timestamps(ctx, timestamps, num_units,
                                                "%7.1f", "%7.0f", "%7s", 30);
       }
-      puts("");
+      fprintf(ctx->output, "\n");
    }
 
    /* Free memory. */

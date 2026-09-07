@@ -92,6 +92,7 @@ typedef enum {
    OPTION_BOOL,
    OPTION_UINT64,
    OPTION_REGEX,
+   OPTION_STRING,
 } option_type;
 
 typedef struct {
@@ -112,6 +113,7 @@ static const option_desc common_options[] = {
    /* Common to all tests. */
    {OPTION_UINT64, "-baserate=", offsetof(program_options, base_rate)},
    {OPTION_UINT64, "-maxvalidresult=", offsetof(program_options, max_valid_result)},
+   {OPTION_STRING, "-output=", offsetof(program_options, output_file)},
 
    /* OpenGL only */
    {OPTION_BOOL, "-gl-tiling-linear", offsetof(program_options, gl_tiling_linear)},
@@ -194,6 +196,12 @@ parse_option(program_options *options, const option_desc *option, const char *ar
    case OPTION_REGEX:
       if (!strncmp(arg, option->name, len)) {
          *(const char**)((uint8_t*)options + option->offset) = regex_compile(arg + len);
+         return true;
+      }
+      return false;
+   case OPTION_STRING:
+      if (!strncmp(arg, option->name, len)) {
+         *(const char**)((uint8_t*)options + option->offset) = arg + len;
          return true;
       }
       return false;
@@ -309,6 +317,15 @@ main(int argc, char **argv)
 
    if (!ctx)
       error("Invalid API or API selection missing in parameters: %s", api_name);
+
+   ctx->output = stdout;
+   if (options.output_file) {
+      ctx->output = fopen(options.output_file, "w");
+      if (ctx->output == NULL) {
+         fprintf(stderr, "Failed to open output file for writing: %s\n", options.output_file);
+         return 1;
+      }
+   }
 
    for (unsigned i = 0; i < num_re_groups; i++)
       free(re_groups[i]);

@@ -163,16 +163,16 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
    const unsigned name_indent = 70;
 
    if (stage == REPORT) {
-      printf("%-*s", name_indent, "Allocation size");
+      fprintf(ctx->output, "%-*s", name_indent, "Allocation size");
       for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
          if (size >= 4 * 1024 * 1024)
-            printf(",%6uMB", size / (1024 * 1024));
+            fprintf(ctx->output, ",%6uMB", size / (1024 * 1024));
          else if (size >= 4 * 1024)
-            printf(",%6uKB", size / 1024);
+            fprintf(ctx->output, ",%6uKB", size / 1024);
          else
-            printf(", %6uB", size);
+            fprintf(ctx->output, ", %6uB", size);
       }
-      printf("\n");
+      fprintf(ctx->output, "\n");
    }
 
    const bool has_indirect = ctx->queue_has_copy_memory_indirect[state->queue];
@@ -262,7 +262,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                   if (stage == REPORT) {
                      char name[1024];
                      snprintf(name, sizeof(name), "%s.%s", ctx->options.name_prefix, subtest);
-                     printf("%-*s", name_indent, name);
+                     fprintf(ctx->output, "%-*s", name_indent, name);
                   }
 
                   for (unsigned size = MIN_SIZE; size <= MAX_SIZE; size = next_size(size)) {
@@ -270,7 +270,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                      if ((size > MAX_SIZE / HOSTMEM_TEST_REDUCTION && uses_hostmem) ||
                          (traversal == MISS_NO_BARRIER && ctx->buffer_barrier_has_gl_semantics)) {
                         if (stage == REPORT)
-                           printf(",%8s", "n/a");
+                           fprintf(ctx->output, ",%8s", "n/a");
                         continue;
                      }
 
@@ -378,7 +378,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                   }
 
                   if (stage == REPORT)
-                     puts("");
+                     fprintf(ctx->output, "\n");
                }
             }
          }
