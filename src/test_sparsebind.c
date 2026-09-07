@@ -234,7 +234,7 @@ get_subtest_name(api_context *ctx, char *out, unsigned test_flags)
 }
 
 static bool
-skip(api_context *ctx, const char *subtest)
+skip_subtest(api_context *ctx, const char *subtest)
 {
    return ctx->options.regex_subtest_filter &&
           !regex_matches(ctx->options.regex_subtest_filter, subtest);
@@ -250,7 +250,7 @@ void
 test_sparsebind(api_context *ctx)
 {
    if (!ctx->has_sparse_buffer)
-      error("Sparse buffer support is required or gpu-ratemeter doesn't support sparse buffers for this API.");
+      exit_test("Sparse buffer support is required or gpu-ratemeter doesn't support sparse buffers for this API.");
 
    unsigned tests[100], num_tests;
    generate_tests(tests, ARRAY_SIZE(tests), &num_tests);
@@ -268,7 +268,7 @@ test_sparsebind(api_context *ctx)
       char subtest[256];
       get_subtest_name(ctx, subtest, tests[i]);
 
-      if (skip(ctx, subtest))
+      if (skip_subtest(ctx, subtest))
          continue;
 
       for (unsigned async = 0; async < 2; async++) {
@@ -299,7 +299,7 @@ test_sparsebind(api_context *ctx)
       char subtest[256];
       get_subtest_name(ctx, subtest, tests[i]);
 
-      if (skip(ctx, subtest))
+      if (skip_subtest(ctx, subtest))
          continue;
 
       unsigned len = printf("%s.%s", ctx->options.name_prefix, subtest);

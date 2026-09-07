@@ -399,7 +399,7 @@ test_bufbw(api_context *ctx)
       queue = api_queue_gfx;
 
    if (!ctx->has_queue[queue])
-      error("%s queue support is required.", queue_to_string(queue));
+      exit_test("%s queue support is required.", queue_to_string(queue));
 
    printf("Using the %s queue.\n", queue_to_string(queue));
 

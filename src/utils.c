@@ -84,6 +84,19 @@ error(const char *format, ...)
    exit(1);
 }
 
+void printflike(1, 2)
+exit_test(const char *format, ...)
+{
+   va_list args;
+
+   va_start(args, format);
+   printf("Terminated: ");
+   vprintf(format, args);
+   printf("\n");
+   va_end(args);
+   exit(0);
+}
+
 char *
 strdup(const char *s)
 {

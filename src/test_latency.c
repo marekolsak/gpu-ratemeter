@@ -551,16 +551,16 @@ void
 test_latency(api_context *ctx)
 {
    if (ctx->options.bda && !ctx->has_buffer_device_address)
-      error("Buffer device address support is required.");
+      exit_test("Buffer device address support is required.");
 
    if (ctx->options.int8 && !ctx->has_shader_int8)
-      error("Shader int8 support is required.");
+      exit_test("Shader int8 support is required.");
 
    if (!ctx->has_shader_int64)
-      error("Shader int64 support is required.");
+      exit_test("Shader int64 support is required.");
 
    if (!ctx->has_shader_subgroup_clock)
-      error("Shader subgroup clock support is required.");
+      exit_test("Shader subgroup clock support is required.");
 
    /* Notes:
     * - ideally set spacing = cache_line
