@@ -15,7 +15,6 @@
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
  * - compute: launched compute shader invocations per clock, clocks per dispatch
- * - sampler: image load and filter rate
  * - state: state changes such as pipeline binds to measure CP overhead
  * // remove redundant tests from piglit and radeonsi
  *
@@ -23,14 +22,23 @@
  * - DX12
  * - DX11
  *
+ * bufbw:
+ * - vkCmdUpdateBuffer
+ *
  * imgbw:
- * - clear_framebuffer/attachment followed by solid-colored draw with full overwrite
- * - D32F clear with Z outside [0, 1]
+ * - test 64KB images
+ * - clear_framebuffer/attachment/image:
+ *   - followed by solid-colored draw with full overwrite
+ *   - clear non-zero mipmap levels
+ *   - multiple layers
+ *   - D32F clear with Z outside [0, 1]
+ * - copy/blit:
+ *   - multiple layers
+ *   - buffer-to-image, image-to-buffer
+ *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
+ *   - scaled blits
  * - add -pix option to print pixel throughput
- * - 2D array images (only MSAA resolves done)
  * - transfer queue
- * - buffer-to-image, image-to-buffer
- * - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  * - (maybe) no barrier, uncached
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
@@ -44,11 +52,16 @@
  * - image load and image sample latency with and without DCC
  *
  * pix:
- * - skip VRS subtests for msaa8
- * - skip a2c and samplemask output subtests for gl/noaa?
+ * - ztest with colormask=0
+ * - add a sysval test with 5 initialized VGPRs
+ * - reduce the number of sysval tests
+ * - test clears (color only, Z only, and color+Z)
+ * - remove VRS subtests for msaa8
+ * - skip a2c and samplemask output subtests for gl/noaa
  * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
  * - depth test with Z outside [0, 1] enabled, but not actually outside [0, 1]
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
+ * - add -prim option to print primitive throughput
  * - (maybe) for cycles tests, FS with different register usage (need a register usage control field in SPIR-V)
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
@@ -73,6 +86,12 @@
  *   - mesh shaders with cross-invocation output stores
  *   - task shader (test a low number of mesh workgroups per TS invocation)
  * - add -pix option to print pixel throughput
+ *
+ * sampler:
+ * - all tests use a tiny image to get cache hits
+ * - image_load throughput - all targets
+ * - image_sample with nearest filter throughput - all targets, no mipmap
+ * - image_sample with linear throughput - all targets, no mipmap
  */
 
 #include <assert.h>
