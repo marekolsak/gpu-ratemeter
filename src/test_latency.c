@@ -29,13 +29,15 @@ typedef struct {
    uint64_t *results;
 } latency_test_state;
 
+#define SHARED_MEM_SPACING    4
+#define SHARED_MEM_MAX_SIZE   (16 * 1024)
+
 static unsigned
 get_spacing(api_context *ctx, bool shared_memory)
 {
-   const unsigned shared_mem_spacing = 4;
-   assert(shared_mem_spacing <= ctx->options.spacing);
+   assert(SHARED_MEM_SPACING <= ctx->options.spacing);
 
-   return shared_memory ? shared_mem_spacing : ctx->options.spacing;
+   return shared_memory ? SHARED_MEM_SPACING : ctx->options.spacing;
 }
 
 static api_shader *
@@ -394,8 +396,9 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
       /* Initialize the rest. */
       state->num_tests = 0;
       assert(ctx->options.spacing % 8 == 0);
-      state->sequence_tmp = (uint32_t*)malloc(ctx->options.max_size / (ctx->options.spacing / 4));
-      state->jump_buf_data = (uint32_t*)malloc(ctx->options.max_size);
+      state->sequence_tmp = (uint32_t*)malloc(MAX2(ctx->options.max_size / (ctx->options.spacing / 4),
+                                                   SHARED_MEM_MAX_SIZE / (SHARED_MEM_SPACING / 4)));
+      state->jump_buf_data = (uint32_t*)malloc(MAX2(ctx->options.max_size, SHARED_MEM_MAX_SIZE));
 
       for (unsigned i = 0; i < api_num_heaps; i++) {
          if (!ctx->has_heap[i])
@@ -494,7 +497,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                /* Int8 uses 8-bit shared memory addresses, but the jump buffer is initialized
                 * with 256 dword addresses, which are downconverted to 8 bits in the shader.
                 */
-               unsigned max_size = shared_memory ? (ctx->options.int8 ? 1024 : 16 * 1024)
+               unsigned max_size = shared_memory ? (ctx->options.int8 ? 1024 : SHARED_MEM_MAX_SIZE)
                                                  : ctx->options.max_size;
                assert(state->min_size <= max_size);
 
