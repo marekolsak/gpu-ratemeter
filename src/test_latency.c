@@ -29,6 +29,7 @@ typedef struct {
    uint64_t *results;
 } latency_test_state;
 
+#define LOWEST_SIZE           1024 /* required by shared memory tests */
 #define SHARED_MEM_SPACING    4
 #define SHARED_MEM_MAX_SIZE   (16 * 1024)
 
@@ -445,7 +446,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
 
       fprintf(ctx->output, "%-*s,", name_indent, "Size");
 
-      for (unsigned size = state->min_size; size <= ctx->options.max_size; size = get_next_size(size)) {
+      for (unsigned size = LOWEST_SIZE; size <= ctx->options.max_size; size = get_next_size(size)) {
          unsigned number = 0;
          unsigned order;
 
@@ -497,17 +498,20 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                /* Int8 uses 8-bit shared memory addresses, but the jump buffer is initialized
                 * with 256 dword addresses, which are downconverted to 8 bits in the shader.
                 */
-               unsigned max_size = shared_memory ? (ctx->options.int8 ? 1024 : SHARED_MEM_MAX_SIZE)
+               unsigned max_size = shared_memory ? (ctx->options.int8 ? LOWEST_SIZE : SHARED_MEM_MAX_SIZE)
                                                  : ctx->options.max_size;
-               assert(state->min_size <= max_size);
+               assert(LOWEST_SIZE <= max_size);
 
-               for (unsigned size = state->min_size; size <= max_size;
+               for (unsigned size = LOWEST_SIZE; size <= max_size;
                     size = get_next_size(size)) {
                   switch (stage) {
                   case INIT_AND_COUNT_TESTS:
                      break;
 
                   case RUN:
+                     if (!shared_memory && size < state->min_size)
+                        break;
+
                      set_jump_buffer_data(ctx, state, jump_buf, size, shared_memory);
                      ctx->set_storage_buffer_descriptor(ctx, state->sets[test_index], 0, jump_buf,
                                                         0, size);
@@ -525,7 +529,8 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                   case REPORT: {
                      uint64_t clock_cycles = state->results[test_index * 2] / state->num_indirections;
 
-                     if (clock_cycles >= pow(10, max_digits + 1))
+                     if ((!shared_memory && size < state->min_size) ||
+                         (clock_cycles >= pow(10, max_digits + 1)))
                         fprintf(ctx->output, "%*s,", max_digits, "n/a");
                      else
                         fprintf(ctx->output, "%*u,", max_digits, (unsigned)clock_cycles);
@@ -600,7 +605,7 @@ test_latency(api_context *ctx)
    }
 
    latency_test_state state = {0};
-   state.min_size = MAX2(ctx->options.spacing * 4, 1024);
+   state.min_size = MAX2(ctx->options.spacing * 4, LOWEST_SIZE);
    state.num_indirections = num_indirections;
 
    printf("The number of indirections averaged per subtest: %u\n", state.num_indirections);
