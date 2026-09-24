@@ -531,8 +531,8 @@ static const char *fs_shared_code =
    "   store_output_color0(vec4(gl_HelperInvocation || wait("#cycles") ? 0.123456789 : 0.1, 0.2, 0.3, 0.4)); \n" \
    "}"
 
-#define CYCLES(cycles) \
-   {".cycles" #cycles, \
+#define CYCLES(vrs, cycles) \
+   {".cycles" #cycles vrs, \
    "", \
    "", \
    "", \
@@ -689,12 +689,74 @@ static const char *fs_shared_code =
    "#endif \n" \
    "} \n"
 
-#define RASTER(non_helper_percentage, quads_per_row, rows_per_mesh, num_meshes_x) \
-   {NAME(".raster" #non_helper_percentage), \
+#define RASTER(vrs, non_helper_percentage, quads_per_row, rows_per_mesh, num_meshes_x) \
+   {NAME(".raster" #non_helper_percentage vrs), \
     VS_RASTER(quads_per_row, rows_per_mesh, num_meshes_x), \
     FS_RASTER, \
     0, /* reserved_for_static_assert */ \
     {quads_per_row, rows_per_mesh, num_meshes_x}}
+
+#define RASTER_CYCLES(vrs) \
+   /* To gather statistics on AMD (they are incorrect by default due to using clip_invocation instead of clip_primitives): \
+    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean gl.pix.noaa.raster \
+    * \
+    * There must be a multiple of 7 quads (14 triangles, 16 vertices) per row unless there is only \
+    * 1 row. If there are multiple meshes, the number of rows per mesh must be even. The number of \
+    * meshes in the X axis must be a power of two, and a non-zero number of meshes also indiates \
+    * that it's a raster subest. \
+    * \
+    * Triangle and quad tests should set rows_per_mesh=0, and then quads_per_row identfies \
+    * the subest. \
+    * \
+    * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshs_x) \
+    */ \
+   RASTER(vrs, 100.fullscreen_triangle, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_TRIANGLE, 0, 1), \
+   RASTER(vrs, 99.8.fullscreen_quad, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_QUAD, 0, 1), \
+   RASTER(vrs, 99.9, 1, 1, 1), \
+   RASTER(vrs, 99.6, 7, 2, 1), \
+   RASTER(vrs, 99.4, 7, 3, 1), \
+   RASTER(vrs, 99.1, 7, 5, 1), \
+   RASTER(vrs, 98.7, 7, 7, 1), \
+   RASTER(vrs, 98.0, 14, 10, 1), \
+   RASTER(vrs, 97.2, 14, 14, 1), \
+   RASTER(vrs, 96.3, 14, 20, 1), \
+   RASTER(vrs, 94.6, 21, 30, 1), \
+   RASTER(vrs, 93.0, 14, 20, 2), \
+   RASTER(vrs, 89.8, 21, 30, 2), \
+   RASTER(vrs, 84.1, 35, 50, 2), \
+   RASTER(vrs, 81.5, 21, 30, 4), \
+   RASTER(vrs, 76.8, 14, 20, 8), \
+   RASTER(vrs, 72.5, 35, 50, 4), \
+   RASTER(vrs, 68.8, 21, 30, 8), \
+   RASTER(vrs, 62.3, 14, 20, 16), \
+   RASTER(vrs, 57.0, 35, 50, 8), \
+   RASTER(vrs, 52.5, 21, 30, 16), \
+   RASTER(vrs, 45.3, 14, 20, 32), \
+   RASTER(vrs, 39.9, 35, 50, 16), \
+   \
+   CYCLES(vrs, 100), \
+   CYCLES(vrs, 150), \
+   CYCLES(vrs, 200), \
+   CYCLES(vrs, 250), \
+   CYCLES(vrs, 300), \
+   CYCLES(vrs, 350), \
+   CYCLES(vrs, 400), \
+   CYCLES(vrs, 500), \
+   CYCLES(vrs, 600), \
+   CYCLES(vrs, 700), \
+   CYCLES(vrs, 800), \
+   CYCLES(vrs, 1000), \
+   CYCLES(vrs, 1200), \
+   CYCLES(vrs, 1400), \
+   CYCLES(vrs, 1600), \
+   CYCLES(vrs, 2000), \
+   CYCLES(vrs, 2400), \
+   CYCLES(vrs, 2800), \
+   CYCLES(vrs, 3200), \
+   CYCLES(vrs, 4000), \
+   CYCLES(vrs, 4800), \
+   CYCLES(vrs, 5600), \
+   CYCLES(vrs, 6400)
 
 /* For gathering the number of FS invocations, including helper invocations, which pipeline
  * statistics don't count. Subgroup ops are needed for that.
@@ -734,62 +796,10 @@ static const pipeline_info pipelines[] = {
    VRS(0), /* helper_invoc=0 */
    VRS(1), /* helper_invoc=1 */
 
-   /* To gather statistics on AMD (they are incorrect by default due to using clip_invocation instead of clip_primitives):
-    *    AMD_DEBUG=nggc,mono g=1 build/gpu-ratemeter -lean gl.pix.noaa.raster
-    *
-    * There must be a multiple of 7 quads (14 triangles, 16 vertices) per row unless there is only
-    * 1 row. If there are multiple meshes, the number of rows per mesh must be even. The number of
-    * meshes in the X axis must be a power of two, and a non-zero number of meshes also indiates
-    * that it's a raster subest.
-    *
-    * Triangle and quad tests should set rows_per_mesh=0, and then quads_per_row identfies
-    * the subest.
-    *
-    * (non-helper FS invocation percentage, quads_per_row, rows_per_mesh, num_meshs_x)
-    */
-   RASTER(100.fullscreen_triangle, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_TRIANGLE, 0, 1),
-   RASTER(99.8.fullscreen_quad, RASTER_QUADS_PER_ROW_MEANS_FULLSCREEN_QUAD, 0, 1),
-   RASTER(99.9, 1, 1, 1),
-   RASTER(99.6, 7, 2, 1),
-   RASTER(99.4, 7, 3, 1),
-   RASTER(99.1, 7, 5, 1),
-   RASTER(98.7, 7, 7, 1),
-   RASTER(98.0, 14, 10, 1),
-   RASTER(97.2, 14, 14, 1),
-   RASTER(96.3, 14, 20, 1),
-   RASTER(94.6, 21, 30, 1),
-   RASTER(93.0, 14, 20, 2),
-   RASTER(89.8, 21, 30, 2),
-   RASTER(84.1, 35, 50, 2),
-   RASTER(81.5, 21, 30, 4),
-   RASTER(76.8, 14, 20, 8),
-   RASTER(72.5, 35, 50, 4),
-   RASTER(68.8, 21, 30, 8),
-   RASTER(62.3, 14, 20, 16),
-   RASTER(57.0, 35, 50, 8),
-   RASTER(52.5, 21, 30, 16),
-   RASTER(45.3, 14, 20, 32),
-   RASTER(39.9, 35, 50, 16),
-
-   CYCLES(100),
-   CYCLES(150),
-   CYCLES(200),
-   CYCLES(250),
-   CYCLES(300),
-   CYCLES(350),
-   CYCLES(400),
-   CYCLES(500),
-   CYCLES(600),
-   CYCLES(700),
-   CYCLES(800),
-   CYCLES(1000),
-   CYCLES(1200),
-   CYCLES(1400),
-   CYCLES(1600),
-   CYCLES(2000),
-   CYCLES(2400),
-   CYCLES(2800),
-   CYCLES(3200),
+   RASTER_CYCLES(""),
+   RASTER_CYCLES(".vrs2x1"),
+   RASTER_CYCLES(".vrs1x2"),
+   RASTER_CYCLES(".vrs2x2"),
 
    /* Constant fill. */
    INPUTS(0, "", "", 0, "", ""),
