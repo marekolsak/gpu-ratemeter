@@ -10,7 +10,7 @@
 
 #include "common.h"
 
-#define MIN_SIZE           (1 << 18)
+#define MIN_SIZE           (1 << 16)
 #define MAX_SIZE           (1 << 28)
 #define SIZE_LSHIFT_STEP   2
 
@@ -20,7 +20,7 @@
 #define EXECUTION_SIZE     (256 * 1024 * 1024)
 #define MAX_RUNS           4096
 
-#define MAX_DELETE_ITEMS   96
+#define MAX_DELETE_ITEMS   128
 
 #define DEBUG_DUMP_IMAGES  0
 
@@ -693,7 +693,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         api_image *dst_zs;
                         api_image *all[MAX_COLOR_ATTACHMENTS + 1];
                         api_framebuffer *fb;
-                     } sets[6] = {0};
+                     } sets[7] = {0};
                      unsigned num_image_sets = 0;
                      bool exceeds_limits = false;
 
@@ -999,6 +999,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               dst_box.depth = sets[set].depth;
                               src_box = dst_box;
 
+                              const int partial_offset_x = MIN2(8, dst_box.width / 4);
+                              const int partial_offset_y = MIN2(8, dst_box.height / 4);
+
                               switch (region_option) {
                               case REGION_FULL:
                                  break;
@@ -1010,22 +1013,22 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               case REGION_PARTIAL:
                                  if (img_type == VK_IMAGE_TYPE_2D) {
-                                    dst_box.x = 8;
-                                    dst_box.y = 8;
-                                    dst_box.width -= 8;
-                                    dst_box.height -= 8;
+                                    dst_box.x = partial_offset_x;
+                                    dst_box.y = partial_offset_y;
+                                    dst_box.width -= partial_offset_x;
+                                    dst_box.height -= partial_offset_y;
                                  } else {
-                                    dst_box.x = 8;
-                                    dst_box.y = 8;
-                                    dst_box.width -= 8;
-                                    dst_box.height -= 8;
+                                    dst_box.x = partial_offset_x;
+                                    dst_box.y = partial_offset_y;
+                                    dst_box.width -= partial_offset_x;
+                                    dst_box.height -= partial_offset_y;
                                  }
                                  src_box = dst_box;
                                  break;
 
                               case REGION_PARTIAL_UNALIGNED:
                               case REGION_PARTIAL_UNALIGNED_YFLIP: {
-                                 const unsigned off = 5;
+                                 const unsigned off = 3;
                                  dst_box.x = off;
                                  dst_box.width -= off;
                                  if (img_type >= VK_IMAGE_TYPE_2D) {

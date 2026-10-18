@@ -24,7 +24,6 @@
  * - vkCmdUpdateBuffer
  *
  * imgbw:
- * - test 64KB images
  * - clear_framebuffer/attachment/image:
  *   - followed by solid-colored draw with full overwrite
  *   - clear non-zero mipmap levels
