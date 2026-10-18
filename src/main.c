@@ -6,7 +6,7 @@
 /* TODO:
  *
  * HLSL plan:
- * - add DXC as a dependency, implement HLSL->SPIR-V
+ * - use SPIRV-Cross to get HLSL (if it's broken, fix it with AI)
  * - rewrite all GLSL shaders to HLSL to prepare for DX12
  * - use HLSL->SPIR-V for GL & VK
  *
@@ -14,7 +14,7 @@
  * - rt: ray tracing performance in intersections/clock
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
- * - compute: launched compute shader invocations per clock, clocks per dispatch
+ * - compute: launched compute shader invocations per clock, clocks per dispatch/indirect dispatch on gfx and compute queues
  * - state: state changes such as pipeline binds to measure CP overhead
  * // remove redundant tests from piglit and radeonsi
  *
@@ -47,7 +47,8 @@
  * - mesh shaders (also with non-power-of-two workgroup sizes)
  *
  * latency:
- * - instruction fetch (jump chasing)
+ * - instruction fetch (jump chasing started by doing a SPIR-V intrinsic call jumping to a function
+ *   stored in a BO)
  * - reduce run times by varying the number of indirections
  * - image load and image sample latency with and without DCC
  *
@@ -58,10 +59,12 @@
  * - test clears (color only, Z only, and color+Z)
  * - remove VRS subtests for msaa8
  * - skip a2c and samplemask output subtests for gl/noaa
- * - test layer output with 2 layers (1-layer FS isn't comparable with radeonsi since radeonsi always removes it)
+ * - test gl_Layer with 2 layers (a 1-layer test isn't comparable with radeonsi since radeonsi
+ *   automatically removes gl_Layer)
  * - depth test with Z outside [0, 1] enabled, but not actually outside [0, 1]
  * - raster tests with FS inputs to test RDNA parameter cache/attribute ring overhead
  * - add -prim option to print primitive throughput
+ * - add VRS tests for 3D images
  * - (maybe) for cycles tests, FS with different register usage (need a register usage control field in SPIR-V)
  * - (maybe) VK_NV_fill_rectangle as a raster subtest
  * - (maybe) VK_KHR_fragment_shader_barycentric / GL_EXT_fragment_shader_barycentric
