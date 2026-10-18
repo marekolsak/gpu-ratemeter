@@ -642,7 +642,7 @@ gl_blit_image(api_context *ctx, api_blit_desc *desc)
                              blit_bits, desc->linear_filter ? GL_LINEAR : GL_NEAREST);
 
       glDeleteFramebuffers(1, &dst_fbo);
-      glDeleteFramebuffers(2, &src_fbo);
+      glDeleteFramebuffers(1, &src_fbo);
    }
 
    gl_check_no_error();
