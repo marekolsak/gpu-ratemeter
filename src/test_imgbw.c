@@ -565,6 +565,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                    !(ctx->fb_format_sample_count_support[formats[format_index].zs_format] & samples))
                   continue;
 
+               /* Stencil initialization requires shader stencil export. */
+               if (formats[format_index].zs_format && format_has_stencil(formats[format_index].zs_format) &&
+                   !ctx->has_shader_stencil_export)
+                  continue;
+
                if ((samples >= 2 && img_type != VK_IMAGE_TYPE_2D) ||
                    ((multiple_attachments || formats[format_index].zs_format) &&
                     img_type == VK_IMAGE_TYPE_3D))
@@ -656,6 +661,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                      if (test_index == TEST_RESOLVE && layer_count_option != LAYER_COUNT_1 &&
                          !ctx->has_resolve_image_layers)
+                        unsupported = true;
+
+                     /* Layered image initialization requires the gl_Layer VS output. */
+                     if ((test_index == TEST_COPY || test_index == TEST_BLIT || test_index == TEST_RESOLVE) &&
+                         (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                         unsupported = true;
 
                      /* Create textures. */
