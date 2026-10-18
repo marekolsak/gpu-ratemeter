@@ -334,7 +334,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
                                });
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb, .clear = true});
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb});
 
    ctx->bind_gfx_pipeline(ctx, pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
@@ -911,7 +911,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  case FILL_RANDOM_FRAGMENTED8:
                                     assert(samples == 8);
                                     /* Make all samples equal. */
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, 0);
+                                    set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
                                     /* Make samples 0..6 different. */
                                     for (unsigned i = 0; i <= 6; i++)
                                        set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
