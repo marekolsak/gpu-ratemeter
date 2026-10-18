@@ -1701,23 +1701,22 @@ gl_create_context(const program_options *options)
       glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
 
    /* Format support. */
+   assert(ARRAY_SIZE(ctx->fb_format_sample_count_support) ==
+          ARRAY_SIZE(ctx->storage_image_format_sample_count_support));
+
+   int max_image_samples;
+   glGetIntegerv(GL_MAX_IMAGE_SAMPLES, &max_image_samples);
+
    for (unsigned i = 1; i < ARRAY_SIZE(ctx->fb_format_sample_count_support); i++) {
       if (!format_is_valid(i))
          continue;
 
       GLenum internalformat = get_gl_internalformat(i);
-      GLint fb_supported = false;
+      GLint fb_support = false, image_store_support = false, ms_image_store_support = false;
+      int num_sample_counts, sample_counts[16];
+      unsigned supported_tex_samples_mask = 0;
 
-      glGetInternalformativ(GL_TEXTURE_2D, internalformat, GL_FRAMEBUFFER_RENDERABLE, 1,
-                            &fb_supported);
-      if (!fb_supported)
-         continue;
-
-      ctx->fb_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT;
-
-      int num_sample_counts;
-      int sample_counts[16];
-
+      /* Query supported sample counts first.. */
       glGetInternalformativ(GL_TEXTURE_2D_MULTISAMPLE, internalformat, GL_NUM_SAMPLE_COUNTS, 1,
                             &num_sample_counts);
       if (num_sample_counts > 16)
@@ -1728,7 +1727,28 @@ gl_create_context(const program_options *options)
 
       for (int s = 0; s < num_sample_counts; s++) {
          if (IS_POT(sample_counts[s]))
-            ctx->fb_format_sample_count_support[i] |= sample_counts[s];
+            supported_tex_samples_mask |= sample_counts[s];
+      }
+
+      /* Query the rest. */
+      glGetInternalformativ(GL_TEXTURE_2D, internalformat, GL_FRAMEBUFFER_RENDERABLE, 1,
+                            &fb_support);
+      glGetInternalformativ(GL_TEXTURE_2D, internalformat, GL_SHADER_IMAGE_STORE, 1, &image_store_support);
+      glGetInternalformativ(GL_TEXTURE_2D_MULTISAMPLE, internalformat, GL_SHADER_IMAGE_STORE, 1,
+                            &ms_image_store_support);
+
+      if (fb_support)
+         ctx->fb_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT | supported_tex_samples_mask;
+
+      if (image_store_support) {
+         ctx->storage_image_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT;
+
+         if (ms_image_store_support) {
+            for (int s = 0; s < num_sample_counts; s++) {
+               if (IS_POT(sample_counts[s]) && sample_counts[s] <= max_image_samples)
+                  ctx->storage_image_format_sample_count_support[i] |= sample_counts[s];
+            }
+         }
       }
    }
 

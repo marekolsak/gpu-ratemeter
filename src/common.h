@@ -478,6 +478,7 @@ typedef struct api_context {
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
    VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
+   VkSampleCountFlags storage_image_format_sample_count_support[FORMAT_COUNT];
    bool queue_has_copy_memory_indirect[api_num_queues];
 
    /* Dynamic info. */
