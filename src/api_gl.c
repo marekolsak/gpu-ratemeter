@@ -1753,6 +1753,13 @@ gl_create_context(const program_options *options)
       }
    }
 
+   if (ctx->has_image_tiling_linear) {
+      memcpy(ctx->linear_fb_format_sample_count_support, ctx->fb_format_sample_count_support,
+             sizeof(ctx->fb_format_sample_count_support));
+      memcpy(ctx->linear3d_fb_format_sample_count_support, ctx->fb_format_sample_count_support,
+             sizeof(ctx->fb_format_sample_count_support));
+   }
+
    ctx->supported_color_sample_counts = ctx->fb_format_sample_count_support[VK_FORMAT_R8G8B8A8_UNORM];
 
    /* Set callbacks. */

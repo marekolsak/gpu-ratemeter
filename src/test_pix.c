@@ -1075,6 +1075,8 @@ run_test_pix(api_context *ctx, unsigned samples,
       if ((ctx->options.lean && !formats[f].lean) ||
           (ctx->options.report_bandwidth && !formats[f].format) ||
           (formats[f].format && !(ctx->fb_format_sample_count_support[formats[f].format] & samples)) ||
+          (test_flavor == TEST_LINEAR && formats[f].format &&
+           !(ctx->linear_fb_format_sample_count_support[formats[f].format] & samples)) ||
           (ctx->options.regex_format && !regex_matches(ctx->options.regex_format, formats[f].name))) {
          fbs[f].skip = true;
          continue;
@@ -1086,8 +1088,7 @@ run_test_pix(api_context *ctx, unsigned samples,
    char prefix[16];
    get_pipeline_name_prefix(prefix, sizeof(prefix), samples, test_flavor);
 
-   bool na = (test_flavor == TEST_MULTIVIEW && !ctx->has_multiview) ||
-             (test_flavor == TEST_LINEAR && !ctx->has_image_tiling_linear);
+   bool na = test_flavor == TEST_MULTIVIEW && !ctx->has_multiview;
 
    /* Create framebuffers. */
    for (unsigned f = 0; f < ARRAY_SIZE(formats); f++) {

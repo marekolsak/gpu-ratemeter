@@ -455,7 +455,6 @@ typedef struct api_context {
    bool has_clear_image_region;
    bool has_depth_msaa_resolve;
    bool has_fully_covered;
-   bool has_image_tiling_linear;
    bool has_multiview;
    bool has_resolve_image_layers;
    bool has_resolve_image_yflip;
@@ -478,6 +477,8 @@ typedef struct api_context {
    unsigned sparse_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
    VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
+   VkSampleCountFlags linear_fb_format_sample_count_support[FORMAT_COUNT];
+   VkSampleCountFlags linear3d_fb_format_sample_count_support[FORMAT_COUNT];
    VkSampleCountFlags storage_image_format_sample_count_support[FORMAT_COUNT];
    bool queue_has_copy_memory_indirect[api_num_queues];
 
@@ -605,6 +606,7 @@ typedef struct api_context {
    api_gfx_pipeline *current_pipeline;
    api_framebuffer *fb;
    api_framebuffer *prev_fb;
+   bool has_image_tiling_linear;
 #endif
 
 #ifdef VK_PRIVATE

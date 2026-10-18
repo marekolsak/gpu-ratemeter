@@ -2861,7 +2861,6 @@ vk_create_context(const program_options *options)
    ctx->has_clear_image_region = false;
    ctx->has_depth_msaa_resolve = KHR_maintenance10.maintenance10;
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
-   ctx->has_image_tiling_linear = true;
    ctx->has_multiview = Vulkan11.multiview;
    ctx->has_resolve_image_layers = true;
    ctx->has_resolve_image_yflip = false;
@@ -2924,20 +2923,48 @@ vk_create_context(const program_options *options)
          VkImageFormatProperties2 image_format_props = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
          };
+         VkImageFormatProperties2 linear_image_format_props = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
+         };
+         VkImageFormatProperties2 linear3d_image_format_props = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
+         };
+         VkPhysicalDeviceImageFormatInfo2 info = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+            .format = i,
+            .type = VK_IMAGE_TYPE_2D,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = format_is_depth_or_stencil(i) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
+                                                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+         };
 
-         vk_check(vkGetPhysicalDeviceImageFormatProperties2(
-                     physical_device,
-                     &(VkPhysicalDeviceImageFormatInfo2) {
-                        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-                        .format = i,
-                        .type = VK_IMAGE_TYPE_2D,
-                        .tiling = VK_IMAGE_TILING_OPTIMAL,
-                        .usage = format_is_depth_or_stencil(i) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
-                                                                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                     },
-                     &image_format_props));
+         /* Check tiled FB format support. */
+         VkResult r;
+         r = vkGetPhysicalDeviceImageFormatProperties2(physical_device, &info, &image_format_props);
 
-         ctx->fb_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
+         if (r == VK_SUCCESS)
+            ctx->fb_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
+         else if (r != VK_ERROR_FORMAT_NOT_SUPPORTED)
+            vk_check(r);
+
+         /* Check linear FB format support. */
+         info.tiling = VK_IMAGE_TILING_LINEAR;
+         r = vkGetPhysicalDeviceImageFormatProperties2(physical_device, &info, &linear_image_format_props);
+
+         if (r == VK_SUCCESS)
+            ctx->linear_fb_format_sample_count_support[i] = linear_image_format_props.imageFormatProperties.sampleCounts;
+         else if (r != VK_ERROR_FORMAT_NOT_SUPPORTED)
+            vk_check(r);
+
+         /* Check image 3D linear FB format support. */
+         info.type = VK_IMAGE_TYPE_3D;
+         info.flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
+         r = vkGetPhysicalDeviceImageFormatProperties2(physical_device, &info, &linear3d_image_format_props);
+
+         if (r == VK_SUCCESS)
+            ctx->linear3d_fb_format_sample_count_support[i] = linear3d_image_format_props.imageFormatProperties.sampleCounts;
+         else if (r != VK_ERROR_FORMAT_NOT_SUPPORTED)
+            vk_check(r);
       }
 
       if (format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) {
@@ -2945,7 +2972,8 @@ vk_create_context(const program_options *options)
             .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2
          };
 
-         vk_check(vkGetPhysicalDeviceImageFormatProperties2(
+         VkResult r;
+         r = vkGetPhysicalDeviceImageFormatProperties2(
                      physical_device,
                      &(VkPhysicalDeviceImageFormatInfo2) {
                         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
@@ -2954,9 +2982,12 @@ vk_create_context(const program_options *options)
                         .tiling = VK_IMAGE_TILING_OPTIMAL,
                         .usage = VK_IMAGE_USAGE_STORAGE_BIT,
                      },
-                     &image_format_props));
+                     &image_format_props);
 
-         ctx->storage_image_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
+         if (r == VK_SUCCESS)
+            ctx->storage_image_format_sample_count_support[i] = image_format_props.imageFormatProperties.sampleCounts;
+         else if (r != VK_ERROR_FORMAT_NOT_SUPPORTED)
+            vk_check(r);
       }
    }
 

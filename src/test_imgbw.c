@@ -636,7 +636,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                      bool unsupported = false;
 
                      if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
-                         !ctx->has_image_tiling_linear)
+                         formats[format_index].color_format &&
+                         (img_type == VK_IMAGE_TYPE_3D ?
+                              !(ctx->linear3d_fb_format_sample_count_support[formats[format_index].color_format]) :
+                              !(ctx->linear_fb_format_sample_count_support[formats[format_index].color_format])))
                         unsupported = true;
 
                      if (test_index == TEST_BLIT && img_type == VK_IMAGE_TYPE_3D &&
