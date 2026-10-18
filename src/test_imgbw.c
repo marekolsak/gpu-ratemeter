@@ -340,6 +340,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
 
    ctx->end_render_pass(ctx);
+   ctx->barrier_images(ctx, 1, &image, false);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
@@ -556,11 +557,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                         !!formats[format_index].zs_format >= 2;
 
             for (unsigned samples = 1; samples <= 8; samples *= 2) {
-               if (ctx->fb_format_sample_count_support[formats[format_index].color_format] &&
+               if (formats[format_index].color_format &&
                    !(ctx->fb_format_sample_count_support[formats[format_index].color_format] & samples))
                   continue;
 
-               if (ctx->fb_format_sample_count_support[formats[format_index].zs_format] &&
+               if (formats[format_index].zs_format &&
                    !(ctx->fb_format_sample_count_support[formats[format_index].zs_format] & samples))
                   continue;
 
