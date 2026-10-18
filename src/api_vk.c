@@ -854,8 +854,10 @@ vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_imag
       }
 
       for (unsigned clear = 0; clear < 2; clear++) {
-         for (unsigned i = 0; i < fb->num_attachments; i++)
-            att_descs[i].loadOp = clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+         for (unsigned i = 0; i < fb->num_attachments; i++) {
+            att_descs[i].loadOp = att_descs[i].stencilLoadOp =
+               clear ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+         }
 
          bool multiview = view_mask != 0x1;
 
@@ -1381,6 +1383,9 @@ vk_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
          .depthTestEnable = uses_dynamic_state ? false : desc->depth_enabled,
          .depthWriteEnable = uses_dynamic_state ? false : desc->depth_write_enabled,
          .depthCompareOp = uses_dynamic_state ? 0 : desc->depth_compare_op,
+         .stencilTestEnable = uses_dynamic_state ? false : desc->stencil_enabled,
+         .front = desc->stencil_front,
+         .back = desc->stencil_back,
       },
       .pColorBlendState = &(VkPipelineColorBlendStateCreateInfo) {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
