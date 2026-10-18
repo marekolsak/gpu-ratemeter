@@ -7,8 +7,6 @@
  *
  * HLSL plan:
  * - use SPIRV-Cross to get HLSL (if it's broken, fix it with AI)
- * - rewrite all GLSL shaders to HLSL to prepare for DX12
- * - use HLSL->SPIR-V for GL & VK
  *
  * Tests:
  * - rt: ray tracing performance in intersections/clock
