@@ -1,6 +1,6 @@
 # gpu-ratemeter — GPU Performance Microbenchmark
 
-This is a command-line GPU performance validation tool for GPU driver development and performance-related reverse-engineering and pre-silicon validation that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
+This is a command-line GPU performance validation tool for GPU driver development, performance-related reverse-engineering, and pre-silicon validation that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
 
 Some of the project goals are:
 1. Help GPU driver developers quickly and effectively identify areas that need improvement.
