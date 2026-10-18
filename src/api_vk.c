@@ -512,7 +512,8 @@ vk_transition_image_layouts(api_context *ctx, unsigned num_images, api_image **i
 
 static api_image *
 vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
-                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap)
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
+                VkImageUsageFlags usage)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -526,7 +527,6 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    assert(type != VK_IMAGE_TYPE_1D || depth == 1);
 
    image->layer_count = type == VK_IMAGE_TYPE_2D ? depth : 1;
-   bool is_zs = format_is_depth_or_stencil(format);
 
    vk_check(vkCreateImage(ctx->device,
                           &(VkImageCreateInfo) {
@@ -544,12 +544,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                              .arrayLayers = image->layer_count,
                              .samples = samples,
                              .tiling = tiling,
-                             .usage = (is_zs ?
-                                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
-                                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                         (samples == 1 ? VK_IMAGE_USAGE_STORAGE_BIT : 0)) |
-                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                             .usage = usage,
                           },
                           NULL, &image->image));
 
@@ -571,28 +566,38 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                              },
                              NULL, &image->mem));
    vk_check(vkBindImageMemory(ctx->device, image->image, image->mem, 0));
-   vk_check(vkCreateImageView(ctx->device,
-                              &(VkImageViewCreateInfo) {
-                                 .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                 .image = image->image,
-                                 /* Vulkan only supports layered rendering into 2D array views. */
-                                 .viewType = (type == VK_IMAGE_TYPE_2D || type == VK_IMAGE_TYPE_3D) &&
-                                             depth > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
-                                             type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D : VK_IMAGE_VIEW_TYPE_2D,
-                                 .format = image->format,
-                                 .components = {
-                                    .r = VK_COMPONENT_SWIZZLE_R,
-                                    .g = VK_COMPONENT_SWIZZLE_G,
-                                    .b = VK_COMPONENT_SWIZZLE_B,
-                                    .a = VK_COMPONENT_SWIZZLE_A,
+
+   /* Only create an image view if the usage flags allow it. */
+   if (usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
+                VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)) {
+      vk_check(vkCreateImageView(ctx->device,
+                                 &(VkImageViewCreateInfo) {
+                                    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                    .image = image->image,
+                                    /* Vulkan only supports layered rendering into 2D array views. */
+                                    .viewType = (type == VK_IMAGE_TYPE_2D || type == VK_IMAGE_TYPE_3D) &&
+                                                depth > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                                                type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D : VK_IMAGE_VIEW_TYPE_2D,
+                                    .format = image->format,
+                                    .components = {
+                                       .r = VK_COMPONENT_SWIZZLE_R,
+                                       .g = VK_COMPONENT_SWIZZLE_G,
+                                       .b = VK_COMPONENT_SWIZZLE_B,
+                                       .a = VK_COMPONENT_SWIZZLE_A,
+                                    },
+                                    .subresourceRange = {
+                                       .aspectMask = get_image_aspect(image),
+                                       .levelCount = 1,
+                                       .layerCount = image->depth,
+                                    },
                                  },
-                                 .subresourceRange = {
-                                    .aspectMask = get_image_aspect(image),
-                                    .levelCount = 1,
-                                    .layerCount = image->depth,
-                                 },
-                              },
-                              NULL, &image->render_compatible_view));
+                                 NULL, &image->render_compatible_view));
+   }
 
    if (heap == api_heap_device)
       atomic_fetch_add(&ctx->device_mem_usage_mb, image->mem_size >> 20);
@@ -602,7 +607,8 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
 static void
 vk_destroy_image(api_context *ctx, api_image *image)
 {
-   vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
+   if (image->render_compatible_view)
+      vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
    vkDestroyImage(ctx->device, image->image, NULL);
    vkFreeMemory(ctx->device, image->mem, NULL);
 
@@ -2174,7 +2180,7 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                                         format_is_integer(image->format) ?
                                            VK_FORMAT_R8G8B8A8_UINT : VK_FORMAT_R8G8B8A8_UNORM,
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
-                                        api_heap_host_cached);
+                                        api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_blit_image(ctx, &(api_blit_desc){

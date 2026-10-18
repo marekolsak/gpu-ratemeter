@@ -511,7 +511,7 @@ typedef struct api_context {
    /* Image functions. */
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
-                              VkImageTiling tiling, api_heap_type heap);
+                              VkImageTiling tiling, api_heap_type heap, VkImageUsageFlags usage);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
    void (*clear_image)(struct api_context *ctx, api_image *image, const api_image_box *box,
                        const api_clear_values *value);

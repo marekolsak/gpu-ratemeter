@@ -1641,13 +1641,16 @@ run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const 
 void
 test_prim(api_context *ctx)
 {
+   const bool debug_png_dump = getenv("VS") || getenv("MESH") || getenv("CLIPDIST") || getenv("TRI");
    prim_test_state *state = calloc(1, sizeof(prim_test_state));
 
    /* Create the framebuffer. */
    api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            /* 2 layers because we test gl_Layer. */
                                            FB_SIZE, FB_SIZE, 2, 1, VK_IMAGE_TILING_OPTIMAL,
-                                           api_heap_device);
+                                           api_heap_device,
+                                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                           (debug_png_dump ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0));
    state->fb = ctx->create_framebuffer(ctx, 1, &colorbuf, NULL, colorbuf->width,
                                        colorbuf->height, colorbuf->samples, 0x1);
 
@@ -1678,7 +1681,7 @@ test_prim(api_context *ctx)
    compile_shaders(ctx, state);
 
    /* for debugging */
-   if (getenv("VS") || getenv("MESH") || getenv("CLIPDIST") || getenv("TRI")) {
+   if (debug_png_dump) {
       unsigned num_varyings = 1;
       test_info test = {0};
 

@@ -462,7 +462,8 @@ create_texture(api_context *ctx, api_image *image, GLenum target, VkImageTiling 
 
 static api_image *
 gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
-                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap)
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
+                VkImageUsageFlags usage)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;

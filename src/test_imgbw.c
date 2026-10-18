@@ -760,7 +760,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                    formats[format_index].color_format ?
                                                       formats[format_index].color_format :
                                                       formats[format_index].zs_format, width, height,
-                                                   depth, src_samples, src_tiling, api_heap_device);
+                                                   depth, src_samples, src_tiling, api_heap_device,
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                   (formats[format_index].color_format ?
+                                                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT :
+                                                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
                               assert(sets[num_image_sets].src);
 
                               sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
@@ -771,7 +776,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               sets[num_image_sets].dst_color[i] =
                                  ctx->create_image(ctx, img_type, formats[format_index].color_format, width,
                                                    height, depth, dst_samples, dst_tiling,
-                                                   api_heap_device);
+                                                   api_heap_device,
+                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
 
                               sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
                                  sets[num_image_sets].dst_color[i];
@@ -781,7 +788,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               sets[num_image_sets].dst_zs =
                                  ctx->create_image(ctx, img_type, formats[format_index].zs_format, width,
                                                    height, depth, dst_samples, dst_tiling,
-                                                   api_heap_device);
+                                                   api_heap_device,
+                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
                               sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
                                  sets[num_image_sets].dst_zs;

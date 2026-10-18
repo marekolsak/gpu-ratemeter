@@ -1124,11 +1124,13 @@ run_test_pix(api_context *ctx, unsigned samples,
       if (format) {
          fbs[f].colorbuf = ctx->create_image(ctx, image_type, format, fb_size,
                                              fb_size, num_layers, samples, layout,
-                                             api_heap_device);
+                                             api_heap_device, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
 
          fbs[f].colorbuf_raster = ctx->create_image(ctx, image_type, format, fb_raster_size,
                                                     fb_raster_size, num_layers, samples, layout,
-                                                    api_heap_device);
+                                                    api_heap_device,
+                                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                    (raster_dump_image ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0));
          num_colorbufs = 1;
       }
 
@@ -1142,7 +1144,7 @@ run_test_pix(api_context *ctx, unsigned samples,
       if (test_flavor != TEST_IMAGE_3D && test_flavor != TEST_LINEAR) {
          fbs[f].zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
                                          fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
-                                         api_heap_device);
+                                         api_heap_device, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
          fbs[f].fb_color_and_zsbuf = ctx->create_framebuffer(ctx, num_colorbufs, &fbs[f].colorbuf,
                                                              fbs[f].zsbuf, fb_size, fb_size,
@@ -1607,7 +1609,8 @@ test_pix(api_context *ctx)
     * throughput for the image store case.
     */
    api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
-                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device);
+                                              1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device,
+                                              VK_IMAGE_USAGE_STORAGE_BIT);
 
    /* Create the descriptor layout and the set. */
    api_descriptor_set_layout *desc_set_layout =
