@@ -27,10 +27,8 @@
  * - clear_framebuffer/attachment/image:
  *   - followed by solid-colored draw with full overwrite
  *   - clear non-zero mipmap levels
- *   - multiple layers
  *   - D32F clear with Z outside [0, 1]
  * - copy/blit:
- *   - multiple layers
  *   - buffer-to-image, image-to-buffer
  *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  *   - scaled blits

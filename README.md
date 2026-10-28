@@ -1,4 +1,4 @@
-# gpu-ratemeter — GPU Performance Microbenchmark
+# gpu-ratemeter — GPU Performance Microbenchmark Suite
 
 This is a command-line GPU performance validation tool for GPU driver development, performance-related reverse-engineering, and pre-silicon validation that isolates and measures performance of specific GPU and GPU API features and workload types and how different GPUs, APIs, API translation and forwarding layers, and operating systems compare in GPU utilization and performance.
 
@@ -348,7 +348,7 @@ Decoding the clear/copy/blit/resolve region identifiers in subtest names:
 - `region_yflip_unaligned`: same as `region_yflip`, but the operation excludes a small area and the region offsets and extents are odd (unaligned)
 
 Decoding other identifiers in subtest names:
-- `2d`, `3d`: the image dimensionality
+- `2d`, `2d_array4`, `3d`: the image dimensionality, `2d_array4` means a 2D image with 4 layers
 - `1s`-`8s`: the number of samples
 - `src_linear`: the source image uses linear tiling
 - `dst_linear`: the destination image uses linear tiling

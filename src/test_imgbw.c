@@ -429,7 +429,7 @@ static const unsigned layer_counts[] = {
 
 static const char *layer_count_strings[] = {
    [LAYER_COUNT_1] = "",
-   [LAYER_COUNT_4] = ".layers4",
+   [LAYER_COUNT_4] = "_array4",
 };
 
 enum {
@@ -493,10 +493,10 @@ get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_inde
                  unsigned layer_count_option, unsigned layout, unsigned fill_option,
                  unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%ud.%s.%us%s.fill_%s%s.region_%s",
-            test_strings[test_index], img_type + 1, formats[format_index].name, samples,
-            layer_count_strings[layer_count_option], fill_strings[fill_option],
-            layout_strings[layout], region_strings[region_option]);
+   snprintf(out, max_len, "%s.%ud%s.%s.%us.fill_%s%s.region_%s",
+            test_strings[test_index], img_type + 1, layer_count_strings[layer_count_option],
+            formats[format_index].name, samples, fill_strings[fill_option], layout_strings[layout],
+            region_strings[region_option]);
 }
 
 static void
@@ -504,7 +504,7 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
                 unsigned format_index, unsigned samples, unsigned layer_count_option,
                 unsigned layout, unsigned fill_option, unsigned region_option)
 {
-   const unsigned name_indent = 82;
+   const unsigned name_indent = 86;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
@@ -577,8 +577,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                for (unsigned layer_count_option = 0; layer_count_option < NUM_LAYER_COUNTS;
                    layer_count_option++) {
-                  if (layer_count_option != LAYER_COUNT_1 &&
-                      (test_index != TEST_RESOLVE || img_type != VK_IMAGE_TYPE_2D))
+                  if (layer_count_option != LAYER_COUNT_1 && img_type != VK_IMAGE_TYPE_2D)
                      continue;
 
                   unsigned layers = layer_counts[layer_count_option];
@@ -647,7 +646,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               !(ctx->linear_fb_format_sample_count_support[formats[format_index].color_format])))
                         unsupported = true;
 
-                     if (test_index == TEST_BLIT && img_type == VK_IMAGE_TYPE_3D &&
+                     if (test_index == TEST_BLIT &&
+                         (layer_count_option != LAYER_COUNT_1 || img_type == VK_IMAGE_TYPE_3D) &&
                          !ctx->has_blit_image_3d)
                         unsupported = true;
 
