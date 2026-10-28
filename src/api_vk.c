@@ -1636,9 +1636,9 @@ vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       vkCmdSetStencilReference(ctx->current_cmd_buffer, VK_STENCIL_FACE_BACK_BIT,
                                pipeline->desc.stencil_back.reference);
 
-      if (pipeline->desc.fb->num_color_attachments) {
-         ctx->vkCmdSetColorBlendEnableEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.blendEnable);
-         ctx->vkCmdSetColorBlendEquationEXT(ctx->current_cmd_buffer, 0, 1, &(VkColorBlendEquationEXT){
+      for (unsigned i = 0; i < pipeline->desc.fb->num_color_attachments; i++) {
+         ctx->vkCmdSetColorBlendEnableEXT(ctx->current_cmd_buffer, i, 1, &pipeline->blend_state.blendEnable);
+         ctx->vkCmdSetColorBlendEquationEXT(ctx->current_cmd_buffer, i, 1, &(VkColorBlendEquationEXT){
                                                .srcColorBlendFactor = pipeline->blend_state.srcColorBlendFactor,
                                                .dstColorBlendFactor = pipeline->blend_state.dstColorBlendFactor,
                                                .colorBlendOp = pipeline->blend_state.colorBlendOp,
@@ -1646,7 +1646,7 @@ vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
                                                .dstAlphaBlendFactor = pipeline->blend_state.dstAlphaBlendFactor,
                                                .alphaBlendOp = pipeline->blend_state.alphaBlendOp,
                                             });
-         ctx->vkCmdSetColorWriteMaskEXT(ctx->current_cmd_buffer, 0, 1, &pipeline->blend_state.colorWriteMask);
+         ctx->vkCmdSetColorWriteMaskEXT(ctx->current_cmd_buffer, i, 1, &pipeline->blend_state.colorWriteMask);
       }
 
       if (ctx->has_vrs) {
