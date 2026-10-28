@@ -2496,6 +2496,9 @@ vk_create_context(const program_options *options)
                num_queue_infos++;
             }
 
+            if (queue_infos[info_index].queueCount >= queue_props[family].queueCount)
+               continue;
+
             ctx->has_queue[type] = true;
             queue_type_to_family[type] = family;
             queue_type_to_index[type] = queue_infos[info_index].queueCount++;
