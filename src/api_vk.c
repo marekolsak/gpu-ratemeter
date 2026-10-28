@@ -219,6 +219,9 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
       buf->num_mem_allocations = 1;
    }
 
+   buf->host_coherent = ctx->memory_properties.memoryTypes[mem_type_index].propertyFlags &
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
    buf->mem = calloc(buf->num_mem_allocations, sizeof(*buf->mem));
 
    for (unsigned i = 0; i < buf->num_mem_allocations; i++) {
@@ -557,6 +560,9 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
       error("create_image: can't find memory type for reqs.memoryTypeBits=0x%x, heap=%u",
             reqs.memoryTypeBits, heap);
    }
+
+   image->host_coherent = ctx->memory_properties.memoryTypes[mem_type_index].propertyFlags &
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
    vk_check(vkAllocateMemory(ctx->device,
                              &(VkMemoryAllocateInfo) {
@@ -2150,8 +2156,18 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
    api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached, false);
    uint8_t *map;
 
-   vk_check(vkMapMemory(ctx->device, *staging->mem, 0, size, 0, (void**)&map));
+   vk_check(vkMapMemory(ctx->device, *staging->mem, 0, VK_WHOLE_SIZE, 0, (void**)&map));
    memcpy(map, data, size);
+
+   if (!staging->host_coherent) {
+      vk_check(vkFlushMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
+                                            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                            .memory = staging->mem[0],
+                                            .offset = 0,
+                                            .size = VK_WHOLE_SIZE,
+                                         }));
+   }
+
    vkUnmapMemory(ctx->device, *staging->mem);
 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
@@ -2169,11 +2185,35 @@ vk_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t 
    vk_begin_cmdbuf(ctx, api_queue_gfx);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vk_copy_buffer(ctx, staging, buf, 0, offset, size);
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo){
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .memoryBarrierCount = 1,
+                            .pMemoryBarriers = &(VkMemoryBarrier2){
+                               .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                               .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                               .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+                               .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+                            },
+                         });
+
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
    void *map;
-   vk_check(vkMapMemory(ctx->device, staging->mem[0], 0, size, 0, &map));
+   vk_check(vkMapMemory(ctx->device, staging->mem[0], 0, VK_WHOLE_SIZE, 0, &map));
+
+   if (!staging->host_coherent) {
+      vk_check(vkInvalidateMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
+                                                 .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                                 .memory = staging->mem[0],
+                                                 .offset = 0,
+                                                 .size = VK_WHOLE_SIZE,
+                                              }));
+   }
+
    memcpy(data, map, size);
    vkUnmapMemory(ctx->device, staging->mem[0]);
 }
@@ -2194,11 +2234,35 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                     .dst_box = {0, 0, 0, image->width, image->height, 1},
                     .src_box = {0, 0, layer, image->width, image->height, 1},
                  });
+
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo){
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .memoryBarrierCount = 1,
+                            .pMemoryBarriers = &(VkMemoryBarrier2){
+                               .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                               .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                               .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                               .dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+                               .dstAccessMask = VK_ACCESS_2_HOST_READ_BIT,
+                            },
+                         });
+
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
    void *map;
    vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
+
+   if (!staging->host_coherent) {
+      vk_check(vkInvalidateMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
+                                                 .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                                 .memory = staging->mem,
+                                                 .offset = 0,
+                                                 .size = VK_WHOLE_SIZE,
+                                              }));
+   }
+
    write_png_rgba8(filename, staging, map);
    vkUnmapMemory(ctx->device, staging->mem);
 }

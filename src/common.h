@@ -87,6 +87,7 @@ typedef struct {
    unsigned num_mem_allocations;
    VkSparseMemoryBind *sparse_binds;
    VkSparseMemoryBind *sparse_unbinds;
+   bool host_coherent;
 #endif
 } api_buffer;
 
@@ -115,6 +116,7 @@ typedef struct {
    unsigned layer_count;
    VkImageView render_compatible_view; /* 3D images use 2D array views */
    VkImageLayout layout;
+   bool host_coherent;
 #endif
 } api_image;
 
