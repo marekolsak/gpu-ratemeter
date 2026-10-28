@@ -24,10 +24,38 @@
 
 #define DEBUG_DUMP_IMAGES  0
 
+#define MAX_FB_SETS ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
+
+typedef struct {
+   const char *name;
+   unsigned num_color_attachments;
+   VkFormat color_format;
+   VkFormat zs_format;
+} test_formats;
+
+static const test_formats formats[] = {
+   {"r8",                  1, VK_FORMAT_R8_UNORM},
+   {"r16f",                1, VK_FORMAT_R16_SFLOAT},
+   {"rgba8",               1, VK_FORMAT_R8G8B8A8_UNORM},
+   {"rgba8_d32s8",         1, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"rgba8_d32s8_4mrt",    4, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"r32f",                1, VK_FORMAT_R32_SFLOAT},
+   {"rgba16f",             1, VK_FORMAT_R16G16B16A16_SFLOAT},
+   {"rgba16f_d32s8",       1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"rgba16f_d32s8_4mrt",  4, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
+   {"rgba32f",             1, VK_FORMAT_R32G32B32A32_SFLOAT},
+   {"d32",                 0, 0, VK_FORMAT_D32_SFLOAT},
+   {"s8",                  0, 0, VK_FORMAT_S8_UINT},
+   {"d32s8",               0, 0, VK_FORMAT_D32_SFLOAT_S8_UINT},
+};
+
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
    api_shader *fs_gradient[7]; /* output format variants */
    api_shader *fs_random[10]; /* output format variants */
+
+   api_shader *fs_solid[ARRAY_SIZE(formats)];
+   api_gfx_pipeline *pipeline_draw_solid[MAX_FB_SETS];
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
@@ -152,6 +180,55 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
             "#endif \n"
             "}",
             has_color_output, has_stencil_output, vec_type, vec_type, gradient);
+
+   *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+   return *fs;
+}
+
+static const char *
+get_vec_type(VkFormat format)
+{
+   return format_is_sint(format) ? "ivec4" : format_is_integer(format) ? "uvec4" : "vec4";
+}
+
+static api_shader *
+get_solid_color_fs(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_config_index)
+{
+   assert(fb_config_index < ARRAY_SIZE(state->fs_solid));
+   api_shader **fs = &state->fs_solid[fb_config_index];
+
+   if (*fs)
+      return *fs;
+
+   char fs_source[1024];
+   int len = 0;
+   len = snprintf(fs_source, sizeof(fs_source),
+                  "#version 460 \n\n");
+
+   for (unsigned i = 0; i < fb->num_color_attachments; i++) {
+      len += snprintf(fs_source + len, sizeof(fs_source) - len,
+                      "layout(location = %u) out %s fs_out%u; \n",
+                      i, get_vec_type(fb->colorbufs[i]->format), i);
+   }
+
+   len += snprintf(fs_source + len, sizeof(fs_source) - len,
+                  "\n"
+                  "void main() { \n");
+
+   for (unsigned i = 0; i < fb->num_color_attachments; i++) {
+      if (format_is_integer(fb->colorbufs[i]->format)) {
+         len += snprintf(fs_source + len, sizeof(fs_source) - len,
+                         "   fs_out%u = %s(2); \n",
+                         i, get_vec_type(fb->colorbufs[i]->format));
+      } else {
+         len += snprintf(fs_source + len, sizeof(fs_source) - len,
+                         "   fs_out%u = vec4(0.6); \n", i);
+      }
+   }
+
+   len += snprintf(fs_source + len, sizeof(fs_source) - len,
+                  "}\n");
+   assert(len < sizeof(fs_source) - 1);
 
    *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
    return *fs;
@@ -363,29 +440,47 @@ set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigne
    generate_pixels(ctx, state, image, get_random_pixel_fs(ctx, state, image->format), samplemask);
 }
 
-static struct {
-   const char *name;
-   unsigned num_color_attachments;
-   VkFormat color_format;
-   VkFormat zs_format;
-} formats[] = {
-   {"r8",                  1, VK_FORMAT_R8_UNORM},
-   {"r16f",                1, VK_FORMAT_R16_SFLOAT},
-   {"rgba8",               1, VK_FORMAT_R8G8B8A8_UNORM},
-   {"rgba8_d32s8",         1, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"rgba8_d32s8_4mrt",    4, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"r32f",                1, VK_FORMAT_R32_SFLOAT},
-   {"rgba16f",             1, VK_FORMAT_R16G16B16A16_SFLOAT},
-   {"rgba16f_d32s8",       1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"rgba16f_d32s8_4mrt",  4, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"rgba32f",             1, VK_FORMAT_R32G32B32A32_SFLOAT},
-   {"d32",                 0, 0, VK_FORMAT_D32_SFLOAT},
-   {"s8",                  0, 0, VK_FORMAT_S8_UINT},
-   {"d32s8",               0, 0, VK_FORMAT_D32_SFLOAT_S8_UINT},
-};
+static void
+draw_solid(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_set,
+           unsigned fb_config_index)
+{
+   bool layered = fb->layers > 1;
+   api_shader *vs = get_passthrough_vs(ctx, state, layered);
+   api_shader *fs = get_solid_color_fs(ctx, state, fb, fb_config_index);
+   api_gfx_pipeline **pipeline = &state->pipeline_draw_solid[fb_set];
+
+   if (!*pipeline) {
+      *pipeline = ctx->create_gfx_pipeline(ctx,
+                                           &(api_gfx_pipeline_desc){
+                                              .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                              .vs = vs,
+                                              .fs = fs,
+                                              .vrs_fragment_size = {1, 1},
+                                              .samplemask = ~0,
+                                              .colormask = 0xf,
+                                              .depth_enabled = true,
+                                              .depth_write_enabled = true,
+                                              .depth_compare_op = VK_COMPARE_OP_ALWAYS,
+                                              .stencil_enabled = true,
+                                              .stencil_front.passOp = VK_STENCIL_OP_REPLACE,
+                                              .stencil_front.compareOp = VK_COMPARE_OP_ALWAYS,
+                                              .stencil_front.writeMask = 0xff,
+                                              .stencil_front.reference = 0x89,
+                                              .stencil_back.passOp = VK_STENCIL_OP_REPLACE,
+                                              .stencil_back.compareOp = VK_COMPARE_OP_ALWAYS,
+                                              .stencil_back.writeMask = 0xff,
+                                              .stencil_back.reference = 0x89,
+                                              .fb = fb,
+                                           });
+   }
+
+   ctx->bind_gfx_pipeline(ctx, *pipeline);
+   ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = fb->layers});
+}
 
 enum {
    TEST_CLEAR_FB,
+   TEST_CLEAR_FB_THEN_DRAW,
    TEST_CLEAR_ATTACHMENTS,
    TEST_CLEAR_IMAGE,
    TEST_COPY,
@@ -396,6 +491,7 @@ enum {
 
 static const char *test_strings[] = {
    [TEST_CLEAR_FB] = "clear_framebuffer",
+   [TEST_CLEAR_FB_THEN_DRAW] = "clear_fb_then_draw",
    [TEST_CLEAR_ATTACHMENTS] = "clear_attachments",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
@@ -543,6 +639,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       bool is_clear = test_index == TEST_CLEAR_FB ||
+                      test_index == TEST_CLEAR_FB_THEN_DRAW ||
                       test_index == TEST_CLEAR_ATTACHMENTS ||
                       test_index == TEST_CLEAR_IMAGE;
 
@@ -615,7 +712,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         continue;
 
                      if (multiple_attachments && test_index != TEST_CLEAR_FB &&
-                         test_index != TEST_CLEAR_ATTACHMENTS)
+                         test_index != TEST_CLEAR_FB_THEN_DRAW && test_index != TEST_CLEAR_ATTACHMENTS)
                         continue;
 
                      switch (test_index) {
@@ -663,8 +760,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                          !ctx->has_resolve_image_layers)
                         unsupported = true;
 
-                     /* Layered image initialization requires the gl_Layer VS output. */
-                     if ((test_index == TEST_COPY || test_index == TEST_BLIT || test_index == TEST_RESOLVE) &&
+                     /* Layered image initialization and draw require the gl_Layer VS output. */
+                     if ((test_index == TEST_CLEAR_FB_THEN_DRAW || test_index == TEST_COPY ||
+                          test_index == TEST_BLIT || test_index == TEST_RESOLVE) &&
                          (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                         unsupported = true;
 
@@ -693,7 +791,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         api_image *dst_zs;
                         api_image *all[MAX_COLOR_ATTACHMENTS + 1];
                         api_framebuffer *fb;
-                     } sets[7] = {0};
+                     } sets[MAX_FB_SETS] = {0};
                      unsigned num_image_sets = 0;
                      bool exceeds_limits = false;
 
@@ -943,7 +1041,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                         region_option == REGION_PARTIAL_UNALIGNED_YFLIP;
 
                            /* Skip invalid and unimportant tests. */
-                           if (test_index == TEST_CLEAR_FB && region_option != REGION_FULL)
+                           if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW) &&
+                               region_option != REGION_FULL)
                               continue;
 
                            if (yflip && (is_clear || test_index == TEST_COPY))
@@ -1110,12 +1209,15 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                     switch (test_index) {
                                     case TEST_CLEAR_FB:
+                                    case TEST_CLEAR_FB_THEN_DRAW:
                                        ctx->begin_render_pass(ctx,
                                                               &(api_render_pass_desc) {
                                                                  .fb = sets[set].fb,
                                                                  .clear = true,
                                                                  .clear_values = clear_values,
                                                               });
+                                       if (test_index == TEST_CLEAR_FB_THEN_DRAW)
+                                          draw_solid(ctx, &misc_state, sets[set].fb, set, format_index);
                                        ctx->end_render_pass(ctx);
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
                                                            sets[set].all, false);
@@ -1185,6 +1287,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  else
                                     bytes = num_pixels * msaa_bpe_total * 2;
 
+                                 if (test_index == TEST_CLEAR_FB_THEN_DRAW)
+                                    bytes *= 2;
+
                                  print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
                                                                        "%10.2f", "%10s", 30);
                               }
@@ -1197,6 +1302,14 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                      if (stage == RUN && !unsupported) {
                         ctx->wait_for_idle(ctx);
+
+                        /* Release draw_solid pipelines because they are tied to specific FB states. */
+                        for (unsigned i = 0; i < ARRAY_SIZE(misc_state.pipeline_draw_solid); i++) {
+                           if (misc_state.pipeline_draw_solid[i]) {
+                              ctx->destroy_gfx_pipeline(ctx, misc_state.pipeline_draw_solid[i]);
+                              misc_state.pipeline_draw_solid[i] = NULL;
+                           }
+                        }
 
                         for (unsigned set = 0; set < num_image_sets; set++) {
                            if (sets[set].fb)

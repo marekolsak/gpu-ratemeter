@@ -34,6 +34,7 @@ extern "C" {
 #define IS_POT(v)                   (((v) & ((v) - 1)) == 0)
 #define MIN2(a, b)                  ((a) < (b) ? (a) : (b))
 #define MAX2(a, b)                  ((a) > (b) ? (a) : (b))
+#define DIV_ROUND_UP(a, b)          (((a) + (b) - 1) / (b))
 
 /* Return a base 2 logarithm of a 32-bit power of two as a constant expression if n is a constant
  * expression.

@@ -25,13 +25,12 @@
  *
  * imgbw:
  * - clear_framebuffer/attachment/image:
- *   - followed by solid-colored draw with full overwrite
  *   - clear non-zero mipmap levels
  *   - D32F clear with Z outside [0, 1]
  * - copy/blit:
  *   - buffer-to-image, image-to-buffer
  *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
- *   - scaled blits
+ *   - scaled blits - nearest x linear, minify x magnify
  * - add -pix option to print pixel throughput
  * - transfer queue
  * - (maybe) no barrier, uncached
