@@ -718,12 +718,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     height /= 2;
                               }
                            } else {
-                              for (unsigned i = 0; width * height > num_pixels_per_layer; i++) {
-                                 if (i % 2 == 1)
-                                    width -= 32 / samples;
-                                 else
-                                    height -= 32 / samples;
-                              }
+                              width = height = sqrt(num_pixels_per_layer);
                            }
 
                            depth = layers;
