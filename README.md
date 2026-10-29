@@ -323,7 +323,7 @@ The table below shows how subtests are mapped to API functions.
 | Subtest name         | OpenGL                   | Vulkan                                                                                                                            |
 |----------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | `clear_framebuffer`  | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld)                                                             |
-| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then the whole image is overdrawn with a different solid color and stencil, while Z will get a sloped quad. |
+| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then the whole image is overdrawn with a different solid color and stencil, while Z gets a sloped quad. |
 | `clear_attachment`   | scissored `glClear`      | `vkCmdClearAttachments`                                                                                                           |
 | `clear_image`        | `glClearTex{Sub}Image`   | `vkCmdClearColorImage` and `vkCmdClearDepthStencilImage`                                                                          |
 | `copy`               | `glCopyImageSubData`     | `vkCmdCopyImage2`                                                                                                                 |
