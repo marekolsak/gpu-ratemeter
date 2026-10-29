@@ -1199,26 +1199,26 @@ init_buffers(api_context *ctx, prim_test_state *state, const test_info *test)
 
    /* Create buffers. */
    buffer_set->vb = ctx->create_buffer(ctx, vb_size, api_heap_device, 0);
-   ctx->upload_buffer_data(ctx, buffer_set->vb, 0, 16, zero_stride_attrib);
-   ctx->upload_buffer_data(ctx, buffer_set->vb, buffer_set->vb_pos_offset, pos_size, vertices);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->vb, 0, 16, zero_stride_attrib);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->vb, buffer_set->vb_pos_offset, pos_size, vertices);
    if (special0_size)
-      ctx->upload_buffer_data(ctx, buffer_set->vb, buffer_set->vb_special0_offset, special0_size, special0);
+      ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->vb, buffer_set->vb_special0_offset, special0_size, special0);
    if (special1_size)
-      ctx->upload_buffer_data(ctx, buffer_set->vb, buffer_set->vb_special1_offset, special1_size, special1);
+      ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->vb, buffer_set->vb_special1_offset, special1_size, special1);
    free(vertices);
    free(special0);
    free(special1);
 
    if (indices) {
       buffer_set->ib = ctx->create_buffer(ctx, ib_size, api_heap_device, 0);
-      ctx->upload_buffer_data(ctx, buffer_set->ib, 0, ib_size, indices);
+      ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->ib, 0, ib_size, indices);
       free(indices);
    }
 
    if (mesh_groups) {
       buffer_set->mesh_group_buf = ctx->create_buffer(ctx, 16 + mesh_group_data_size,
                                                       api_heap_device, 0);
-      ctx->upload_buffer_data(ctx, buffer_set->mesh_group_buf, 16, mesh_group_data_size,
+      ctx->upload_buffer_data(ctx, api_queue_gfx, buffer_set->mesh_group_buf, 16, mesh_group_data_size,
                               mesh_groups);
       free(mesh_groups);
    }
@@ -1655,7 +1655,7 @@ test_prim(api_context *ctx)
                                        colorbuf->height, colorbuf->samples, 0x1);
 
    /* Create the timestamp pool. */
-   state->timestamps = ctx->create_query_pool(ctx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2,
+   state->timestamps = ctx->create_query_pool(ctx, api_queue_gfx, MAX_VARYING_SHADERS * ARRAY_SIZE(tests) * 2,
                                               api_query_timestamp);
 
    /* Create the descriptor set for mesh shaders. */
@@ -1699,7 +1699,7 @@ test_prim(api_context *ctx)
       create_pipeline(ctx, state, &test, num_varyings);
       init_buffers(ctx, state, &test);
       run_pipeline(ctx, state, 1, &test, num_varyings);
-      ctx->image_write_png(ctx, colorbuf, 0, "output.png");
+      ctx->image_write_png(ctx, api_queue_gfx, colorbuf, 0, "output.png");
       run_image_viewer("output.png");
       return;
    }

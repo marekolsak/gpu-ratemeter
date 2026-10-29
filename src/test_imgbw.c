@@ -578,7 +578,7 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
                   test_strings[test_index], image->type + 1, formats[format_index].name,
                   layout_strings[layout], image->width, image->height, fill_strings[fill_option], z);
 
-         ctx->image_write_png(ctx, image, z, filename);
+         ctx->image_write_png(ctx, api_queue_gfx, image, z, filename);
       }
    }
 }
@@ -1342,7 +1342,7 @@ test_imgbw(api_context *ctx)
    if (!num_tests)
       return;
 
-   api_query_pool *timestamps = ctx->create_query_pool(ctx, num_tests * 2, api_query_timestamp);
+   api_query_pool *timestamps = ctx->create_query_pool(ctx, api_queue_gfx, num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);

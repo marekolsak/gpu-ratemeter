@@ -362,7 +362,7 @@ set_jump_buffer_data(api_context *ctx, latency_test_state *state, api_buffer *bu
    }
 
    assert(size <= buf->size);
-   ctx->upload_buffer_data(ctx, buf, 0, size, mem);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, buf, 0, size, mem);
 }
 
 static void
@@ -442,7 +442,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
 
    if (stage == REPORT) {
       state->results = malloc(state->result_buf->size);
-      ctx->get_buffer_data(ctx, state->result_buf, 0, state->result_buf->size, state->results);
+      ctx->get_buffer_data(ctx, api_queue_gfx, state->result_buf, 0, state->result_buf->size, state->results);
 
       fprintf(ctx->output, "%-*s,", name_indent, "Size");
 

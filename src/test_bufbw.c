@@ -204,7 +204,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
             i++;
          }
 
-         ctx->upload_buffer_data(ctx, state->indirect, 0, buf_size, indirect_data);
+         ctx->upload_buffer_data(ctx, state->queue, state->indirect, 0, buf_size, indirect_data);
          free(indirect_data);
       }
 
@@ -421,7 +421,7 @@ test_bufbw(api_context *ctx)
       return;
 
    /* Create timestamp queries. */
-   state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
+   state.timestamps = ctx->create_query_pool(ctx, state.queue, state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);

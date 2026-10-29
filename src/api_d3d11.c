@@ -103,7 +103,7 @@ d3d11_draw(api_context *ctx, const api_draw_desc *desc)
 }
 
 static api_query_pool *
-d3d11_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
+d3d11_create_query_pool(api_context *ctx, api_queue_type queue, unsigned num_queries, api_query_type type)
 {
    api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 
@@ -126,13 +126,14 @@ d3d11_get_query_results(api_context *ctx, api_query_pool *pool)
 }
 
 static void
-d3d11_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
-                      const void *data)
+d3d11_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset,
+                         uint64_t size, const void *data)
 {
 }
 
 static void
-d3d11_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
+d3d11_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
+                      const char *filename)
 {
 }
 

@@ -267,7 +267,7 @@ run(api_context *ctx, test_stage stage, iobw_test_state *state)
    /* Create buffers. */
    static float zeroed[4];
    state->buf_single_vertex = ctx->create_buffer(ctx, 16, api_heap_device, 0);
-   ctx->upload_buffer_data(ctx, state->buf_single_vertex, 0, 16, zeroed);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, state->buf_single_vertex, 0, 16, zeroed);
 
    /* Don't initialize the buffer data. It's read, but never used meaningfully. */
    state->buf_scratch = ctx->create_buffer(ctx, BO_ALLOC_SIZE, api_heap_device, 0);
@@ -808,7 +808,7 @@ test_iobw(api_context *ctx)
    if (!state.num_tests)
       return;
 
-   state.timestamps = ctx->create_query_pool(ctx, state.num_tests * 2, api_query_timestamp);
+   state.timestamps = ctx->create_query_pool(ctx, api_queue_gfx, state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);

@@ -78,15 +78,16 @@ gl_destroy_buffer(api_context *ctx, api_buffer *buf)
 }
 
 static void
-gl_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
-                      const void *data)
+gl_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset,
+                      uint64_t size, const void *data)
 {
    glNamedBufferSubData(buf->id, offset, size, data);
    gl_check_no_error();
 }
 
 static void
-gl_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, void *data)
+gl_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset,
+                   uint64_t size, void *data)
 {
    glGetNamedBufferSubData(buf->id, offset, size, data);
    gl_check_no_error();
@@ -686,7 +687,8 @@ gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_byte
 }
 
 static void
-gl_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
+gl_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
+                   const char *filename)
 {
    uint64_t size = (uint64_t)image->width * image->height * 4;
    GLenum format = format_is_integer(image->format) ? GL_RGBA_INTEGER : GL_RGBA;
@@ -929,8 +931,8 @@ gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *
 }
 
 static void
-gl_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
-                                 unsigned num_images, api_image **images)
+gl_set_storage_image_descriptors(api_context *ctx, api_queue_type queuee, api_descriptor_set *set,
+                                 unsigned binding_index, unsigned num_images, api_image **images)
 {
    assert(num_images <= set->layout->desc.storage_image[binding_index].array_size);
 
@@ -1484,7 +1486,7 @@ gl_driver_workaround(api_context *ctx, driver_wa wa)
 }
 
 static api_query_pool *
-gl_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
+gl_create_query_pool(api_context *ctx, api_queue_type queue, unsigned num_queries, api_query_type type)
 {
    api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 

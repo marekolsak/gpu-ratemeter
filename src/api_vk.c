@@ -486,8 +486,8 @@ vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
 }
 
 static void
-vk_transition_image_layouts(api_context *ctx, unsigned num_images, api_image **images,
-                            VkImageLayout *new_layouts, bool cmdbuf_not_started)
+vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num_images,
+                            api_image **images, VkImageLayout *new_layouts, bool cmdbuf_not_started)
 {
    api_image **transition_images = alloca(num_images * sizeof(transition_images[0]));
    VkImageLayout *transition_new_layouts = alloca(num_images * sizeof(VkImageLayout));
@@ -504,7 +504,9 @@ vk_transition_image_layouts(api_context *ctx, unsigned num_images, api_image **i
 
    if (num_transition_images) {
       if (cmdbuf_not_started)
-         ctx->begin_cmdbuf(ctx, api_queue_gfx);
+         ctx->begin_cmdbuf(ctx, queue);
+      else
+         assert(queue == api_num_queues);
 
       barrier_images(ctx, num_transition_images, transition_images, transition_new_layouts);
 
@@ -630,7 +632,7 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
 {
    assert(!box);
 
-   vk_transition_image_layouts(ctx, 1, &image,
+   vk_transition_image_layouts(ctx, api_num_queues, 1, &image,
                                (VkImageLayout[1]){VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
 
    if (format_is_depth_or_stencil(image->format)) {
@@ -683,7 +685,7 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
       .layerCount = dst_layer_count,
    };
 
-   vk_transition_image_layouts(ctx, 2, (api_image*[2]){desc->src, desc->dst},
+   vk_transition_image_layouts(ctx, api_num_queues, 2, (api_image*[2]){desc->src, desc->dst},
                                (VkImageLayout[2]){VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
 
@@ -1183,8 +1185,8 @@ vk_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *se
 }
 
 static void
-vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsigned binding_index,
-                                 unsigned num_images, api_image **images)
+vk_set_storage_image_descriptors(api_context *ctx, api_queue_type queue, api_descriptor_set *set,
+                                 unsigned binding_index, unsigned num_images, api_image **images)
 {
    assert(num_images <= set->layout->desc.storage_image[binding_index].array_size);
    VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_images);
@@ -1193,7 +1195,7 @@ vk_set_storage_image_descriptors(api_context *ctx, api_descriptor_set *set, unsi
    for (unsigned i = 0; i < num_images; i++)
       need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
 
-   vk_transition_image_layouts(ctx, num_images, images, need_layouts, true);
+   vk_transition_image_layouts(ctx, queue, num_images, images, need_layouts, true);
 
    for (unsigned i = 0; i < num_images; i++) {
       image_infos[i].sampler = NULL;
@@ -1701,6 +1703,7 @@ static void
 vk_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(ctx->current_cmd_buffer == NULL);
+   assert(queue < api_num_queues);
 
    if (ctx->timeline_point[queue] >= MAX_COMMAND_BUFFERS - 1) {
       uint64_t wait_point = ctx->timeline_point[queue] - 511;
@@ -1807,7 +1810,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
    }
 
    if (num_transition_images) {
-      vk_transition_image_layouts(ctx, num_transition_images, transition_images,
+      vk_transition_image_layouts(ctx, api_num_queues, num_transition_images, transition_images,
                                   transition_layouts, false);
    }
 
@@ -2041,7 +2044,7 @@ vk_driver_workaround(api_context *ctx, driver_wa wa)
 }
 
 static api_query_pool *
-vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type)
+vk_create_query_pool(api_context *ctx, api_queue_type queue, unsigned num_queries, api_query_type type)
 {
    api_query_pool *pool = calloc(1, sizeof(api_query_pool));
 
@@ -2085,7 +2088,7 @@ vk_create_query_pool(api_context *ctx, unsigned num_queries, api_query_type type
                                  .pipelineStatistics = pipe_stats,
                               }, NULL, &pool->pool));
 
-   vk_begin_cmdbuf(ctx, api_queue_gfx);
+   vk_begin_cmdbuf(ctx, queue);
    vkCmdResetQueryPool(ctx->current_cmd_buffer, pool->pool, 0, pool->num_queries);
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
@@ -2150,8 +2153,8 @@ vk_get_query_results(api_context *ctx, api_query_pool *pool)
 }
 
 static void
-vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
-                      const void *data)
+vk_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset,
+                      uint64_t size, const void *data)
 {
    api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached, false);
    uint8_t *map;
@@ -2170,7 +2173,7 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 
    vkUnmapMemory(ctx->device, *staging->mem);
 
-   vk_begin_cmdbuf(ctx, api_queue_gfx);
+   vk_begin_cmdbuf(ctx, queue);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vk_copy_buffer(ctx, buf, staging, offset, 0, size);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
@@ -2178,11 +2181,12 @@ vk_upload_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64
 }
 
 static void
-vk_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size, void *data)
+vk_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset, uint64_t size,
+                   void *data)
 {
    api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_cached, 0);
 
-   vk_begin_cmdbuf(ctx, api_queue_gfx);
+   vk_begin_cmdbuf(ctx, queue);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vk_copy_buffer(ctx, staging, buf, 0, offset, size);
 
@@ -2219,7 +2223,8 @@ vk_get_buffer_data(api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t 
 }
 
 static void
-vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const char *filename)
+vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
+                   const char *filename)
 {
    api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D,
                                         format_is_integer(image->format) ?
@@ -2227,7 +2232,7 @@ vk_image_write_png(api_context *ctx, api_image *image, unsigned layer, const cha
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
                                         api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 
-   vk_begin_cmdbuf(ctx, api_queue_gfx);
+   vk_begin_cmdbuf(ctx, queue);
    vk_blit_image(ctx, &(api_blit_desc){
                     .dst = staging,
                     .src = image,

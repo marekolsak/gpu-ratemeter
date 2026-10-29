@@ -1249,12 +1249,12 @@ run_test_pix(api_context *ctx, unsigned samples,
 
    /* Create timestamp queries. */
    api_query_pool *timestamps =
-      ctx->create_query_pool(ctx, num_pipelines * num_formats * 2, api_query_timestamp);
+      ctx->create_query_pool(ctx, api_queue_gfx, num_pipelines * num_formats * 2, api_query_timestamp);
    api_query_pool *pipe_stats = NULL;
 
    const char *raster_names[30] = {0};
    if (raster_gather_total_fs_invoc)
-      pipe_stats = ctx->create_query_pool(ctx, 30, api_query_pipeline_statistics);
+      pipe_stats = ctx->create_query_pool(ctx, api_queue_gfx, 30, api_query_pipeline_statistics);
 
    printf("Executing tests ...");
    fflush(stdout);
@@ -1367,7 +1367,7 @@ run_test_pix(api_context *ctx, unsigned samples,
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
          if (raster && raster_dump_image && !raster_dumped_images && fbs[f].colorbuf_raster) {
-            ctx->image_write_png(ctx, fbs[f].colorbuf_raster, 0, "raster.png");
+            ctx->image_write_png(ctx, api_queue_gfx, fbs[f].colorbuf_raster, 0, "raster.png");
             raster_dumped_images = true;
          }
 
@@ -1382,7 +1382,7 @@ run_test_pix(api_context *ctx, unsigned samples,
    if (raster_gather_total_fs_invoc) {
       uint32_t *total_fs_invoc_results = alloca(4 * num_raster_gather_tests);
 
-      ctx->get_buffer_data(ctx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
+      ctx->get_buffer_data(ctx, api_queue_gfx, total_fs_invoc, 0, 4 * num_raster_gather_tests, total_fs_invoc_results);
       ctx->get_query_results(ctx, pipe_stats);
 
       printf("| Subtest                       | Total FS invoc. | %% non-helper invoc. | Visible tris | Avg. tri area | Avg. pixels / tri | Avg. FS invoc. / tri |\n");
@@ -1622,7 +1622,7 @@ test_pix(api_context *ctx)
                                            .storage_image[0].array_size = 1,
                                         });
    api_descriptor_set *desc_set = ctx->create_descriptor_set(ctx, desc_set_layout);
-   ctx->set_storage_image_descriptors(ctx, desc_set, 0, 1, &store_image);
+   ctx->set_storage_image_descriptors(ctx, api_queue_gfx, desc_set, 0, 1, &store_image);
 
    /* Create the buffer for gathering FS invocations including helper invocations. */
    api_buffer *total_fs_invoc = NULL;
@@ -1684,7 +1684,7 @@ test_pix(api_context *ctx)
       }
    }
 
-   ctx->upload_buffer_data(ctx, raster_indexbuf, 0, raster_indexbuf_size, indices);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, raster_indexbuf, 0, raster_indexbuf_size, indices);
    free(indices);
 
    /* Run tests. */

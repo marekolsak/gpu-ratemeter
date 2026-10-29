@@ -257,7 +257,7 @@ test_sparsebind(api_context *ctx)
 
    /* Create timestamp queries. */
    api_query_pool *timestamps =
-      ctx->create_query_pool(ctx, num_tests * 2 * 5, api_query_timestamp);
+      ctx->create_query_pool(ctx, api_queue_gfx, num_tests * 2 * 5, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);

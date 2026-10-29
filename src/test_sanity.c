@@ -119,9 +119,9 @@ init_cube_vb(api_context *ctx, uint64_t *vb_offsets)
    unsigned mem_size = normals_offset + sizeof(vNormals);
 
    api_buffer *vb = ctx->create_buffer(ctx, mem_size, api_heap_device, 0);
-   ctx->upload_buffer_data(ctx, vb, vertex_offset, sizeof(vVertices), vVertices);
-   ctx->upload_buffer_data(ctx, vb, colors_offset, sizeof(vColors), vColors);
-   ctx->upload_buffer_data(ctx, vb, normals_offset, sizeof(vNormals), vNormals);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, vb, vertex_offset, sizeof(vVertices), vVertices);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, vb, colors_offset, sizeof(vColors), vColors);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, vb, normals_offset, sizeof(vNormals), vNormals);
 
    vb_offsets[0] = vertex_offset;
    vb_offsets[1] = colors_offset;
@@ -233,6 +233,6 @@ test_sanity(api_context *ctx)
    ctx->end_render_pass(ctx);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
-   ctx->image_write_png(ctx, fb->colorbufs[0], 0, "output.png");
+   ctx->image_write_png(ctx, api_queue_gfx, fb->colorbufs[0], 0, "output.png");
    run_image_viewer("output.png");
 }

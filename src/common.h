@@ -495,10 +495,10 @@ typedef struct api_context {
    api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap,
                                 unsigned sparse_block_size);
    void (*destroy_buffer)(struct api_context *ctx, api_buffer *buffer);
-   void (*upload_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
-                              uint64_t size, const void *data);
-   void (*get_buffer_data)(struct api_context *ctx, api_buffer *buf, uint64_t offset,
-                           uint64_t size, void *data);
+   void (*upload_buffer_data)(struct api_context *ctx, api_queue_type queue, api_buffer *buf,
+                              uint64_t offset, uint64_t size, const void *data);
+   void (*get_buffer_data)(struct api_context *ctx, api_queue_type queue, api_buffer *buf,
+                           uint64_t offset, uint64_t size, void *data);
    void (*clear_buffer)(struct api_context *ctx, api_buffer *buf, uint64_t offset, uint64_t size,
                         uint32_t value);
    void (*copy_buffer)(struct api_context *ctx, api_buffer *dst, api_buffer *src,
@@ -522,8 +522,8 @@ typedef struct api_context {
    void (*blit_image)(struct api_context *ctx, api_blit_desc *desc);
    void (*upload_image_data)(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
                              void *data);
-   void (*image_write_png)(struct api_context *ctx, api_image *image, unsigned layer,
-                           const char *filename);
+   void (*image_write_png)(struct api_context *ctx, api_queue_type queue, api_image *image,
+                           unsigned layer, const char *filename);
    void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,
                           bool after_shader_writes);
 
@@ -557,9 +557,9 @@ typedef struct api_context {
    void (*set_combined_image_sampler_descriptors)(struct api_context *ctx, api_descriptor_set *set,
                                                   unsigned binding_index, unsigned num_samplers,
                                                   api_image **images);
-   void (*set_storage_image_descriptors)(struct api_context *ctx, api_descriptor_set *set,
-                                         unsigned binding_index, unsigned num_images,
-                                         api_image **images);
+   void (*set_storage_image_descriptors)(struct api_context *ctx, api_queue_type queue,
+                                         api_descriptor_set *set, unsigned binding_index,
+                                         unsigned num_images, api_image **images);
    void (*destroy_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
    void (*bind_descriptor_set)(struct api_context *ctx, api_descriptor_set *set);
 
@@ -597,8 +597,8 @@ typedef struct api_context {
    void (*driver_workaround)(struct api_context *ctx, driver_wa wa);
 
    /* Query functions. */
-   api_query_pool *(*create_query_pool)(struct api_context *ctx, unsigned num_queries,
-                                        api_query_type type);
+   api_query_pool *(*create_query_pool)(struct api_context *ctx, api_queue_type queue,
+                                        unsigned num_queries, api_query_type type);
    void (*begin_next_query)(struct api_context *ctx, api_query_pool *pool);
    void (*end_next_query)(struct api_context *ctx, api_query_pool *pool);
    void (*write_next_query_value)(struct api_context *ctx, api_query_pool *pool);
