@@ -22,10 +22,11 @@
 #define MAX_RUNS           4096
 
 #define MAX_DELETE_ITEMS   128
+#define MAX_FB_SETS        ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
 
 #define DEBUG_DUMP_IMAGES  0
 
-#define MAX_FB_SETS ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
+#define SQRT_2             1.414213562
 
 typedef struct {
    const char *name;
@@ -486,6 +487,10 @@ enum {
    TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
+   TEST_BLIT_MINIFY_NEAREST,
+   TEST_BLIT_MINIFY_LINEAR,
+   TEST_BLIT_MAGNIFY_NEAREST,
+   TEST_BLIT_MAGNIFY_LINEAR,
    TEST_RESOLVE,
    NUM_TESTS,
 };
@@ -497,6 +502,10 @@ static const char *test_strings[] = {
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
+   [TEST_BLIT_MINIFY_NEAREST] = "blit_minify_nearest",
+   [TEST_BLIT_MINIFY_LINEAR] = "blit_minify_linear",
+   [TEST_BLIT_MAGNIFY_NEAREST] = "blit_magnify_nearest",
+   [TEST_BLIT_MAGNIFY_LINEAR] = "blit_magnify_linear",
    [TEST_RESOLVE] = "resolve",
 };
 
@@ -566,6 +575,21 @@ static const char *fill_strings[] = {
    [FILL_RANDOM_FRAGMENTED4] = "fragmented4",
    [FILL_RANDOM_FRAGMENTED8] = "fragmented8",
 };
+
+static bool
+is_scaled_blit(unsigned test_index)
+{
+   return test_index == TEST_BLIT_MINIFY_NEAREST ||
+          test_index == TEST_BLIT_MINIFY_LINEAR ||
+          test_index == TEST_BLIT_MAGNIFY_NEAREST ||
+          test_index == TEST_BLIT_MAGNIFY_LINEAR;
+}
+
+static bool
+is_blit(unsigned test_index)
+{
+   return test_index == TEST_BLIT || is_scaled_blit(test_index);
+}
 
 static void
 verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned format_index,
@@ -645,11 +669,20 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                       test_index == TEST_CLEAR_IMAGE;
 
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
+         if (img_type != VK_IMAGE_TYPE_2D && is_scaled_blit(test_index))
+            continue;
+
          for (unsigned format_index = 0; format_index < ARRAY_SIZE(formats); format_index++) {
             assert(!formats[format_index].color_format ||
                    format_is_valid(formats[format_index].color_format));
             assert(!formats[format_index].zs_format ||
                    format_is_valid(formats[format_index].zs_format));
+
+            /* Z/S blits can't have linear filtering. */
+            if ((test_index == TEST_BLIT_MINIFY_LINEAR || test_index == TEST_BLIT_MAGNIFY_LINEAR) &&
+                formats[format_index].zs_format &&
+                format_is_depth_or_stencil(formats[format_index].zs_format))
+               continue;
 
             bool multiple_attachments = formats[format_index].num_color_attachments +
                                         !!formats[format_index].zs_format >= 2;
@@ -716,22 +749,18 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                          test_index != TEST_CLEAR_FB_THEN_DRAW && test_index != TEST_CLEAR_ATTACHMENTS)
                         continue;
 
-                     switch (test_index) {
-                     case TEST_BLIT:
+                     if (is_blit(test_index)) {
                         if ((formats[format_index].zs_format &&
                              format_has_stencil(formats[format_index].zs_format)) ||
                             samples > 1)
                            continue;
-                        break;
-
-                     case TEST_RESOLVE:
+                     } else if (test_index == TEST_RESOLVE) {
                         if (img_type != VK_IMAGE_TYPE_2D || samples == 1 ||
                             (formats[format_index].color_format &&
                              format_is_integer(formats[format_index].color_format)) ||
                             (formats[format_index].zs_format &&
                              format_has_stencil(formats[format_index].zs_format)))
                            continue;
-                        break;
                      }
 
                      /* Report n/a for unsupported tests. */
@@ -744,12 +773,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               !(ctx->linear_fb_format_sample_count_support[formats[format_index].color_format])))
                         unsupported = true;
 
-                     if (test_index == TEST_BLIT &&
+                     if (is_blit(test_index) &&
                          (layer_count_option != LAYER_COUNT_1 || img_type == VK_IMAGE_TYPE_3D) &&
                          !ctx->has_blit_image_3d)
                         unsupported = true;
 
-                     if (test_index == TEST_BLIT && formats[format_index].zs_format &&
+                     if (is_blit(test_index) && formats[format_index].zs_format &&
                          !ctx->has_blit_image_zs)
                         unsupported = true;
 
@@ -763,7 +792,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                      /* Layered image initialization and draw require the gl_Layer VS output. */
                      if ((test_index == TEST_CLEAR_FB_THEN_DRAW || test_index == TEST_COPY ||
-                          test_index == TEST_BLIT || test_index == TEST_RESOLVE) &&
+                          is_blit(test_index) || test_index == TEST_RESOLVE) &&
                          (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                         unsupported = true;
 
@@ -785,9 +814,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                      /* Create textures. */
                      struct {
-                        unsigned width;
-                        unsigned height;
-                        unsigned depth;
+                        unsigned dst_width;
+                        unsigned dst_height;
+                        unsigned dst_depth;
+                        unsigned src_width;
+                        unsigned src_height;
+                        unsigned src_depth;
                         unsigned size;
                         unsigned num_all_images;
                         bool exceeds_limits;
@@ -800,12 +832,14 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                      } sets[MAX_FB_SETS] = {0};
 
                      unsigned num_image_sets = 0;
-                     bool exceeds_limits = false;
 
                      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
                         unsigned eff_size = size >> (DEBUG_DUMP_IMAGES ? 4 : 0);
                         unsigned num_pixels = eff_size / bpe_total;
                         unsigned width = 1, height = 1, depth = 1;
+
+                        if (is_scaled_blit(test_index))
+                           num_pixels = eff_size / (3 * bpe);
 
                         assert(num_image_sets < ARRAY_SIZE(sets));
 
@@ -817,7 +851,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            width = height = get_next_power_of_two(sqrt(num_pixels_per_layer));
 
-                           if (IS_POT(bpe_total)) {
+                           if (IS_POT(bpe_total) && IS_POT(num_pixels_per_layer)) {
                               for (unsigned i = 0; width * height != num_pixels_per_layer; i++) {
                                  if (i % 2 == 1)
                                     width /= 2;
@@ -829,10 +863,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            depth = layers;
-
-                           exceeds_limits = width > ctx->max_image_dim_2d ||
-                                            height > ctx->max_image_dim_2d ||
-                                            depth > ctx->max_image_layers;
                         } else if (img_type == VK_IMAGE_TYPE_3D) {
                            assert(!multiple_attachments);
 
@@ -846,19 +876,52 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               else
                                  depth /= 2;
                            }
-
-                           exceeds_limits = width > ctx->max_image_dim_3d ||
-                                            height > ctx->max_image_dim_3d ||
-                                            depth > ctx->max_image_dim_3d;
                         } else {
                            error("invalid image type in imgbw allocation");
                         }
 
                         sets[num_image_sets].size = size;
-                        sets[num_image_sets].exceeds_limits = exceeds_limits;
-                        sets[num_image_sets].width = width;
-                        sets[num_image_sets].height = height;
-                        sets[num_image_sets].depth = depth;
+
+                        sets[num_image_sets].src_width = width;
+                        sets[num_image_sets].src_height = height;
+                        sets[num_image_sets].src_depth = depth;
+
+                        sets[num_image_sets].dst_width = width;
+                        sets[num_image_sets].dst_height = height;
+                        sets[num_image_sets].dst_depth = depth;
+
+                        if (test_index == TEST_BLIT_MINIFY_NEAREST ||
+                            test_index == TEST_BLIT_MINIFY_LINEAR) {
+                           sets[num_image_sets].src_width *= SQRT_2;
+                           sets[num_image_sets].src_height *= SQRT_2;
+                        } else if (test_index == TEST_BLIT_MAGNIFY_NEAREST ||
+                                   test_index == TEST_BLIT_MAGNIFY_LINEAR) {
+                           sets[num_image_sets].dst_width *= SQRT_2;
+                           sets[num_image_sets].dst_height *= SQRT_2;
+                        }
+
+                        sets[num_image_sets].exceeds_limits = false;
+
+                        /* Check against limits. */
+                        if (img_type == VK_IMAGE_TYPE_2D) {
+                           sets[num_image_sets].exceeds_limits =
+                              sets[num_image_sets].dst_width > ctx->max_image_dim_2d ||
+                              sets[num_image_sets].dst_height > ctx->max_image_dim_2d ||
+                              sets[num_image_sets].dst_depth > ctx->max_image_layers ||
+                              sets[num_image_sets].src_width > ctx->max_image_dim_2d ||
+                              sets[num_image_sets].src_height > ctx->max_image_dim_2d ||
+                              sets[num_image_sets].src_depth > ctx->max_image_layers;
+                        } else if (img_type == VK_IMAGE_TYPE_3D) {
+                           sets[num_image_sets].exceeds_limits =
+                              sets[num_image_sets].dst_width > ctx->max_image_dim_3d ||
+                              sets[num_image_sets].dst_height > ctx->max_image_dim_3d ||
+                              sets[num_image_sets].dst_depth > ctx->max_image_dim_3d ||
+                              sets[num_image_sets].src_width > ctx->max_image_dim_3d ||
+                              sets[num_image_sets].src_height > ctx->max_image_dim_3d ||
+                              sets[num_image_sets].src_depth > ctx->max_image_dim_3d;
+                        } else {
+                           error("invalid image type in imgbw allocation");
+                        }
 
                         if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
                            if (!is_clear) {
@@ -868,8 +931,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  ctx->create_image(ctx, img_type,
                                                    formats[format_index].color_format ?
                                                       formats[format_index].color_format :
-                                                      formats[format_index].zs_format, width, height,
-                                                   depth, src_samples, src_tiling, api_heap_device,
+                                                      formats[format_index].zs_format,
+                                                   sets[num_image_sets].src_width,
+                                                   sets[num_image_sets].src_height,
+                                                   sets[num_image_sets].src_depth, src_samples, src_tiling,
+                                                   api_heap_device,
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                                    (formats[format_index].color_format ?
@@ -883,8 +949,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            for (unsigned i = 0; i < formats[format_index].num_color_attachments; i++) {
                               sets[num_image_sets].dst_color[i] =
-                                 ctx->create_image(ctx, img_type, formats[format_index].color_format, width,
-                                                   height, depth, dst_samples, dst_tiling,
+                                 ctx->create_image(ctx, img_type, formats[format_index].color_format,
+                                                   sets[num_image_sets].dst_width,
+                                                   sets[num_image_sets].dst_height,
+                                                   sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
                                                    api_heap_device,
                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
@@ -895,8 +963,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            if (formats[format_index].zs_format) {
                               sets[num_image_sets].dst_zs =
-                                 ctx->create_image(ctx, img_type, formats[format_index].zs_format, width,
-                                                   height, depth, dst_samples, dst_tiling,
+                                 ctx->create_image(ctx, img_type, formats[format_index].zs_format,
+                                                   sets[num_image_sets].dst_width,
+                                                   sets[num_image_sets].dst_height,
+                                                   sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
                                                    api_heap_device,
                                                    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -915,7 +985,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            sets[num_image_sets].fb =
                               ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
                                                       sets[num_image_sets].dst_color,
-                                                      sets[num_image_sets].dst_zs, width, height,
+                                                      sets[num_image_sets].dst_zs,
+                                                      sets[num_image_sets].dst_width,
+                                                      sets[num_image_sets].dst_height,
                                                       dst_samples, 0x1);
                         }
 
@@ -1050,6 +1122,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            if (yflip && (is_clear || test_index == TEST_COPY))
                               continue;
 
+                           if (is_scaled_blit(test_index) && region_option != REGION_FULL)
+                              continue;
+
                            char name[128];
                            get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
                                             samples, layer_count_option, layout, fill_option,
@@ -1090,10 +1165,13 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               api_image_box src_box = {0}, dst_box = {0};
 
                               /* Determine the box. */
-                              dst_box.width = sets[set].width;
-                              dst_box.height = sets[set].height;
-                              dst_box.depth = sets[set].depth;
-                              src_box = dst_box;
+                              dst_box.width = sets[set].dst_width;
+                              dst_box.height = sets[set].dst_height;
+                              dst_box.depth = sets[set].dst_depth;
+
+                              src_box.width = sets[set].src_width;
+                              src_box.height = sets[set].src_height;
+                              src_box.depth = sets[set].src_depth;
 
                               const int partial_offset_x = MIN2(8, dst_box.width / 4);
                               const int partial_offset_y = MIN2(8, dst_box.height / 4);
@@ -1108,6 +1186,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  break;
 
                               case REGION_PARTIAL:
+                                 assert(!is_scaled_blit(test_index));
+
                                  if (img_type == VK_IMAGE_TYPE_2D) {
                                     dst_box.x = partial_offset_x;
                                     dst_box.y = partial_offset_y;
@@ -1124,6 +1204,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               case REGION_PARTIAL_UNALIGNED:
                               case REGION_PARTIAL_UNALIGNED_YFLIP: {
+                                 assert(!is_scaled_blit(test_index));
+
                                  const unsigned off = 3;
                                  dst_box.x = off;
                                  dst_box.width -= off;
@@ -1150,9 +1232,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               assert(dst_box.width > 0);
                               assert(dst_box.height > 0);
                               assert(dst_box.depth > 0);
-                              assert(dst_box.x + dst_box.width <= sets[set].width);
-                              assert(dst_box.y + dst_box.height <= sets[set].height);
-                              assert(dst_box.z + dst_box.depth <= sets[set].depth);
+                              assert(dst_box.x + dst_box.width <= sets[set].dst_width);
+                              assert(dst_box.y + dst_box.height <= sets[set].dst_height);
+                              assert(dst_box.z + dst_box.depth <= sets[set].dst_depth);
 
                               if (sets[set].src) {
                                  assert(src_box.width);
@@ -1160,20 +1242,20 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  assert(src_box.depth > 0);
                                  if (src_box.width > 0) {
                                     assert(src_box.x >= 0);
-                                    assert(src_box.x + src_box.width <= sets[set].width);
+                                    assert(src_box.x + src_box.width <= sets[set].src_width);
                                  } else {
                                     assert(src_box.x + src_box.width >= 0);
-                                    assert(src_box.x - 1 < sets[set].width);
+                                    assert(src_box.x - 1 < sets[set].src_width);
                                  }
                                  if (src_box.height > 0) {
                                     assert(src_box.y >= 0);
-                                    assert(src_box.y + src_box.height <= sets[set].height);
+                                    assert(src_box.y + src_box.height <= sets[set].src_height);
                                  } else {
                                     assert(src_box.y + src_box.height >= 0);
-                                    assert(src_box.y - 1 < sets[set].height);
+                                    assert(src_box.y - 1 < sets[set].src_height);
                                  }
                                  assert(src_box.z >= 0);
-                                 assert(src_box.z + src_box.depth <= sets[set].depth);
+                                 assert(src_box.z + src_box.depth <= sets[set].src_depth);
                               }
 
                               const unsigned num_runs =
@@ -1244,6 +1326,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                     case TEST_COPY:
                                     case TEST_BLIT:
+                                    case TEST_BLIT_MINIFY_NEAREST:
+                                    case TEST_BLIT_MINIFY_LINEAR:
+                                    case TEST_BLIT_MAGNIFY_NEAREST:
+                                    case TEST_BLIT_MAGNIFY_LINEAR:
                                     case TEST_RESOLVE: {
                                        ctx->blit_image(ctx,
                                                        &(api_blit_desc){
@@ -1252,6 +1338,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                           .src = sets[set].src,
                                                           .src_box = src_box,
                                                           .is_copy = test_index == TEST_COPY,
+                                                          .linear_filter =
+                                                            test_index == TEST_BLIT_MINIFY_LINEAR ||
+                                                            test_index == TEST_BLIT_MAGNIFY_LINEAR,
                                                        });
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
                                                            sets[set].all, false);

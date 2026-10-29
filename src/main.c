@@ -30,7 +30,6 @@
  * - copy/blit:
  *   - buffer-to-image, image-to-buffer
  *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
- *   - scaled blits - nearest x linear, minify x magnify
  * - add -pix option to print pixel throughput
  * - transfer queue
  * - (maybe) no barrier, uncached

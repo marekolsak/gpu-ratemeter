@@ -321,13 +321,13 @@ All operations are tested with different image contents or different clear value
 The table below shows how subtests are mapped to API functions.
 
 | Subtest name         | OpenGL                   | Vulkan                                                                                                                            |
-|----------------------|--------------------------|-----------------------------------------------------------------------                                                            |
+|----------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | `clear_framebuffer`  | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld)                                                             |
-| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then overdraw the whole image with a different solid color and stencil, while Z will get a sloped quad |
+| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then overdraw the whole image with a different solid color and stencil, while Z will get a sloped quad. |
 | `clear_attachment`   | scissored `glClear`      | `vkCmdClearAttachments`                                                                                                           |
 | `clear_image`        | `glClearTex{Sub}Image`   | `vkCmdClearColorImage` and `vkCmdClearDepthStencilImage`                                                                          |
 | `copy`               | `glCopyImageSubData`     | `vkCmdCopyImage2`                                                                                                                 |
-| `blit`               | `glBlitNamedFramebuffer` | `vkCmdBlitImage2`                                                                                                                 |
+| `blit`               | `glBlitNamedFramebuffer` | `vkCmdBlitImage2` - for the scaled variants, the memory footpring of one image is 2x the size of the other image (√2x larger in each dimension). |
 | `resolve`            | `glBlitNamedFramebuffer` | `vkCmdResolveImage2`                                                                                                              |
 
 Image formats in subtest names should be mostly self-explanatory. For example, `rgba8_d32s8_4mrt` in clear subtests means 4 RGBA8 color attachments and D32S8 as the depth-stencil attachment.
