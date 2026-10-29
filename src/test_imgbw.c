@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "common.h"
@@ -766,18 +767,23 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                          (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                         unsupported = true;
 
-                     /* Create textures. */
-                     unsigned bpe_color =
+                     const unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : samples;
+                     const unsigned src_samples = is_clear ? 0 : samples;
+                     const unsigned dst_tiling = layout == LAYOUT_DST_LINEAR ?
+                                                    VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+                     const unsigned src_tiling = layout == LAYOUT_SRC_LINEAR ?
+                                                    VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+                     const unsigned bpe_color =
                         formats[format_index].color_format ?
                               get_pixel_size_from_format(formats[format_index].color_format) : 0;
-                     unsigned bpe_zs =
+                     const unsigned bpe_zs =
                         formats[format_index].zs_format ?
                               get_pixel_size_from_format(formats[format_index].zs_format) : 0;
-                     unsigned bpe_total = bpe_color * formats[format_index].num_color_attachments +
-                                          bpe_zs;
-                     unsigned msaa_bpe_total = bpe_total * samples;
-                     assert(msaa_bpe_total);
+                     const unsigned bpe = bpe_color * formats[format_index].num_color_attachments + bpe_zs;
+                     const unsigned bpe_total = bpe * (dst_samples + src_samples);
+                     assert(bpe_total);
 
+                     /* Create textures. */
                      struct {
                         unsigned width;
                         unsigned height;
@@ -792,17 +798,20 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         api_image *all[MAX_COLOR_ATTACHMENTS + 1];
                         api_framebuffer *fb;
                      } sets[MAX_FB_SETS] = {0};
+
                      unsigned num_image_sets = 0;
                      bool exceeds_limits = false;
 
                      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
                         unsigned eff_size = size >> (DEBUG_DUMP_IMAGES ? 4 : 0);
-                        unsigned num_pixels = eff_size / msaa_bpe_total;
+                        unsigned num_pixels = eff_size / bpe_total;
                         unsigned width = 1, height = 1, depth = 1;
 
                         assert(num_image_sets < ARRAY_SIZE(sets));
 
-                        /* Determine the size. The final size must be exactly "eff_size". */
+                        /* Determine the size. The total memory footprint of all images must be as close
+                         * as possible to "eff_size".
+                         */
                         if (img_type == VK_IMAGE_TYPE_2D) {
                            unsigned num_pixels_per_layer = num_pixels / layers;
 
@@ -852,13 +861,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         sets[num_image_sets].depth = depth;
 
                         if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
-                           unsigned src_samples = samples;
-                           unsigned src_tiling = layout == LAYOUT_SRC_LINEAR ?
-                                                    VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
-                           unsigned dst_tiling = layout == LAYOUT_DST_LINEAR ?
-                                                    VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
-                           unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : src_samples;
-
                            if (!is_clear) {
                               assert(!multiple_attachments);
 
@@ -1276,16 +1278,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               /* Get results. */
                               if (stage == REPORT) {
-                                 uint64_t num_pixels = (uint64_t)num_runs * dst_box.width *
-                                                       dst_box.height * dst_box.depth;
-                                 uint64_t bytes;
-
-                                 if (is_clear)
-                                    bytes = num_pixels * msaa_bpe_total;
-                                 else if (test_index == TEST_RESOLVE)
-                                    bytes = num_pixels * (msaa_bpe_total + bpe_total);
-                                 else
-                                    bytes = num_pixels * msaa_bpe_total * 2;
+                                 uint64_t num_dst_pixels = (uint64_t)num_runs * dst_box.width *
+                                                           dst_box.height * dst_box.depth;
+                                 uint64_t num_src_pixels = (uint64_t)num_runs * abs(src_box.width) *
+                                                           abs(src_box.height) * abs(src_box.depth);
+                                 uint64_t bytes = bpe * (num_dst_pixels * dst_samples +
+                                                         num_src_pixels * src_samples);
 
                                  if (test_index == TEST_CLEAR_FB_THEN_DRAW)
                                     bytes *= 2;
