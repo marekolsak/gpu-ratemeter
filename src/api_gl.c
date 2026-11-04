@@ -1030,7 +1030,7 @@ gl_create_gfx_pipeline(api_context *ctx, const api_gfx_pipeline_desc *desc)
 static void
 gl_destroy_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
-   assert(ctx->current_pipeline != pipeline);
+   assert(ctx->current_gfx_pipeline != pipeline);
    glDeleteProgram(pipeline->prog);
    free(pipeline);
 }
@@ -1058,22 +1058,22 @@ get_compare_func(VkCompareOp op)
 static void
 gl_set_current_clear_affecting_states(api_context *ctx)
 {
-   if (ctx->current_pipeline) {
-      glColorMask(!!(ctx->current_pipeline->desc.colormask & 0x1),
-                  !!(ctx->current_pipeline->desc.colormask & 0x2),
-                  !!(ctx->current_pipeline->desc.colormask & 0x4),
-                  !!(ctx->current_pipeline->desc.colormask & 0x8));
+   if (ctx->current_gfx_pipeline) {
+      glColorMask(!!(ctx->current_gfx_pipeline->desc.colormask & 0x1),
+                  !!(ctx->current_gfx_pipeline->desc.colormask & 0x2),
+                  !!(ctx->current_gfx_pipeline->desc.colormask & 0x4),
+                  !!(ctx->current_gfx_pipeline->desc.colormask & 0x8));
 
-      if (ctx->current_pipeline->desc.depth_enabled) {
-         glDepthMask(ctx->current_pipeline->desc.depth_write_enabled);
+      if (ctx->current_gfx_pipeline->desc.depth_enabled) {
+         glDepthMask(ctx->current_gfx_pipeline->desc.depth_write_enabled);
       } else {
          glDepthMask(GL_TRUE);
       }
 
-      glStencilMaskSeparate(GL_FRONT, ctx->current_pipeline->desc.stencil_front.writeMask);
-      glStencilMaskSeparate(GL_BACK, ctx->current_pipeline->desc.stencil_back.writeMask);
+      glStencilMaskSeparate(GL_FRONT, ctx->current_gfx_pipeline->desc.stencil_front.writeMask);
+      glStencilMaskSeparate(GL_BACK, ctx->current_gfx_pipeline->desc.stencil_back.writeMask);
 
-      if (ctx->current_pipeline->desc.rasterizer_discard)
+      if (ctx->current_gfx_pipeline->desc.rasterizer_discard)
          glEnable(GL_RASTERIZER_DISCARD);
       else
          glDisable(GL_RASTERIZER_DISCARD);
@@ -1101,17 +1101,17 @@ get_stencil_op(VkStencilOp op)
 static void
 gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
-   if (ctx->current_pipeline == pipeline)
+   if (ctx->current_gfx_pipeline == pipeline)
       return;
 
    /* Unbind the previous pipeline. */
-   if (ctx->current_pipeline) {
-      for (unsigned i = 0; i < ctx->current_pipeline->desc.num_vb_desc; i++)
+   if (ctx->current_gfx_pipeline) {
+      for (unsigned i = 0; i < ctx->current_gfx_pipeline->desc.num_vb_desc; i++)
          glDisableVertexAttribArray(i);
    }
 
    /* Bind the pipeline. */
-   ctx->current_pipeline = pipeline;
+   ctx->current_gfx_pipeline = pipeline;
 
    if (!pipeline) {
       gl_set_current_clear_affecting_states(ctx);
@@ -1409,14 +1409,14 @@ gl_bind_transform_feedback_buffer(api_context *ctx, api_buffer *buf, uint64_t of
 static void
 gl_begin_transform_feedback(api_context *ctx)
 {
-   assert(!ctx->current_pipeline->desc.ms);
+   assert(!ctx->current_gfx_pipeline->desc.ms);
 
-   if (ctx->current_pipeline->desc.gs || ctx->current_pipeline->desc.tes)
+   if (ctx->current_gfx_pipeline->desc.gs || ctx->current_gfx_pipeline->desc.tes)
       error("gl: transform feedback with TES and GS unimplemented");
 
    GLenum prim;
 
-   switch (ctx->current_pipeline->prim_mode) {
+   switch (ctx->current_gfx_pipeline->prim_mode) {
    case GL_POINTS:
       prim = GL_POINTS;
       break;
@@ -1450,8 +1450,8 @@ gl_end_transform_feedback(api_context *ctx)
 static void
 gl_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offsets)
 {
-   for (unsigned i = 0; i < ctx->current_pipeline->desc.num_vb_desc; i++)
-      glBindVertexBuffer(i, vb->id, vb_offsets[i], ctx->current_pipeline->desc.vb_strides[i]);
+   for (unsigned i = 0; i < ctx->current_gfx_pipeline->desc.num_vb_desc; i++)
+      glBindVertexBuffer(i, vb->id, vb_offsets[i], ctx->current_gfx_pipeline->desc.vb_strides[i]);
 }
 
 static void
@@ -1468,10 +1468,10 @@ gl_draw(api_context *ctx, const api_draw_desc *desc)
    if (desc->mesh_groups_x || desc->mesh_groups_y) {
       glDrawMeshTasksEXT(desc->mesh_groups_x, desc->mesh_groups_y, 1);
    } else if (desc->indexed) {
-      glDrawElementsInstanced(ctx->current_pipeline->prim_mode, desc->count, GL_UNSIGNED_INT, NULL,
+      glDrawElementsInstanced(ctx->current_gfx_pipeline->prim_mode, desc->count, GL_UNSIGNED_INT, NULL,
                               desc->instance_count);
    } else {
-      glDrawArraysInstanced(ctx->current_pipeline->prim_mode, desc->first_vertex, desc->count,
+      glDrawArraysInstanced(ctx->current_gfx_pipeline->prim_mode, desc->first_vertex, desc->count,
                             desc->instance_count);
    }
 }
@@ -1837,7 +1837,7 @@ gl_create_context(const program_options *options)
    ctx->write_next_query_value = gl_write_next_query_value;
    ctx->get_query_results = gl_get_query_results;
 
-   ctx->current_pipeline = NULL;
+   ctx->current_gfx_pipeline = NULL;
 
    return ctx;
 }

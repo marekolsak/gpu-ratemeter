@@ -606,14 +606,14 @@ typedef struct api_context {
 
    /* Private members. */
 #ifdef GL_PRIVATE
-   api_gfx_pipeline *current_pipeline;
+   api_gfx_pipeline *current_gfx_pipeline;
    api_framebuffer *fb;
    api_framebuffer *prev_fb;
    bool has_image_tiling_linear;
 #endif
 
 #ifdef VK_PRIVATE
-   api_gfx_pipeline *current_pipeline;
+   api_gfx_pipeline *current_gfx_pipeline;
    api_framebuffer *current_fb;
 
    /* Device. */

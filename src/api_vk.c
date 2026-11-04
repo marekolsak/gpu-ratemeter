@@ -1597,7 +1597,7 @@ static void
 vk_bind_gfx_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 {
    assert(pipeline);
-   ctx->current_pipeline = pipeline;
+   ctx->current_gfx_pipeline = pipeline;
    vkCmdBindPipeline(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
@@ -1781,7 +1781,7 @@ vk_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *
       }, NULL));
 
    ctx->current_cmd_buffer = NULL;
-   ctx->current_pipeline = NULL;
+   ctx->current_gfx_pipeline = NULL;
 
    if (signal_fence)
       *signal_fence = get_latest_fence(ctx, queue);
@@ -1986,10 +1986,10 @@ vk_bind_vertex_buffers(api_context *ctx, api_buffer *vb, const uint64_t *vb_offs
 {
    VkBuffer buffers[MAX_VERTEX_BUFFERS];
 
-   for (unsigned i = 0; i < ctx->current_pipeline->num_vb_desc; i++)
+   for (unsigned i = 0; i < ctx->current_gfx_pipeline->num_vb_desc; i++)
       buffers[i] = vb->buffer;
 
-   vkCmdBindVertexBuffers(ctx->current_cmd_buffer, 0, ctx->current_pipeline->num_vb_desc,
+   vkCmdBindVertexBuffers(ctx->current_cmd_buffer, 0, ctx->current_gfx_pipeline->num_vb_desc,
                           buffers, vb_offsets);
 }
 
@@ -2003,7 +2003,7 @@ static void
 vk_draw(api_context *ctx, const api_draw_desc *desc)
 {
    assert((desc->mesh_groups_x || desc->mesh_groups_y) != !!desc->count);
-   assert(ctx->current_pipeline);
+   assert(ctx->current_gfx_pipeline);
 
    if (desc->mesh_groups_x || desc->mesh_groups_y)
       ctx->vkCmdDrawMeshTasksEXT(ctx->current_cmd_buffer, desc->mesh_groups_x, desc->mesh_groups_y, 1);
