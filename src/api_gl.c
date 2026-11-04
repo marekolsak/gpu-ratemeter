@@ -476,7 +476,7 @@ gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    image->heap = heap;
    image->glformat = get_gl_format(format);
    image->gltype = get_gl_type(format);
-   image->mem_size = (uint64_t)width * height * get_pixel_size_from_format(format) * samples;
+   image->mem_size = (uint64_t)width * height * depth * get_pixel_size_from_format(format) * samples;
 
    if (heap != api_heap_device)
       error("GL only supports heap=device for textures");
@@ -869,6 +869,9 @@ gl_create_descriptor_set(api_context *ctx, api_descriptor_set_layout *layout)
 static void
 gl_destroy_descriptor_set(api_context *ctx, api_descriptor_set *set)
 {
+   glDeleteTextures(MAX_UNIFORM_TEXEL_BUFFER_BINDINGS * MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE, set->tbo_ids[0]);
+   glDeleteTextures(MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE, set->tex_ids);
+
    free(set);
 }
 
@@ -922,9 +925,12 @@ gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *
    for (unsigned i = 0; i < num_samplers; i++) {
       glGenTextures(1, &set->tex_ids[i]);
       glTextureView(set->tex_ids[i], images[i]->gltarget, images[i]->id, images[i]->glinternalformat,
-                    0, 1, 0, images[i]->depth);
-      glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    0, 1, 0, images[i]->type == VK_IMAGE_TYPE_3D ? 1 : images[i]->depth);
+
+      if (images[i]->samples == 1) {
+         glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+         glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      }
    }
 
    gl_check_no_error();
