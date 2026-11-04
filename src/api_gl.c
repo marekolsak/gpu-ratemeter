@@ -1056,7 +1056,7 @@ get_compare_func(VkCompareOp op)
 }
 
 static void
-gl_set_current_pipeline_color_depth_stencil_masks(api_context *ctx)
+gl_set_current_clear_affecting_states(api_context *ctx)
 {
    if (ctx->current_pipeline) {
       glColorMask(!!(ctx->current_pipeline->desc.colormask & 0x1),
@@ -1069,12 +1069,19 @@ gl_set_current_pipeline_color_depth_stencil_masks(api_context *ctx)
       } else {
          glDepthMask(GL_TRUE);
       }
+
       glStencilMaskSeparate(GL_FRONT, ctx->current_pipeline->desc.stencil_front.writeMask);
       glStencilMaskSeparate(GL_BACK, ctx->current_pipeline->desc.stencil_back.writeMask);
+
+      if (ctx->current_pipeline->desc.rasterizer_discard)
+         glEnable(GL_RASTERIZER_DISCARD);
+      else
+         glDisable(GL_RASTERIZER_DISCARD);
    } else {
       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       glDepthMask(GL_TRUE);
       glStencilMask(0xff);
+      glDisable(GL_RASTERIZER_DISCARD);
    }
 }
 
@@ -1107,7 +1114,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
    ctx->current_pipeline = pipeline;
 
    if (!pipeline) {
-      gl_set_current_pipeline_color_depth_stencil_masks(ctx);
+      gl_set_current_clear_affecting_states(ctx);
       return;
    }
 
@@ -1162,11 +1169,6 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       else
          glDisable(GL_CLIP_DISTANCE0 + i);
    }
-
-   if (pipeline->desc.rasterizer_discard)
-      glEnable(GL_RASTERIZER_DISCARD);
-   else
-      glDisable(GL_RASTERIZER_DISCARD);
 
    /* Sample shading is implied by the shader. */
    glUseProgram(pipeline->prog);
@@ -1227,7 +1229,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
       glDisable(GL_SAMPLE_MASK);
    }
 
-   gl_set_current_pipeline_color_depth_stencil_masks(ctx);
+   gl_set_current_clear_affecting_states(ctx);
 }
 
 
@@ -1314,6 +1316,8 @@ gl_clear_attachments(api_context *ctx, api_clear_attachments_desc *desc)
    bool scissor = desc->box.x > 0 || desc->box.y > 0 ||
                   desc->box.width < ctx->fb->width || desc->box.height < ctx->fb->height;
 
+   glDisable(GL_RASTERIZER_DISCARD);
+
    if (scissor) {
       glEnable(GL_SCISSOR_TEST);
       glScissor(desc->box.x, desc->box.y, desc->box.width, desc->box.height);
@@ -1361,7 +1365,7 @@ gl_clear_attachments(api_context *ctx, api_clear_attachments_desc *desc)
    if (scissor)
       glDisable(GL_SCISSOR_TEST);
 
-   gl_set_current_pipeline_color_depth_stencil_masks(ctx);
+   gl_set_current_clear_affecting_states(ctx);
 }
 
 static void
