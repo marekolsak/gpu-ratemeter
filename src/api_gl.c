@@ -1684,7 +1684,7 @@ gl_create_context(const program_options *options)
    ctx->has_shader_subgroup_clock = GLAD_GL_ARB_shader_clock;
    ctx->has_shader_subgroup_ops =
       (supported_subgroup_ops & required_subgroup_ops) == required_subgroup_ops;
-   ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;
+   /*ctx->has_sparse_buffer = GLAD_GL_ARB_sparse_buffer;*/
    ctx->has_vrs = false;
    ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
    ctx->has_xfb = true;
@@ -1700,8 +1700,8 @@ gl_create_context(const program_options *options)
    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, (GLint*)&ctx->max_storage_buffer_range);
    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, (GLint*)&ctx->max_uniform_buffer_range);
 
-   if (GLAD_GL_ARB_sparse_buffer)
-      glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);
+   /*if (GLAD_GL_ARB_sparse_buffer)
+      glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);*/
 
    /* Format support. */
    assert(ARRAY_SIZE(ctx->fb_format_sample_count_support) ==
