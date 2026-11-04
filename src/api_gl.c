@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include "glad/glad.h"
 
 #define GL_PRIVATE
@@ -1626,18 +1627,24 @@ gl_create_context(const program_options *options)
 #endif
    }
 
+   const char *const egl_client_extension_list = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+
+   if (!egl_client_extension_list)
+      error("gl: can't get the EGL client extension list");
+
+#define egl_require_client_ext(ext) \
+   if (!strstr(egl_client_extension_list, #ext)) \
+      error(#ext " is required.");
+
+   /* No client extensions needed. */
+
    /* Create an EGL context. */
-   EGLint count, major, minor;
+   EGLint major, minor;
    EGLDisplay egl_dpy;
-   EGLConfig cfg;
    EGLContext egl_ctx;
 
    egl_check(egl_dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY));
    egl_check(eglInitialize(egl_dpy, &major, &minor));
-   egl_check(eglChooseConfig(egl_dpy, (EGLint[]){EGL_NONE}, &cfg, 1, &count));
-
-   if (!count)
-      error("No EGL configs");
 
    const char *const egl_extension_list = eglQueryString(egl_dpy, EGL_EXTENSIONS);
 
@@ -1646,6 +1653,7 @@ gl_create_context(const program_options *options)
       error(#ext " is required.");
 
    egl_require_ext(EGL_KHR_create_context);
+   egl_require_ext(EGL_KHR_no_config_context);
    egl_require_ext(EGL_KHR_surfaceless_context);
 
    /* Create an OpenGL context. */
@@ -1660,7 +1668,7 @@ gl_create_context(const program_options *options)
    };
 
    egl_check(eglBindAPI(EGL_OPENGL_API));
-   egl_ctx = eglCreateContext(egl_dpy, cfg, EGL_NO_CONTEXT, ctx_attribs);
+   egl_ctx = eglCreateContext(egl_dpy, EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, ctx_attribs);
 
    if (egl_ctx == EGL_NO_CONTEXT) {
       int egl_error = eglGetError();
