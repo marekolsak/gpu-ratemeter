@@ -607,6 +607,8 @@ typedef struct api_context {
    /* Private members. */
 #ifdef GL_PRIVATE
    api_gfx_pipeline *current_gfx_pipeline;
+   api_compute_pipeline *current_compute_pipeline;
+   GLuint current_prog;
    api_framebuffer *fb;
    api_framebuffer *prev_fb;
    bool has_image_tiling_linear;

@@ -1115,8 +1115,13 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
 
    if (!pipeline) {
       gl_set_current_clear_affecting_states(ctx);
+
+      ctx->current_prog = 0;
+      glUseProgram(0);
       return;
    }
+
+   assert(!ctx->current_compute_pipeline && "unbind the compute pipeline before binding gfx");
 
    if (pipeline->desc.primitive_restart)
       glEnable(GL_PRIMITIVE_RESTART);
@@ -1171,6 +1176,7 @@ gl_bind_unbind_pipeline(api_context *ctx, api_gfx_pipeline *pipeline)
    }
 
    /* Sample shading is implied by the shader. */
+   ctx->current_prog = pipeline->prog;
    glUseProgram(pipeline->prog);
 
    glSampleMaski(0, pipeline->desc.samplemask);
@@ -1274,13 +1280,29 @@ gl_destroy_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
 static void
 gl_bind_compute_pipeline(api_context *ctx, api_compute_pipeline *pipeline)
 {
-   glUseProgram(pipeline->prog);
+   if (pipeline == ctx->current_compute_pipeline)
+      return;
+
+   ctx->current_compute_pipeline = pipeline;
+
+   if (pipeline) {
+      assert(!ctx->current_gfx_pipeline && "unbind the gfx pipeline before binding compute");
+      ctx->current_prog = pipeline->prog;
+      glUseProgram(pipeline->prog);
+   } else {
+      ctx->current_prog = 0;
+      glUseProgram(0);
+   }
+
    gl_check_no_error();
 }
 
 static void
 gl_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
 {
+   assert(ctx->current_compute_pipeline);
+   assert(ctx->current_prog == ctx->current_compute_pipeline->prog);
+
    glDispatchCompute(num_x, num_y, num_z);
    gl_check_no_error();
 }
@@ -1299,6 +1321,7 @@ gl_end_cmdbuf_and_submit(api_context *ctx, unsigned wait_queue_mask, api_fence *
    assert(!signal_fence);
 
    gl_bind_unbind_pipeline(ctx, NULL);
+   gl_bind_compute_pipeline(ctx, NULL);
    glFlush();
    gl_check_no_error();
 }
