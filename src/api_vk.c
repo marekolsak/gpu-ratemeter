@@ -1728,6 +1728,12 @@ vk_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
 }
 
 static void
+vk_dispatch_indirect(api_context *ctx, api_buffer *indirect, uint64_t offset)
+{
+   vkCmdDispatchIndirect(ctx->current_cmd_buffer, indirect->buffer, offset);
+}
+
+static void
 vk_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(ctx->current_cmd_buffer == NULL);
@@ -3183,6 +3189,7 @@ vk_create_context(const program_options *options)
    ctx->destroy_compute_pipeline = vk_destroy_compute_pipeline;
    ctx->bind_compute_pipeline = vk_bind_compute_pipeline;
    ctx->dispatch = vk_dispatch;
+   ctx->dispatch_indirect = vk_dispatch_indirect;
 
    ctx->begin_cmdbuf = vk_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = vk_end_cmdbuf_and_submit;

@@ -578,6 +578,7 @@ typedef struct api_context {
    void (*destroy_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*bind_compute_pipeline)(struct api_context *ctx, api_compute_pipeline *pipeline);
    void (*dispatch)(struct api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z);
+   void (*dispatch_indirect)(struct api_context *ctx, api_buffer *indirect, uint64_t offset);
 
    /* Command submission. */
    void (*begin_cmdbuf)(struct api_context *ctx, api_queue_type queue);

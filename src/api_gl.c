@@ -1319,6 +1319,17 @@ gl_dispatch(api_context *ctx, unsigned num_x, unsigned num_y, unsigned num_z)
 }
 
 static void
+gl_dispatch_indirect(api_context *ctx, api_buffer *indirect, uint64_t offset)
+{
+   assert(ctx->current_compute_pipeline);
+   assert(ctx->current_prog == ctx->current_compute_pipeline->prog);
+
+   glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, indirect->id);
+   glDispatchComputeIndirect(offset);
+   gl_check_no_error();
+}
+
+static void
 gl_begin_cmdbuf(api_context *ctx, api_queue_type queue)
 {
    assert(queue == api_queue_gfx);
@@ -1855,6 +1866,7 @@ gl_create_context(const program_options *options)
    ctx->destroy_compute_pipeline = gl_destroy_compute_pipeline;
    ctx->bind_compute_pipeline = gl_bind_compute_pipeline;
    ctx->dispatch = gl_dispatch;
+   ctx->dispatch_indirect = gl_dispatch_indirect;
 
    ctx->begin_cmdbuf = gl_begin_cmdbuf;
    ctx->end_cmdbuf_and_submit = gl_end_cmdbuf_and_submit;
