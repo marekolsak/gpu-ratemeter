@@ -1273,6 +1273,10 @@ gl_create_compute_pipeline(api_context *ctx, api_shader *shader,
       error("Failed to link GLSL program:\n%s", log);
    }
 
+   /* This is unfortunately per device, not per pipeline. */
+   if (ctx->has_pipeline_subgroup_size_query)
+      glGetIntegerv(GL_SUBGROUP_SIZE_KHR, (int*)&pipeline->subgroup_size);
+
    gl_check_no_error();
    return pipeline;
 }
@@ -1717,6 +1721,7 @@ gl_create_context(const program_options *options)
    ctx->has_clear_image_region = true;
    ctx->has_depth_msaa_resolve = true;
    ctx->has_image_tiling_linear = options->gl_tiling_linear;
+   ctx->has_pipeline_subgroup_size_query = GLAD_GL_KHR_shader_subgroup;
    ctx->has_resolve_image_layers = false;
    ctx->has_resolve_image_yflip = true;
    ctx->has_shader_int8 = false;
