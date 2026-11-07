@@ -1219,8 +1219,10 @@ vk_set_storage_image_descriptors(api_context *ctx, api_queue_type queue, api_des
 static void
 vk_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
 {
-   vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                           set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
+   if (ctx->current_queue == api_queue_gfx) {
+      vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
+   }
    vkCmdBindDescriptorSets(ctx->current_cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                            set->layout->pipeline_layout, 0, 1, &set->set, 0, NULL);
 }
