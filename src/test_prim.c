@@ -1635,6 +1635,9 @@ run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const 
       fprintf(ctx->output, "\n");
       break;
    }
+
+   default:
+      assert(0);
    }
 }
 

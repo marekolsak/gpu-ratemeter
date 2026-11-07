@@ -40,7 +40,7 @@ get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool)
 
 void
 print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
-                                  uint64_t num_units, const char *rate_format,
+                                  double num_units, const char *rate_format,
                                   const char *bandwidth_format, const char *time_format,
                                   const char *string_format, unsigned bandwidth_exp2_divisor)
 {
@@ -71,12 +71,13 @@ print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
          result *= 1.0 / 1000000000;
    }
 
-   if (ctx->options.result_divisor)
-      result /= ctx->options.result_divisor;
-
    /* If the base rate is set, print the results as % of the base rate. */
-   if (ctx->options.base_rate)
-      result *= 100.0 / ctx->options.base_rate;
+   if (ctx->options.base_rate) {
+      if (ctx->options.report_time)
+         result *= ctx->options.base_rate;
+      else
+         result *= 100.0 / ctx->options.base_rate;
+   }
 
    /* a comma separator between results */
    fprintf(ctx->output, ",");

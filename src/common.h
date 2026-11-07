@@ -392,6 +392,7 @@ typedef struct {
    /* BOOL options. */
    bool bda;
    bool compute;
+   bool subgroup_time;
    bool report_time;
    bool gl_tiling_linear;
    bool int8;
@@ -410,8 +411,8 @@ typedef struct {
    uint64_t freq_mhz;
    uint64_t max_valid_result;
    uint64_t max_size;
-   uint64_t result_divisor;
    uint64_t spacing;
+   uint64_t report_time_per_invocation_count;
 
    /* REGEX regular expression options. */
    const void *regex_format;
@@ -671,6 +672,8 @@ typedef struct api_context {
 } api_context;
 
 typedef enum {
+   COUNT_TESTS,
+   INIT,
    INIT_AND_COUNT_TESTS,
    RUN,
    REPORT,
@@ -689,6 +692,7 @@ api_context *vk_create_context(const program_options *options);
 
 /* Tests. */
 void test_bufbw(api_context *ctx);
+void test_cs_launch(api_context *ctx);
 void test_imgbw(api_context *ctx);
 void test_iobw(api_context *ctx);
 void test_latency(api_context *ctx);
@@ -700,7 +704,7 @@ void test_sparsebind(api_context *ctx);
 /* utils.c */
 double get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool);
 void print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
-                                       uint64_t num_units, const char *rate_format,
+                                       double num_units, const char *rate_format,
                                        const char *bandwidth_format, const char *time_format,
                                        const char *string_format, unsigned bandwidth_exp2_divisor);
 noreturn void error(const char *format, ...) printflike(1, 2);

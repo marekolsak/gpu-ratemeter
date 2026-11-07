@@ -44,6 +44,7 @@ gpu_ratemeter_files = files(
   'src/common.h',
   'src/main.c',
   'src/test_bufbw.c',
+  'src/test_cs_launch.c',
   'src/test_imgbw.c',
   #'src/test_iobw.c',
   'src/test_latency.c',

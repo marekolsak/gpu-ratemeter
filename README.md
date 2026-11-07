@@ -64,18 +64,19 @@ API identifiers:
 
 ### Tests and API Support
 
-|              | OpenGL | Vulkan |
-|--------------|-------:|-------:|
-| **Graphics Pipeline Tests**    |
-| `pix`        | **✓**  | **✓**  |
-| `prim`       | **✓**  | **✓**  |
-| **Shader Tests**               |
-| `latency`    | **✓**  | **✓**  |
-| **Resource Operation Tests**   |
-| `bufbw`      | **✓**  | **✓**  |
-| `imgbw`      | **✓**  | **✓**  |
-| **Miscellaneous Tests**        |
-| `sparsebind` |        | **✓**  |
+|                     | OpenGL | Vulkan |
+|---------------------|-------:|-------:|
+| **Graphics Pipeline Tests**           |
+| `pix`               | **✓**  | **✓**  |
+| `prim`              | **✓**  | **✓**  |
+| **Compute Tests**                     |
+| `cs_launch`         | **✓**  | **✓**  |
+| `latency`           | **✓**  | **✓**  |
+| **Transfer Tests**                    |
+| `bufbw`             | **✓**  | **✓**  |
+| `imgbw`             | **✓**  | **✓**  |
+| **API Tests**                         |
+| `sparsebind`        |        | **✓**  |
 
 ### Parameters
 
@@ -83,7 +84,9 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 
 #### Common parameters
 
-- `-baserate=N`: report results as a percentage of the given rate N (multiply all results by 100/N), useful for conversion of absolute results or perf/clock to % of a specific rate
+- `-baserate=N`:
+  - if reporting throughput: set this to the number of items/clock that the GPU can do; this causes results to be reported as a percentage of the given rate N (all results are multiplied by 100/N); useful for conversion of perf/second or perf/clock to % of a specific rate
+  - if reporting time: if the work is performed by multiple parallel units, set this to the total number of the units performing the work; this causes results to be multiplied by N, reporting time per unit instead of time per device
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf) (only `imgbw`, `pix`)
@@ -270,7 +273,28 @@ Decoding subtest names:
 - `output_vrs1x1`: additionally write the primitive shading rate output (with no effect on behavior)
 
 
-## Shader Tests
+## Compute Tests
+
+### `cs_launch`: Time to Launch One Subgroup or Dispatch in Clock Cycles (with State Changes)
+
+The test measures the following depending on which options are present:
+- the time to launch one compute dispatch (default)
+- the time to launch one compute subgroup when the `-subgrouptime` option is set
+- the time to launch N compute invocations when the `-timeperinvocs=N` option is set
+
+The compute shader is trivial enough that the only bottleneck should be the compute launch rate. The subtest names indicate which compute system values are used.
+
+The cost of compute pipeline binding and descriptor set binding before dispatches is also measured, which exposes command buffer overhead.
+
+Decoding subtest names:
+- `gfx`, `comp`: the queue type, graphics or compute
+- `direct`, `indirect`: the type of compute dispatch
+- `wgN`: the workgroup size is N
+- `wg_id.xyz`: which workgroup IDs the shader uses, which also determines the dimensionality of the dispatch (1D, 2D, or 3D); `_` indicates an unused dimension
+- `local_invoc_id.xyz`: which local invocation IDs the shader uses to identify the invocation, which also determines the dimensionality of the workgroup (1D, 2D, or 3D); `_` indicates an unused dimension
+- `local_invoc_index`: the local invocation index is used to identify the invocation
+- `subgroup_ids`: the subgroup ID and the subgroup invocation ID are used to identify the invocation
+- `bind:`: the list of states that are changed before dispatch, the options are `shader`, meaning the compute pipeline object in Vulkan, and `desc`, meaning the descriptor set
 
 ### `latency`: Memory Load Latency in Clock Cycles
 
@@ -296,7 +320,7 @@ Decoding subtest names:
 - `shared`: the traversed buffer is in shared memory
 
 
-## Resource Operation Tests
+## Transfer Tests (Clear, Copy, Blit, Resolve)
 
 ### `bufbw`: Buffer Fill and Copy Bandwidth (GB/s)
 
@@ -355,7 +379,7 @@ Decoding other identifiers in subtest names:
 - `dst_linear`: the destination image uses linear tiling
 
 
-## Miscellaneous Tests
+## API Tests
 
 ### `sparsebind`: Sparse Bind Throughput (API calls/s)
 

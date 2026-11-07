@@ -536,6 +536,9 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                         fprintf(ctx->output, "%*u,", max_digits, (unsigned)clock_cycles);
                      break;
                   }
+
+                  default:
+                     assert(0);
                   }
 
                   if (stage == RUN)

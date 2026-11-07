@@ -12,9 +12,7 @@
  * - rt: ray tracing performance in intersections/clock
  * - mma: matrix multiply accumulate
  * - draw: direct/indirect draw/multidraw clocks per draw
- * - compute: launched compute shader invocations per clock, clocks per dispatch/indirect dispatch on gfx and compute queues
  * - state: state changes such as pipeline binds to measure CP overhead
- * // remove redundant tests from piglit and radeonsi
  *
  * APIs:
  * - DX12
@@ -152,6 +150,12 @@ static const option_desc bufbw_options[] = {
    {OPTION_BOOL, "-transfer", offsetof(program_options, transfer)},
 };
 
+static const option_desc cs_launch_options[] = {
+   {OPTION_BOOL, "-subgrouptime", offsetof(program_options, subgroup_time)},
+   {OPTION_UINT64, "-freq=", offsetof(program_options, freq_mhz)},
+   {OPTION_UINT64, "-timeperinvocs=", offsetof(program_options, report_time_per_invocation_count)},
+};
+
 static const option_desc imgbw_options[] = {
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
 };
@@ -181,6 +185,7 @@ static const option_desc prim_options[] = {
 
 static const test_desc tests[] = {
    {"bufbw", test_bufbw, true, ARRAY_SIZE(bufbw_options), bufbw_options},
+   {"cs_launch", test_cs_launch, false, ARRAY_SIZE(cs_launch_options), cs_launch_options},
    {"imgbw", test_imgbw, true, ARRAY_SIZE(imgbw_options), imgbw_options},
    //{"iobw", test_iobw, true, 0, NULL},
    {"latency", test_latency, false, ARRAY_SIZE(latency_options), latency_options},
