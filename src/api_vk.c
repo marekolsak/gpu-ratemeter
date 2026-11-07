@@ -1679,6 +1679,32 @@ vk_create_compute_pipeline(api_context *ctx, api_shader *shader,
                                         .layout = layout->pipeline_layout,
                                      },
                                      NULL, &pipeline->pipeline));
+
+   if (ctx->has_pipeline_subgroup_size_query) {
+      VkPipelineInfoKHR info = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR,
+         .pipeline = pipeline->pipeline,
+      };
+
+      uint32_t count = 0;
+      vk_check(ctx->vkGetPipelineExecutablePropertiesKHR(ctx->device, &info, &count, NULL));
+
+      VkPipelineExecutablePropertiesKHR *props = alloca(count * sizeof(*props));
+      memset(props, 0, count * sizeof(*props));
+
+      for (uint32_t i = 0; i < count; i++)
+         props[i].sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR;
+
+      vk_check(ctx->vkGetPipelineExecutablePropertiesKHR(ctx->device, &info, &count, props));
+
+      for (uint32_t i = 0; i < count; i++) {
+         if (props[i].stages & VK_SHADER_STAGE_COMPUTE_BIT) {
+            pipeline->subgroup_size = props[i].subgroupSize;
+            break;
+         }
+      }
+   }
+
    return pipeline;
 }
 
@@ -2398,6 +2424,13 @@ vk_create_context(const program_options *options)
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR,
    };
 
+   VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR KHR_pipeline_executable_properties = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+   };
+   VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR enabled_KHR_pipeline_executable_properties = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+   };
+
    VkPhysicalDeviceMaintenance10FeaturesKHR KHR_maintenance10 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_10_FEATURES_KHR,
    };
@@ -2498,6 +2531,7 @@ vk_create_context(const program_options *options)
    check_add_ext(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, KHR_fragment_shading_rate);
    check_add_ext(VK_KHR_MAINTENANCE_5_EXTENSION_NAME, KHR_maintenance5);
    check_add_ext(VK_KHR_MAINTENANCE_10_EXTENSION_NAME, KHR_maintenance10);
+   check_add_ext(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, KHR_pipeline_executable_properties);
    check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
    check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
 
@@ -2732,6 +2766,8 @@ vk_create_context(const program_options *options)
 
    optional(KHR_maintenance10.maintenance10);
 
+   optional(KHR_pipeline_executable_properties.pipelineExecutableInfo);
+
    optional(KHR_shader_clock.shaderSubgroupClock);
    //optional(KHR_shader_clock.shaderDeviceClock);
 
@@ -2811,6 +2847,8 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdCopyMemoryIndirectKHR);
    if (enabled_KHR_fragment_shading_rate.pipelineFragmentShadingRate)
       GET_PROC_ADDR(vkCmdSetFragmentShadingRateKHR);
+   if (enabled_KHR_pipeline_executable_properties.pipelineExecutableInfo)
+      GET_PROC_ADDR(vkGetPipelineExecutablePropertiesKHR);
    if (enabled_EXT_extended_dynamic_state2.extendedDynamicState2PatchControlPoints)
       GET_PROC_ADDR(vkCmdSetPatchControlPointsEXT);
    if (enabled_EXT_extended_dynamic_state3.extendedDynamicState3PolygonMode)
@@ -2941,6 +2979,7 @@ vk_create_context(const program_options *options)
    ctx->has_depth_msaa_resolve = KHR_maintenance10.maintenance10;
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
    ctx->has_multiview = Vulkan11.multiview;
+   ctx->has_pipeline_subgroup_size_query = KHR_pipeline_executable_properties.pipelineExecutableInfo;
    ctx->has_resolve_image_layers = true;
    ctx->has_resolve_image_yflip = false;
    ctx->has_shader_int8 = Vulkan12.storageBuffer8BitAccess && Vulkan12.shaderInt8;

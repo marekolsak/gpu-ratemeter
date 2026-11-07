@@ -289,6 +289,8 @@ typedef struct {
 } api_gfx_pipeline;
 
 typedef struct {
+   unsigned subgroup_size;
+
 #ifdef GL_PRIVATE
    GLuint prog;
 #endif
@@ -461,6 +463,7 @@ typedef struct api_context {
    bool has_depth_msaa_resolve;
    bool has_fully_covered;
    bool has_multiview;
+   bool has_pipeline_subgroup_size_query;
    bool has_resolve_image_layers;
    bool has_resolve_image_yflip;
    bool has_sparse_buffer;
@@ -630,6 +633,7 @@ typedef struct api_context {
 
    /* Extension functions. */
    PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;
+   PFN_vkGetPipelineExecutablePropertiesKHR vkGetPipelineExecutablePropertiesKHR;
    PFN_vkCmdSetFragmentShadingRateKHR vkCmdSetFragmentShadingRateKHR;
    PFN_vkCmdSetPolygonModeEXT vkCmdSetPolygonModeEXT;
    PFN_vkCmdSetRasterizationSamplesEXT vkCmdSetRasterizationSamplesEXT;
