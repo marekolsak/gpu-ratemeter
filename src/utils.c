@@ -39,15 +39,28 @@ get_time_in_seconds_from_timestamps(api_context *ctx, api_query_pool *pool)
 }
 
 void
-print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
-                                      uint64_t num_units, const char *rate_format,
-                                      const char *bandwidth_format, const char *string_format,
-                                      unsigned bandwidth_exp2_divisor)
+print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
+                                  uint64_t num_units, const char *rate_format,
+                                  const char *bandwidth_format, const char *time_format,
+                                  const char *string_format, unsigned bandwidth_exp2_divisor)
 {
-   double result = num_units / get_time_in_seconds_from_timestamps(ctx, pool);
+   double result;
+
+   if (ctx->options.report_time)
+      result = get_time_in_seconds_from_timestamps(ctx, pool) / num_units;
+   else
+      result = num_units / get_time_in_seconds_from_timestamps(ctx, pool);
 
    if (ctx->options.report_bandwidth) {
       result /= 1ull << bandwidth_exp2_divisor;
+   } else if (ctx->options.report_time) {
+      /* If the frequency is set, print the time in clock cycles, else print it
+       * in ns.
+       */
+      if (ctx->options.freq_mhz)
+         result *= ctx->options.freq_mhz * 1000000.0;
+      else
+         result *= 1000000000;
    } else {
       /* If the frequency is set, print the results in units per clock cycle, else print it
        * in billions per second.
@@ -57,6 +70,9 @@ print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
       else
          result *= 1.0 / 1000000000;
    }
+
+   if (ctx->options.result_divisor)
+      result /= ctx->options.result_divisor;
 
    /* If the base rate is set, print the results as % of the base rate. */
    if (ctx->options.base_rate)
@@ -69,6 +85,8 @@ print_throughput_from_next_timestamps(api_context *ctx, api_query_pool *pool,
       fprintf(ctx->output, string_format, "error");
    else if (ctx->options.report_bandwidth)
       fprintf(ctx->output, bandwidth_format, result);
+   else if (ctx->options.report_time)
+      fprintf(ctx->output, time_format, result);
    else
       fprintf(ctx->output, rate_format, result);
 }

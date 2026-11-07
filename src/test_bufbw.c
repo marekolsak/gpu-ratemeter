@@ -370,7 +370,8 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                          */
                         uint64_t num_bytes = (uint64_t)size * num_runs *
                                              (is_copy && dst_heap_index == src_heap_index ? 2 : 1);
-                        print_throughput_from_next_timestamps(ctx, state->timestamps, num_bytes, NULL, "%8.3f", "%8s", 30);
+                        print_result_from_next_timestamps(ctx, state->timestamps, num_bytes, NULL,
+                                                          "%8.3f", NULL, "%8s", 30);
                      }
 
                      if (stage == RUN)

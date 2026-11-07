@@ -1624,9 +1624,9 @@ run_test(api_context *ctx, prim_test_state *state, test_stage test_stage, const 
             continue;
 
          if (state->pipelines[test->geom_style][test->cull_method][test->special2][v]) {
-            print_throughput_from_next_timestamps(ctx, state->timestamps,
-                                                  NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
-                                                  ctx->options.base_rate ? "%6.1f" : "%6.2f", NULL, "%6s", 0);
+            print_result_from_next_timestamps(ctx, state->timestamps,
+                                              NUM_ITERATIONS * NUM_PRIMITIVES_PER_DRAW,
+                                              ctx->options.base_rate ? "%6.1f" : "%6.2f", NULL, NULL, "%6s", 0);
          } else {
             fprintf(ctx->output, ",   n/a");
          }

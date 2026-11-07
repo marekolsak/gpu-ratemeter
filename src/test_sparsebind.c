@@ -317,8 +317,8 @@ test_sparsebind(api_context *ctx)
                continue;
             }
 
-            print_throughput_from_next_timestamps(ctx, timestamps, get_num_iterations(ctx, tests[i]),
-                                                  NULL, "%9.0f", "%9s", 0);
+            print_result_from_next_timestamps(ctx, timestamps, get_num_iterations(ctx, tests[i]),
+                                              NULL, "%9.0f", NULL, "%9s", 0);
          }
       }
       fprintf(ctx->output, "\n");

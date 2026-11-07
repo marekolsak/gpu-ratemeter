@@ -1482,8 +1482,8 @@ run_test_pix(api_context *ctx, unsigned samples,
          if (ctx->options.report_bandwidth)
             num_units *= get_pixel_size_from_format(formats[f].format);
 
-         print_throughput_from_next_timestamps(ctx, timestamps, num_units,
-                                               "%7.1f", "%7.0f", "%7s", 30);
+         print_result_from_next_timestamps(ctx, timestamps, num_units,
+                                           "%7.1f", "%7.0f", NULL, "%7s", 30);
       }
       fprintf(ctx->output, "\n");
    }

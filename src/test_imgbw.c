@@ -1377,8 +1377,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  if (test_index == TEST_CLEAR_FB_THEN_DRAW)
                                     bytes *= 2;
 
-                                 print_throughput_from_next_timestamps(ctx, timestamps, bytes, NULL,
-                                                                       "%10.2f", "%10s", 30);
+                                 print_result_from_next_timestamps(ctx, timestamps, bytes, NULL,
+                                                                   "%10.2f", NULL, "%10s", 30);
                               }
                            }
 
