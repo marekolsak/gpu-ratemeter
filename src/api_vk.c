@@ -2611,6 +2611,9 @@ vk_create_context(const program_options *options)
                num_queue_infos++;
             }
 
+            /* Compute and sparse can be in the same queue family and that family may have only 1 queue.
+             * When that happens, don't create another queue.
+             */
             if (queue_infos[info_index].queueCount >= queue_props[family].queueCount)
                continue;
 
