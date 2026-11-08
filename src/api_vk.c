@@ -200,6 +200,10 @@ vk_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigned s
                                        VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
                                        (ctx->has_buffer_device_address ?
                                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : 0),
+                              .sharingMode = ctx->num_queue_family_indices > 1 ? VK_SHARING_MODE_CONCURRENT :
+                                                                                 VK_SHARING_MODE_EXCLUSIVE,
+                              .queueFamilyIndexCount = ctx->num_queue_family_indices,
+                              .pQueueFamilyIndices = ctx->queue_family_indices,
                            },
                            NULL, &buf->buffer));
 
@@ -2613,6 +2617,16 @@ vk_create_context(const program_options *options)
             ctx->has_queue[type] = true;
             queue_type_to_family[type] = family;
             queue_type_to_index[type] = queue_infos[info_index].queueCount++;
+
+            /* If the queue family is not in the list, add it. */
+            int family_array_index;
+            for (family_array_index = 0; family_array_index < ctx->num_queue_family_indices; family_array_index++) {
+               if (family == ctx->queue_family_indices[family_array_index])
+                  break;
+            }
+
+            if (family_array_index == ctx->num_queue_family_indices)
+               ctx->queue_family_indices[ctx->num_queue_family_indices++] = family;
          }
       }
    }

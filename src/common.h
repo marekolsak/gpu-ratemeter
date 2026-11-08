@@ -631,6 +631,8 @@ typedef struct api_context {
    VkDevice device;
    VkQueue queue[api_num_queues];
    VkCommandPool cmd_pool[api_num_queues];
+   unsigned num_queue_family_indices;
+   uint32_t queue_family_indices[api_num_queues];
 
    /* Extension functions. */
    PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;
