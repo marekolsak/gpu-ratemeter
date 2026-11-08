@@ -1642,6 +1642,9 @@ gl_create_context(const program_options *options)
 #endif
    }
 
+   if (options->top_of_pipe_timestamps)
+      error("OpenGL doesn't support top-of-pipe timestamps");
+
    const char *const egl_client_extension_list = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 
    if (!egl_client_extension_list)

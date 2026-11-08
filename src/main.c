@@ -142,6 +142,7 @@ static const option_desc common_options[] = {
 
    /* Vulkan only */
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
+   {OPTION_BOOL, "-top", offsetof(program_options, top_of_pipe_timestamps)},
    {OPTION_UINT64, "-device=", offsetof(program_options, device)},
 };
 

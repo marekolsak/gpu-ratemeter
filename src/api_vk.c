@@ -2158,7 +2158,10 @@ vk_write_next_query_value(api_context *ctx, api_query_pool *pool)
    assert(pool->num_written_queries < pool->num_queries);
    assert(pool->type == api_query_timestamp);
 
-   vkCmdWriteTimestamp(ctx->current_cmd_buffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
+   vkCmdWriteTimestamp(ctx->current_cmd_buffer,
+                       ctx->options.top_of_pipe_timestamps ?
+                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT :
+                          VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->pool,
                        pool->num_written_queries);
    pool->num_written_queries++;
 }

@@ -90,6 +90,7 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 - `-maxvalidresult=N`: (for buggy HW timestamps) if the result is greater than N, print "error" instead of the result
 - `-freq=N`: the GPU frequency in MHz; required for reporting perf/clock; without it, billion units/s are reported (only `pix`, `prim`)
 - `-rdna4ts`: a mostly functional workaround for broken timestamps on RDNA 4 (it slightly reduces perf) (only `imgbw`, `pix`)
+- `-top`: use top-of-pipe timestamps instead of the default bottom-of-pipe timestamps
 
 #### OpenGL parameters
 

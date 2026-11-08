@@ -402,6 +402,7 @@ typedef struct {
    bool samplerate;
    bool sparse_bound;
    bool sparse_unbound;
+   bool top_of_pipe_timestamps;
    bool transfer;
 
    /* UINT64 options. */
