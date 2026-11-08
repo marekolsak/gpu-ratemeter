@@ -126,7 +126,8 @@ create_cs(api_context *ctx, unsigned wg_size, unsigned num_wg_ids, const cl_sysv
 
                       "   uvec4 v; \n"
                       "   v.x = value; \n" /* keep all other components undefined */
-                      /* it's supposed to be out of bounds i.e. a no-op */
+
+                      /* The purpose of this dummy out-of-bounds image store is to keep sysvals live. */
                       "   imageStore(image, 20 + (SECOND_VARIANT != 0 ? 1 : 0), v); \n"
                       "} \n",
                       info->num_invoc_ids, num_wg_ids, info->subgroup_ids, info->invoc_index,

@@ -285,7 +285,7 @@ The test measures the following depending on which options are present:
 
 The compute shader is trivial enough that the only bottleneck should be the compute launch rate. The subtest names indicate which compute system values are used.
 
-The cost of compute pipeline binding and descriptor set binding before dispatches is also measured, which exposes command buffer overhead.
+The cost of compute pipeline binding and descriptor set binding before dispatches is also measured, which exposes command buffer overhead. Using `-top` (top-of-pipe timestamps) may be better for that.
 
 Decoding subtest names:
 - `gfx`, `comp`: the queue type, graphics or compute
