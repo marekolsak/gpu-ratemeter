@@ -1743,7 +1743,7 @@ vk_begin_cmdbuf(api_context *ctx, api_queue_type queue)
    assert(ctx->current_cmd_buffer == NULL);
    assert(queue < api_num_queues);
 
-   if (ctx->timeline_point[queue] >= MAX_COMMAND_BUFFERS - 1) {
+   if (ctx->timeline_point[queue] >= MAX_COMMAND_BUFFERS) {
       uint64_t wait_point = ctx->timeline_point[queue] - (MAX_COMMAND_BUFFERS - 1);
 
       vk_check(vkWaitSemaphores(ctx->device,
