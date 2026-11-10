@@ -373,7 +373,7 @@ typedef struct {
 #endif
 } api_fence;
 
-#define MAX_COMMAND_BUFFERS   1024
+#define MAX_COMMAND_BUFFERS   256
 
 typedef enum {
    API_VK_DYNAMIC_STATE = 1 << 0,
