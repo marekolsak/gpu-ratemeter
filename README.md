@@ -374,7 +374,7 @@ Decoding the clear/copy/blit/resolve region identifiers in subtest names:
 - `region_yflip_unaligned`: same as `region_yflip`, but the operation excludes a small area and the region offsets and extents are odd (unaligned)
 
 Decoding other identifiers in subtest names:
-- `2d`, `2d_array4`, `3d`: the image dimensionality, `2d_array4` means a 2D image with 4 layers
+- `2d_array1`, `2d_array4`, `3d`: the image dimensionality, `arrayN` means N layers
 - `1s`-`8s`: the number of samples
 - `src_linear`: the source image uses linear tiling
 - `dst_linear`: the destination image uses linear tiling

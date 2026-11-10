@@ -534,7 +534,7 @@ static const unsigned layer_counts[] = {
 };
 
 static const char *layer_count_strings[] = {
-   [LAYER_COUNT_1] = "",
+   [LAYER_COUNT_1] = "_array1",
    [LAYER_COUNT_4] = "_array4",
 };
 
@@ -615,7 +615,8 @@ get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_inde
                  unsigned region_option)
 {
    snprintf(out, max_len, "%s.%ud%s.%s.%us.fill_%s%s.region_%s",
-            test_strings[test_index], img_type + 1, layer_count_strings[layer_count_option],
+            test_strings[test_index], img_type + 1,
+            img_type == VK_IMAGE_TYPE_2D ? layer_count_strings[layer_count_option] : "",
             formats[format_index].name, samples, fill_strings[fill_option], layout_strings[layout],
             region_strings[region_option]);
 }
