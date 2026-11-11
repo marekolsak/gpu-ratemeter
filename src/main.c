@@ -11,8 +11,7 @@
  * Tests:
  * - rt: ray tracing performance in intersections/clock
  * - mma: matrix multiply accumulate
- * - draw: direct/indirect draw/multidraw clocks per draw
- * - state: state changes such as pipeline binds to measure CP overhead
+ * - draw: direct/indirect draw/multidraw clocks per draw, with state changes
  *
  * APIs:
  * - DX12
