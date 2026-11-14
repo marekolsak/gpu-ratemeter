@@ -920,3 +920,106 @@ regex_groups(const void *re, const char *input, char **groups, unsigned max_grou
     pcre2_match_data_free(data);
     return count;
 }
+
+const void *
+compile_shader_param_regexs(const char **params, unsigned num_params)
+{
+   const void **regexs = (const void **)calloc(num_params, sizeof(void*));
+
+   if (!regexs)
+      return NULL;
+
+   for (unsigned i = 0; i < num_params; i++) {
+      char pattern[256];
+
+      assert(strlen(params[i]) + 3 <= sizeof(pattern));
+      snprintf(pattern, sizeof(pattern), "<%s>", params[i]);
+
+      regexs[i] = regex_compile(pattern);
+   }
+
+   return regexs;
+}
+
+/* Apply each compiled pattern in order, replacing all its matches.
+ * A non-NULL value.string is inserted literally (including an empty string);
+ * otherwise value.uint64 is formatted as an unsigned decimal integer.
+ * Intermediate strings may exceed len, but the final result must fit.
+ */
+void
+regex_replace(char *output, size_t len, const char *input, const void *regexs,
+              unsigned num_regexs, const replacement_value *values)
+{
+   const void *const *patterns = regexs;
+   /* Start with current = input, and every applied substitution will generate a new version
+    * of the input string, which will be fed to the next substitution. After all substitutions,
+    * this will contain the output string.
+    */
+   const char *current = input;
+   size_t current_length = strlen(input);
+
+   if (!num_regexs || !patterns)
+      error("regex_replace: compiled patterns are NULL or their count is 0\n");
+
+   for (unsigned i = 0; i < num_regexs; i++) {
+      char number[32];
+      const char *replacement = values[i].string;
+
+      if (!replacement) {
+         snprintf(number, sizeof(number), "%" PRIu64, values[i].uint64);
+         replacement = number;
+      }
+
+      /* Start with enough space for the current string and its terminator.
+       * PCRE2 reports the required capacity if the replacement expands it.
+       */
+      PCRE2_SIZE capacity = current_length + 1;
+      char *next = malloc(capacity);
+      if (!next)
+         error("regex_replace: allocation failed\n");
+
+      PCRE2_SIZE next_length = capacity;
+      int result = pcre2_substitute(
+         patterns[i], (PCRE2_SPTR)current, current_length, 0,
+         PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL |
+         PCRE2_SUBSTITUTE_OVERFLOW_LENGTH,
+         NULL, NULL, (PCRE2_SPTR)replacement, PCRE2_ZERO_TERMINATED,
+         (PCRE2_UCHAR *)next, &next_length);
+
+      if (result == PCRE2_ERROR_NOMEMORY && next_length > capacity) {
+         /* On overflow, next_length includes space for the terminator. */
+         capacity = next_length;
+         free(next);
+         next = malloc(capacity);
+         if (!next)
+            error("regex_replace: allocation failed\n");
+
+         next_length = capacity;
+         result = pcre2_substitute(
+            patterns[i], (PCRE2_SPTR)current, current_length, 0,
+            PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
+            NULL, NULL, (PCRE2_SPTR)replacement, PCRE2_ZERO_TERMINATED,
+            (PCRE2_UCHAR *)next, &next_length);
+      }
+
+      if (result < 0) {
+         PCRE2_UCHAR message[256];
+         pcre2_get_error_message(result, message, sizeof(message));
+         error("regex_replace: pattern %u: %s\n", i, (char *)message);
+      }
+
+      if (i > 0)
+         free((void*)current);
+
+      current = next;
+      current_length = next_length;
+   }
+
+   if (current_length >= len) {
+      error("regex_replace: output needs %zu bytes, but only %zu are available\n",
+            current_length + 1, len);
+   }
+
+   memcpy(output, current, current_length + 1);
+   free((void*)current);
+}

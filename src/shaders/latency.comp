@@ -1,0 +1,170 @@
+#version 450
+#define CLOCK_BITS         <clock_bits>
+#define UNIFORM            <uniform>
+#define NUM_INDIRECTIONS   <num_indirections>
+#define SHARED_MEMORY      <shared_memory>
+#define SHARED_MEMORY_INT8 (<shared_memory_int8> != 0)
+#define USE_BDA            <use_bda>
+
+#if SHARED_MEMORY_INT8
+   #define OFFSET_TYPE               uint8_t
+   #define OFFSET_TO_ELEMENT_DIVISOR 1
+#elif USE_BDA
+   #define OFFSET_TYPE               uint64_t
+   #define OFFSET_TO_ELEMENT_DIVISOR err
+#else
+   #define OFFSET_TYPE               uint
+   #define OFFSET_TO_ELEMENT_DIVISOR 4
+#endif
+
+#if SHARED_MEMORY
+   #define OFFSETS shared_offsets
+#else
+   #define OFFSETS jumpbuf.offsets
+#endif
+
+#extension GL_ARB_shader_clock : require
+#ifdef VULKAN
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#else
+#extension GL_ARB_gpu_shader_int64 : require
+#endif
+
+#if SHARED_MEMORY_INT8
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#endif
+
+#if USE_BDA
+#extension GL_EXT_buffer_reference : require
+#endif
+
+/* If the clock doesn't have enough bits such that the clock wraps around and
+ * reaches the start time before the test finishes, the results will be bogus.
+ * To work around that, we need to read and accumulate the cycle count mid-test.
+ *
+ * This number determines how many indirections should execute before the clock
+ * is read. Number 12 means that we don't get bogus results if latency < 2^12.
+ */
+
+#define NUM_INDIRECTIONS_PER_CLOCK_ACCUM (1 << (CLOCK_BITS - 12))
+
+
+layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in;
+
+
+#ifdef VULKAN
+   layout(set = 0, binding = 0, std430)
+#else
+   layout(binding = 0, std430)
+#endif
+readonly restrict <qualifier> buffer B0 {
+   OFFSET_TYPE offsets[<max_uints>u];
+} jumpbuf;
+
+
+#if USE_BDA
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict <qualifier> buffer bda_buffer {
+    uint64_t addr;
+};
+#endif
+
+
+#ifdef VULKAN
+   layout(set = 0, binding = 1, std430)
+#else
+   layout(binding = 1, std430)
+#endif
+buffer B1 {
+   uint64_t clock_cycles;
+   uint64_t last_offset;
+} result;
+
+
+#if SHARED_MEMORY
+shared OFFSET_TYPE shared_offsets[SHARED_MEMORY_INT8 ? 256 : 4096];
+#endif
+
+
+/* Subtract, but try to recover from a single clock overflow. */
+uint64_t subtract(uint64_t a, uint64_t b) {
+#if CLOCK_BITS > 0
+   if (a < b)
+      a += 1 << CLOCK_BITS;
+#endif
+   return a - b;
+}
+
+
+void main() {
+   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * (SHARED_MEMORY_INT8 ? 1 : <spacing>);
+
+
+#if USE_BDA
+   uint64_t start_addr = jumpbuf.offsets[start_offset / 8];
+#endif
+
+
+#if SHARED_MEMORY
+/* Copy the offsets from memory to shared memory to initialize it. */
+   for (int i = 0; i < shared_offsets.length(); i++)
+      shared_offsets[i] = OFFSET_TYPE(jumpbuf.offsets[i] / 4);
+
+   OFFSET_TYPE offset = OFFSETS[start_offset / OFFSET_TO_ELEMENT_DIVISOR];
+
+#elif USE_BDA
+/* Warm up caches by executing all indirections. */
+   uint64_t warmup_addr = start_addr;
+   for (int i = 0; i < NUM_INDIRECTIONS; i++)
+      warmup_addr = bda_buffer(warmup_addr).addr;
+
+   uint64_t addr = bda_buffer(start_addr).addr;
+
+#else
+/* Warm up caches by executing all indirections. */
+   uint warmup_offset = jumpbuf.offsets[start_offset / OFFSET_TO_ELEMENT_DIVISOR];
+   for (int i = 0; i < NUM_INDIRECTIONS; i++)
+      warmup_offset = jumpbuf.offsets[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR];
+
+   OFFSET_TYPE offset = OFFSETS[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR];
+#endif
+
+
+   uint64_t accum = 0;
+   uint64_t start = clockARB();
+
+
+#if CLOCK_BITS > 0
+   for (int i = 0; i < NUM_INDIRECTIONS; i += NUM_INDIRECTIONS_PER_CLOCK_ACCUM) {
+      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM);
+
+      for (int j = 0; j < num; j++)
+#if USE_BDA
+         addr = bda_buffer(addr).addr;
+#else
+         offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR];
+#endif
+
+      uint64_t end = clockARB();
+      accum += subtract(end, start);
+      start = end;
+   }
+#else
+   for (int i = 0; i < NUM_INDIRECTIONS; i++)
+#if USE_BDA
+      addr = bda_buffer(addr).addr;
+#else
+      offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR];
+#endif
+#endif
+
+
+   accum += subtract(clockARB(), start);
+   result.clock_cycles = accum;
+
+/* Store the last offset to make the indirections not dead code. */
+#if USE_BDA
+   result.last_offset = addr;
+#else
+   result.last_offset = offset;
+#endif
+}

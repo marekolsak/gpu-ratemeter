@@ -11,6 +11,23 @@
 #include <strings.h>
 
 #include "common.h"
+#include "shaders_from_files.h"
+
+#define LOWEST_SIZE           1024 /* required by shared memory tests */
+#define SHARED_MEM_SPACING    4
+#define SHARED_MEM_MAX_SIZE   (16 * 1024)
+
+static const char *shader_params[] = {
+   [0] = "clock_bits",
+   [1] = "spacing",
+   [2] = "max_uints",
+   [3] = "uniform",
+   [4] = "num_indirections",
+   [5] = "qualifier",
+   [6] = "shared_memory",
+   [7] = "shared_memory_int8",
+   [8] = "use_bda",
+};
 
 typedef struct {
    unsigned min_size;
@@ -27,11 +44,9 @@ typedef struct {
 
    api_buffer *result_buf;
    uint64_t *results;
-} latency_test_state;
 
-#define LOWEST_SIZE           1024 /* required by shared memory tests */
-#define SHARED_MEM_SPACING    4
-#define SHARED_MEM_MAX_SIZE   (16 * 1024)
+   const void *shader_param_regexs;
+} latency_test_state;
 
 static unsigned
 get_spacing(api_context *ctx, bool shared_memory)
@@ -42,195 +57,27 @@ get_spacing(api_context *ctx, bool shared_memory)
 }
 
 static api_shader *
-create_memory_offset_chasing_cs(api_context *ctx, bool uniform, bool coherent, unsigned num_indirections,
-                                bool shared_memory)
+create_memory_offset_chasing_cs(api_context *ctx, latency_test_state *state, bool uniform,
+                                bool coherent, unsigned num_indirections, bool shared_memory)
 {
-   char source[4000];
+   char source[5000];
 
-   int len = snprintf(source, ARRAY_SIZE(source),
-                      "#version 450 \n"
-                      "#define CLOCK_BITS %"PRIu64" \n"
-                      "#define SPACING %u \n"
-                      "#define MAX_UINTS %uu \n"
-                      "#define UNIFORM %s \n"
-                      "#define NUM_INDIRECTIONS %u \n"
-                      "#define QUALIFIER %s \n"
-                      "#define SHARED_MEMORY %u \n"
-                      "#define SHARED_MEMORY_INT8 (%u != 0) \n"
-                      "#define USE_BDA %u \n"
-                      "\n"
+   assert(strlen(latency_comp) + 100 < ARRAY_SIZE(source));
 
-                      "#if SHARED_MEMORY_INT8 \n"
-                      "   #define OFFSET_TYPE               uint8_t \n"
-                      "   #define OFFSET_TO_ELEMENT_DIVISOR 1 \n"
-                      "#elif USE_BDA \n"
-                      "   #define OFFSET_TYPE               uint64_t \n"
-                      "   #define OFFSET_TO_ELEMENT_DIVISOR err \n"
-                      "#else \n"
-                      "   #define OFFSET_TYPE               uint \n"
-                      "   #define OFFSET_TO_ELEMENT_DIVISOR 4 \n"
-                      "#endif \n"
-                      "\n"
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
+      [0] = {.uint64 = ctx->options.clock_bits},
+      [1] = {.uint64 = get_spacing(ctx, shared_memory)},
+      [2] = {.uint64 = ctx->options.max_size / 4},
+      [3] = {.string = uniform ? "true" : "false"},
+      [4] = {.uint64 = num_indirections},
+      [5] = {.string = coherent ? "coherent" : ""},
+      [6] = {.uint64 = shared_memory},
+      [7] = {.uint64 = shared_memory && ctx->options.int8},
+      [8] = {.uint64 = ctx->options.bda && !shared_memory},
+   };
 
-                      "#if SHARED_MEMORY \n"
-                      "   #define OFFSETS shared_offsets \n"
-                      "#else \n"
-                      "   #define OFFSETS jumpbuf.offsets \n"
-                      "#endif \n"
-                      "\n"
-
-                      "#extension GL_ARB_shader_clock : require \n"
-                      "#ifdef VULKAN \n"
-                      "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require \n"
-                      "#else \n"
-                      "#extension GL_ARB_gpu_shader_int64 : require \n"
-                      "#endif \n"
-                      "\n"
-
-                      "#if SHARED_MEMORY_INT8 \n"
-                      "#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require \n"
-                      "#endif \n"
-
-                      "#if USE_BDA \n"
-                      "#extension GL_EXT_buffer_reference : require \n"
-                      "#endif \n"
-                      "\n"
-
-                      /* If the clock doesn't have enough bits such that the clock wraps around and
-                       * reaches the start time before the test finishes, the results will be bogus.
-                       * To work around that, we need to read and accumulate the cycle count mid-test.
-                       *
-                       * This number determines how many indirections should execute before the clock
-                       * is read. Number 12 means that we don't get bogus results if latency < 2^12.
-                       */
-
-                      "#define NUM_INDIRECTIONS_PER_CLOCK_ACCUM (1 << (CLOCK_BITS - 12)) \n"
-                      "\n"
-
-                      "layout(local_size_x = UNIFORM ? 1 : 2, local_size_y = 1, local_size_z = 1) in; \n"
-                      "\n"
-
-                      "#ifdef VULKAN \n"
-                      "   layout(set = 0, binding = 0, std430) \n"
-                      "#else \n"
-                      "   layout(binding = 0, std430) \n"
-                      "#endif \n"
-                      "readonly restrict QUALIFIER buffer B0 { \n"
-                      "   OFFSET_TYPE offsets[MAX_UINTS]; \n"
-                      "} jumpbuf; \n"
-                      "\n"
-
-                      "#if USE_BDA \n"
-                      "layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict QUALIFIER buffer bda_buffer { \n"
-                      "    uint64_t addr; \n"
-                      "}; \n"
-                      "#endif \n"
-                      "\n"
-
-                      "#ifdef VULKAN \n"
-                      "   layout(set = 0, binding = 1, std430) \n"
-                      "#else \n"
-                      "   layout(binding = 1, std430) \n"
-                      "#endif \n"
-                      "buffer B1 { \n"
-                      "   uint64_t clock_cycles; \n"
-                      "   uint64_t last_offset; \n"
-                      "} result; \n"
-                      "\n"
-
-                      "#if SHARED_MEMORY \n"
-                      "shared OFFSET_TYPE shared_offsets[SHARED_MEMORY_INT8 ? 256 : 4096]; \n"
-                      "#endif \n"
-                      "\n"
-
-                      /* Subtract, but try to recover from a single clock overflow. */
-                      "uint64_t subtract(uint64_t a, uint64_t b) { \n"
-                      "#if CLOCK_BITS > 0 \n"
-                      "   if (a < b) \n"
-                      "      a += 1 << CLOCK_BITS; \n"
-                      "#endif \n"
-                      "   return a - b; \n"
-                      "} \n"
-                      "\n"
-
-                      "void main() { \n"
-                      "   uint start_offset = UNIFORM ? 0 : gl_LocalInvocationID.x * (SHARED_MEMORY_INT8 ? 1 : SPACING); \n"
-                      "\n"
-
-                      "#if USE_BDA \n"
-                      "   uint64_t start_addr = jumpbuf.offsets[start_offset / 8]; \n"
-                      "#endif \n"
-                      "\n"
-
-                      "#if SHARED_MEMORY \n"
-                      /* Copy the offsets from memory to shared memory to initialize it. */
-                      "   for (int i = 0; i < shared_offsets.length(); i++) \n"
-                      "      shared_offsets[i] = OFFSET_TYPE(jumpbuf.offsets[i] / 4); \n"
-                      "\n"
-                      "   OFFSET_TYPE offset = OFFSETS[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-
-                      "#elif USE_BDA \n"
-                      /* Warm up caches by executing all indirections. */
-                      "   uint64_t warmup_addr = start_addr; \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      warmup_addr = bda_buffer(warmup_addr).addr; \n"
-                      "\n"
-                      "   uint64_t addr = bda_buffer(start_addr).addr; \n"
-
-                      "#else \n"
-                      /* Warm up caches by executing all indirections. */
-                      "   uint warmup_offset = jumpbuf.offsets[start_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "      warmup_offset = jumpbuf.offsets[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "\n"
-                      "   OFFSET_TYPE offset = OFFSETS[warmup_offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "#endif \n"
-                      "\n"
-
-                      "   uint64_t accum = 0; \n"
-                      "   uint64_t start = clockARB(); \n"
-                      "\n"
-
-                      "#if CLOCK_BITS > 0 \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i += NUM_INDIRECTIONS_PER_CLOCK_ACCUM) { \n"
-                      "      int num = min(NUM_INDIRECTIONS - i, NUM_INDIRECTIONS_PER_CLOCK_ACCUM); \n"
-                      "\n"
-                      "      for (int j = 0; j < num; j++) \n"
-                      "#if USE_BDA \n"
-                      "         addr = bda_buffer(addr).addr; \n"
-                      "#else \n"
-                      "         offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "#endif \n"
-                      "\n"
-                      "      uint64_t end = clockARB(); \n"
-                      "      accum += subtract(end, start); \n"
-                      "      start = end; \n"
-                      "   } \n"
-                      "#else \n"
-                      "   for (int i = 0; i < NUM_INDIRECTIONS; i++) \n"
-                      "#if USE_BDA \n"
-                      "      addr = bda_buffer(addr).addr; \n"
-                      "#else \n"
-                      "      offset = OFFSETS[offset / OFFSET_TO_ELEMENT_DIVISOR]; \n"
-                      "#endif \n"
-                      "#endif \n"
-                      "\n"
-
-                      "   accum += subtract(clockARB(), start); \n"
-                      "   result.clock_cycles = accum; \n"
-
-                      /* Store the last offset to make the indirections not dead code. */
-                      "#if USE_BDA \n"
-                      "   result.last_offset = addr; \n"
-                      "#else \n"
-                      "   result.last_offset = offset; \n"
-                      "#endif \n"
-                      "} \n",
-                      ctx->options.clock_bits, get_spacing(ctx, shared_memory),
-                      (unsigned)ctx->options.max_size / 4, uniform ? "true" : "false",
-                      num_indirections, coherent ? "coherent" : "", shared_memory,
-                      shared_memory && ctx->options.int8, ctx->options.bda && !shared_memory);
-   assert(len < ARRAY_SIZE(source));
+   regex_replace(source, sizeof(source), latency_comp, state->shader_param_regexs,
+                 ARRAY_SIZE(shader_params), values);
 
    return ctx->create_shader(ctx, source, api_shader_cs);
 }
@@ -385,7 +232,7 @@ run(api_context *ctx, test_stage stage, latency_test_state *state)
                if (shared_memory && coherent)
                   continue;
 
-               api_shader *cs = create_memory_offset_chasing_cs(ctx, uniform, coherent,
+               api_shader *cs = create_memory_offset_chasing_cs(ctx, state, uniform, coherent,
                                                                 state->num_indirections,
                                                                 shared_memory);
                state->pipelines[shared_memory][uniform][coherent] =
@@ -610,6 +457,7 @@ test_latency(api_context *ctx)
    latency_test_state state = {0};
    state.min_size = MAX2(ctx->options.spacing * 4, LOWEST_SIZE);
    state.num_indirections = num_indirections;
+   state.shader_param_regexs = compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
 
    printf("The number of indirections averaged per subtest: %u\n", state.num_indirections);
    puts("Building compute pipelines...");

@@ -680,6 +680,11 @@ typedef enum {
    REPORT,
 } test_stage;
 
+typedef struct {
+   const char *string;
+   uint64_t uint64;
+} replacement_value;
+
 #define printflike(a, b) __attribute__((format(printf, (a), (b))))
 
 /* static_assert that can be used inside expressions. */
@@ -735,6 +740,9 @@ void init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, 
 const void *regex_compile(const char *pattern);
 bool regex_matches(const void *re, const char *input);
 unsigned regex_groups(const void *re, const char *input, char **groups, unsigned max_groups);
+const void *compile_shader_param_regexs(const char **params, unsigned num_params);
+void regex_replace(char *output, size_t len, const char *input, const void *regexs,
+                   unsigned num_regexs, const replacement_value *value);
 
 #ifdef __cplusplus
 }
