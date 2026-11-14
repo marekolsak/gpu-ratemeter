@@ -1,2 +1,4 @@
 build*
 output.png
+*.csv
+*.sh

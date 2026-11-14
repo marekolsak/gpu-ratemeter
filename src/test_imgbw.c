@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "shaders_from_files.h"
 
 #define MIN_SIZE           (1 << 16)
 #define MAX_SIZE           (1 << 28)

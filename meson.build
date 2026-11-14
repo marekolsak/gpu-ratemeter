@@ -28,6 +28,20 @@ dep_vk_util_headers = dependency(
   required : false,
 )
 
+python3 = find_program('python3')
+
+shaders_header = custom_target(
+  'shaders_header',
+  output : 'shaders_from_files.h',
+  command : [
+    python3,
+    files('src/scripts/text_files_to_c_header.py'),
+    meson.current_source_dir() / 'src/shaders',
+    '@OUTPUT@',
+  ],
+  build_always_stale : true,
+)
+
 gpu_ratemeter_files = files(
   'src/glad/glad.c',
   'src/glad/glad.h',
@@ -83,7 +97,7 @@ endif
 
 gpu_ratemeter = executable(
   'gpu-ratemeter',
-  [gpu_ratemeter_files],
+  [gpu_ratemeter_files, shaders_header],
   c_args : cc.get_supported_arguments(all_args + c_args),
   cpp_args : cpp.get_supported_arguments(all_args),
   dependencies : [dep_m, dep_pcre2, dep_libpng, dep_openmp,
