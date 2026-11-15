@@ -33,6 +33,15 @@ The official repository is at https://gitlab.freedesktop.org/mesa/gpu-ratemeter.
 
 [[_TOC_]]
 
+# How It Works
+
+- Most subtests execute 1 command buffer with a GPU timestamp query at the beginning and at the end. (some tests use the shader subgroup clock instead and/or have initialization and warm-up phases before the first timestamp)
+- Each result is calculated from the two timestamps.
+- Noise in results is expected to be mitigated by:
+  - having enough commands between the two timestamp writes
+  - expecting that the user set a fixed GPU frequency
+  - executing a warm-up version of the subtest before the first timestamp (only some tests)
+
 # How to Run
 
 `gpu-ratemeter [optional parameters] [api].[test][.regex]`
@@ -432,12 +441,3 @@ Run `sudo umr --gui &`, select your GPU in the tab at the top, and then select t
 Since constant frequencies defeat power optimizations and can cause more heat to be generated, the firmware may change the profile back to `auto` if temperatures exceed safe limits. This will be immediately visible in the real time frequency chart on the Power tab.
 
 Get `umr` here: https://gitlab.freedesktop.org/tomstdenis/umr
-
-
-# How It Works
-
-- GPU timestamps are used for measurements.
-- Each subtest contains a warm-up phase where N initial iterations are discarded, but it's not enough if a GPU takes a longer time to ramp up its frequency. It's recommended to use a power profile that keeps the frequency constant.
-- % progress is printed while building pipelines and executing subtests. Results are only printed at the end (unless a specific test has multiple stages).
-- The app is windowless and doesn't even register with the window system where that's possible.
-- If needed for debugging or developing new tests/subtests, it can save any rendered image to a PNG and open it in an image viewer.
