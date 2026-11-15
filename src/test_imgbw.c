@@ -306,74 +306,32 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
    if (*fs)
       return *fs;
 
-   char fs_source[2048];
-   snprintf(fs_source, sizeof(fs_source),
-            "#version 460 \n"
-            "#define HAS_COLOR_OUTPUT %u \n"
-            "#define HAS_DEPTH_OUTPUT %u \n"
-            "#define HAS_STENCIL_OUTPUT %u \n"
+   static const char *shader_params[] = {
+      [0] = "has_color_output",
+      [1] = "has_depth_output",
+      [2] = "has_stencil_output",
+      [3] = "vec_type",
+      [4] = "expr",
+   };
 
-            "#if HAS_STENCIL_OUTPUT \n"
-            "#extension GL_ARB_shader_stencil_export : enable \n"
-            "#endif \n"
+   if (!state->shader_param_regexs_fs_random) {
+      state->shader_param_regexs_fs_random =
+         compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
+   }
 
-            "#if HAS_COLOR_OUTPUT \n"
-            "layout(location = 0) out %s fs_out; \n"
-            "#endif \n"
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
+      [0] = {.uint64 = has_color_output},
+      [1] = {.uint64 = has_depth_output},
+      [2] = {.uint64 = has_stencil_output},
+      [3] = {.string = vec_type},
+      [4] = {.string = rand_color},
+   };
 
-            /* 32-bit avalanche mixer */
-            "uint mix32(uint v) \n"
-            "{ \n"
-            "   v ^= v >> 16; \n"
-            "   v *= 0x7feb352du; \n"
-            "   v ^= v >> 15; \n"
-            "   v *= 0x846ca68bu; \n"
-            "   v ^= v >> 16; \n"
-            "   return v; \n"
-            "} \n"
+   char source[2000];
+   regex_replace(source, sizeof(source), imgbw_random_frag, state->shader_param_regexs_fs_random,
+                 ARRAY_SIZE(shader_params), values);
 
-            "uint rand_uint(uvec4 seed) \n"
-            "{ \n"
-            "   return mix32(mix32(seed.x * 0xA341316Cu) ^ \n"
-            "                mix32(seed.y * 0xC8013EA4u) ^ \n"
-            "                mix32(seed.z * 0xAD90777Du) ^ \n"
-            "                mix32(seed.w * 0x7E95761Eu)); \n"
-            "} \n"
-
-            "uvec4 rand_uvec4(uvec4 seed) \n"
-            "{ \n"
-            "   uint h0 = rand_uint(seed); \n"
-            "   uint h1 = mix32(h0 ^ 0x68bc21ebu); \n"
-            "   uint h2 = mix32(h0 ^ 0x02e5be93u); \n"
-            "   uint h3 = mix32(h0 ^ 0x9e3779b9u); \n"
-            " \n"
-            "   return uvec4(h0, h1, h2, h3); \n"
-            "} \n"
-
-            "vec4 rand_vec4(uvec4 seed) \n"
-            "{ \n"
-            "   return rand_uvec4(seed) / 4294967296.0; \n"
-            "} \n"
-
-            "void main() { \n"
-            "   uvec4 seed = uvec4(uint(gl_FragCoord.x), uint(gl_FragCoord.y), gl_Layer, gl_SampleMaskIn[0]); \n"
-
-            "#if HAS_COLOR_OUTPUT \n"
-            "    fs_out = %s(%s); \n"
-            "#endif \n"
-
-            "#if HAS_DEPTH_OUTPUT \n"
-            "   gl_FragDepth = rand_vec4(seed).x; \n"
-            "#endif \n"
-
-            "#if HAS_STENCIL_OUTPUT \n"
-            "   gl_FragStencilRefARB = int(rand_uvec4(seed).x >> 24); \n"
-            "#endif \n"
-            "}",
-            has_color_output, has_depth_output, has_stencil_output,
-            vec_type, vec_type, rand_color);
-
-   *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+   *fs = ctx->create_shader(ctx, source, api_shader_fs);
    return *fs;
 }
 
