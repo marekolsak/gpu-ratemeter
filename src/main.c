@@ -17,6 +17,9 @@
  * - DX12
  * - DX11
  *
+ * Refactoring:
+ * - move shaders to src/shaders/
+ *
  * bufbw:
  * - vkCmdUpdateBuffer
  *
@@ -29,7 +32,8 @@
  *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  * - add -pix option to print pixel throughput
  * - transfer queue
- * - (maybe) no barrier, uncached
+ * - cache miss throughput
+ * - (maybe) no barrier
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
  * - finish porting from GL
@@ -40,9 +44,9 @@
  * - instruction fetch (jump chasing started by doing a SPIR-V intrinsic call jumping to a function
  *   stored in a BO)
  * - reduce run times by varying the number of indirections
- * - image load and image sample latency with and without DCC
  *
  * pix:
+ * - indicate which tests test hiz
  * - ztest with colormask=0
  * - add a sysval test with 5 initialized VGPRs
  * - reduce the number of sysval tests
@@ -85,6 +89,7 @@
  * - image_load throughput - all targets
  * - image_sample with nearest filter throughput - all targets, no mipmap
  * - image_sample with linear throughput - all targets, no mipmap
+ * - image load and image sample latency with and without DCC
  */
 
 #include <assert.h>

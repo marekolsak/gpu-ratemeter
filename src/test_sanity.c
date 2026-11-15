@@ -10,6 +10,7 @@
  */
 
 #include "common.h"
+#include "shaders_from_files.h"
 
 static api_buffer *
 init_cube_vb(api_context *ctx, uint64_t *vb_offsets)
@@ -143,50 +144,8 @@ test_sanity(api_context *ctx)
                                                  colorbuf->height, colorbuf->samples, 0x1);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);
 
-   const char *vs_source =
-      "#version 420 core \n"
-      " \n"
-      "const mat4 modelviewMatrix = mat4(0.696364, 0.369616, 0.615192, 0.000000, \n"
-      "                                  0.122788, 0.783188, -0.609540, 0.000000, \n"
-      "                                  -0.707107, 0.500000, 0.500000, 0.000000, \n"
-      "                                  0.000000, 0.000000, -8.000000, 1.000000); \n"
-      "const mat4 modelviewprojectionMatrix = mat4(1.492209, 0.792034, -1.537979, -0.615192, \n"
-      "                                            0.263117, 1.678261, 1.523850, 0.609540, \n"
-      "                                            -1.515229, 1.071428, -1.250000, -0.500000, \n"
-      "                                            0.000000, 0.000000, 5.000000, 8.000000); \n"
-      " \n"
-      "layout(location = 0) in vec4 in_position; \n"
-      "layout(location = 1) in vec4 in_color; \n"
-      "layout(location = 2) in vec3 in_normal; \n"
-      " \n"
-      "vec4 lightSource = vec4(2.0, 2.0, 20.0, 0.0); \n"
-      " \n"
-      "layout(location = 0) out vec4 vVaryingColor; \n"
-      " \n"
-      "void main() \n"
-      "{ \n"
-      "    gl_Position = modelviewprojectionMatrix * in_position; \n"
-      "    vec3 vEyeNormal = mat3(modelviewMatrix) * in_normal; \n"
-      "    vec4 vPosition4 = modelviewMatrix * in_position; \n"
-      "    vec3 vPosition3 = vPosition4.xyz / vPosition4.w; \n"
-      "    vec3 vLightDir = normalize(lightSource.xyz - vPosition3); \n"
-      "    float diff = max(0.0, dot(vEyeNormal, vLightDir)); \n"
-      "    vVaryingColor = vec4(diff * in_color.rgb, 1.0); \n"
-      "}";
-
-   const char *fs_source =
-      "#version 420 core \n"
-      " \n"
-      "layout(location = 0) in vec4 vVaryingColor; \n"
-      "layout(location = 0) out vec4 f_color; \n"
-      " \n"
-      "void main() \n"
-      "{ \n"
-      "    f_color = vVaryingColor; \n"
-      "}";
-
-   api_shader *vs = ctx->create_shader(ctx, vs_source, api_shader_vs);
-   api_shader *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+   api_shader *vs = ctx->create_shader(ctx, sanity_vert, api_shader_vs);
+   api_shader *fs = ctx->create_shader(ctx, sanity_frag, api_shader_fs);
 
    api_gfx_pipeline_desc pipeline_desc = {
       .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
