@@ -70,10 +70,6 @@ typedef struct {
    const void *shader_param_regexs_fs_random;
 } misc_state;
 
-static const char *shader_params_vs_quad[] = {
-   [0] = "layered",
-};
-
 static api_shader *
 get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
 {
@@ -82,18 +78,22 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
    if (*vs)
       return *vs;
 
+   static const char *shader_params[] = {
+      [0] = "layered",
+   };
+
    if (!state->shader_param_regexs_vs_quad) {
       state->shader_param_regexs_vs_quad =
-         compile_shader_param_regexs(shader_params_vs_quad, ARRAY_SIZE(shader_params_vs_quad));
+         compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
    }
 
-   replacement_value values[ARRAY_SIZE(shader_params_vs_quad)] = {
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
       [0] = {.uint64 = layered},
    };
 
    char source[1000];
    regex_replace(source, sizeof(source), imgbw_quad_vert, state->shader_param_regexs_vs_quad,
-                 ARRAY_SIZE(shader_params_vs_quad), values);
+                 ARRAY_SIZE(shader_params), values);
 
    *vs = ctx->create_shader(ctx, source, api_shader_vs);
    return *vs;
@@ -158,32 +158,30 @@ get_gradient_fs(api_context *ctx, misc_state *state, VkFormat format)
    if (*fs)
       return *fs;
 
-   char fs_source[1024];
-   snprintf(fs_source, sizeof(fs_source),
-            "#version 460 \n"
-            "#define HAS_COLOR_OUTPUT %u \n"
-            "#define HAS_STENCIL_OUTPUT %u \n"
+   static const char *shader_params[] = {
+      [0] = "has_color_output",
+      [1] = "has_stencil_output",
+      [2] = "vec_type",
+      [3] = "gradient",
+   };
 
-            "#if HAS_STENCIL_OUTPUT \n"
-            "#extension GL_ARB_shader_stencil_export : enable \n"
-            "#endif \n"
+   if (!state->shader_param_regexs_fs_gradient) {
+      state->shader_param_regexs_fs_gradient =
+         compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
+   }
 
-            "#if HAS_COLOR_OUTPUT \n"
-            "layout(location = 0) out %s fs_out; \n"
-            "#endif \n"
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
+      [0] = {.uint64 = has_color_output},
+      [1] = {.uint64 = has_stencil_output},
+      [2] = {.string = vec_type},
+      [3] = {.string = gradient},
+   };
 
-            "void main() { \n"
-            "#if HAS_COLOR_OUTPUT \n"
-            "   fs_out = %s(%s); \n"
-            "#endif \n"
+   char source[1000];
+   regex_replace(source, sizeof(source), imgbw_gradient_frag, state->shader_param_regexs_fs_gradient,
+                 ARRAY_SIZE(shader_params), values);
 
-            "#if HAS_STENCIL_OUTPUT \n"
-            "   gl_FragStencilRefARB = int(gl_FragCoord.x) %% 256; \n"
-            "#endif \n"
-            "}",
-            has_color_output, has_stencil_output, vec_type, vec_type, gradient);
-
-   *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+   *fs = ctx->create_shader(ctx, source, api_shader_fs);
    return *fs;
 }
 
