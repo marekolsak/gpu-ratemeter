@@ -63,7 +63,16 @@ typedef struct {
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
    unsigned num_delete_items;
+
+   const void *shader_param_regexs_vs_quad;
+   const void *shader_param_regexs_fs_solid;
+   const void *shader_param_regexs_fs_gradient;
+   const void *shader_param_regexs_fs_random;
 } misc_state;
+
+static const char *shader_params_vs_quad[] = {
+   [0] = "layered",
+};
 
 static api_shader *
 get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
@@ -73,30 +82,20 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
    if (*vs)
       return *vs;
 
-   char vs_source[] =
-         "#version 460 \n"
-         "#extension GL_ARB_shader_viewport_layer_array : enable \n"
-         "#define LAYERED 0 \n"
-         "#ifdef VULKAN \n"
-         "   #define gl_VertexID gl_VertexIndex \n"
-         "   #define gl_InstanceID gl_InstanceIndex \n"
-         "#endif \n"
+   if (!state->shader_param_regexs_vs_quad) {
+      state->shader_param_regexs_vs_quad =
+         compile_shader_param_regexs(shader_params_vs_quad, ARRAY_SIZE(shader_params_vs_quad));
+   }
 
-         "void main() { \n"
-         /* Generate a quad from VertexID. */
-         "   gl_Position = vec4((gl_VertexID & 1) == 0 ? -1 : 1, \n"
-         "                      (gl_VertexID & 2) == 0 ? -1 : 1, \n"
-         /* This will produce a gradient for Z. */
-         "                      (gl_VertexID & 1) == 0 ?  0.1 : 0.9, 1); \n"
-         "#if LAYERED \n"
-         "   gl_Layer = gl_InstanceID; \n"
-         "#endif \n"
-         "}";
+   replacement_value values[ARRAY_SIZE(shader_params_vs_quad)] = {
+      [0] = {.uint64 = layered},
+   };
 
-   if (layered)
-      strstr(vs_source, "LAYERED")[8] = '1';
+   char source[1000];
+   regex_replace(source, sizeof(source), imgbw_quad_vert, state->shader_param_regexs_vs_quad,
+                 ARRAY_SIZE(shader_params_vs_quad), values);
 
-   *vs = ctx->create_shader(ctx, vs_source, api_shader_vs);
+   *vs = ctx->create_shader(ctx, source, api_shader_vs);
    return *vs;
 }
 
