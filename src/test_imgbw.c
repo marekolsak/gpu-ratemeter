@@ -200,37 +200,40 @@ get_solid_color_fs(api_context *ctx, misc_state *state, api_framebuffer *fb, uns
    if (*fs)
       return *fs;
 
-   char fs_source[1024];
-   int len = 0;
-   len = snprintf(fs_source, sizeof(fs_source),
-                  "#version 460 \n\n");
+   static const char *shader_params[] = {
+      [0] = "n",
+      [1] = "vec_type0",
+      [2] = "0_is_integer",
+      [3] = "vec_type1",
+      [4] = "1_is_integer",
+      [5] = "vec_type2",
+      [6] = "2_is_integer",
+      [7] = "vec_type3",
+      [8] = "3_is_integer",
+   };
 
-   for (unsigned i = 0; i < fb->num_color_attachments; i++) {
-      len += snprintf(fs_source + len, sizeof(fs_source) - len,
-                      "layout(location = %u) out %s fs_out%u; \n",
-                      i, get_vec_type(fb->colorbufs[i]->format), i);
+   if (!state->shader_param_regexs_fs_solid) {
+      state->shader_param_regexs_fs_solid =
+         compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
    }
 
-   len += snprintf(fs_source + len, sizeof(fs_source) - len,
-                  "\n"
-                  "void main() { \n");
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
+      [0] = {.uint64 = fb->num_color_attachments},
+      [1] = {.string = fb->colorbufs[0] ? get_vec_type(fb->colorbufs[0]->format) : ""},
+      [2] = {.uint64 = fb->colorbufs[0] && format_is_integer(fb->colorbufs[0]->format)},
+      [3] = {.string = fb->colorbufs[1] ? get_vec_type(fb->colorbufs[1]->format) : ""},
+      [4] = {.uint64 = fb->colorbufs[1] && format_is_integer(fb->colorbufs[1]->format)},
+      [5] = {.string = fb->colorbufs[2] ? get_vec_type(fb->colorbufs[2]->format) : ""},
+      [6] = {.uint64 = fb->colorbufs[2] && format_is_integer(fb->colorbufs[2]->format)},
+      [7] = {.string = fb->colorbufs[3] ? get_vec_type(fb->colorbufs[3]->format) : ""},
+      [8] = {.uint64 = fb->colorbufs[3] && format_is_integer(fb->colorbufs[3]->format)},
+   };
 
-   for (unsigned i = 0; i < fb->num_color_attachments; i++) {
-      if (format_is_integer(fb->colorbufs[i]->format)) {
-         len += snprintf(fs_source + len, sizeof(fs_source) - len,
-                         "   fs_out%u = %s(2); \n",
-                         i, get_vec_type(fb->colorbufs[i]->format));
-      } else {
-         len += snprintf(fs_source + len, sizeof(fs_source) - len,
-                         "   fs_out%u = vec4(0.6); \n", i);
-      }
-   }
+   char source[1000];
+   regex_replace(source, sizeof(source), imgbw_solid_frag, state->shader_param_regexs_fs_solid,
+                 ARRAY_SIZE(shader_params), values);
 
-   len += snprintf(fs_source + len, sizeof(fs_source) - len,
-                  "}\n");
-   assert(len < sizeof(fs_source) - 1);
-
-   *fs = ctx->create_shader(ctx, fs_source, api_shader_fs);
+   *fs = ctx->create_shader(ctx, source, api_shader_fs);
    return *fs;
 }
 
