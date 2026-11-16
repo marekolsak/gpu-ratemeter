@@ -545,13 +545,14 @@ typedef struct api_context {
    /* Image functions. */
    api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
                               unsigned width, unsigned height, unsigned depth, unsigned samples,
-                              VkImageTiling tiling, api_heap_type heap, VkImageUsageFlags usage);
+                              VkImageTiling tiling, api_heap_type heap, VkImageUsageFlags usage,
+                              VkImageLayout layout);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
    void (*clear_image)(struct api_context *ctx, api_image *image, const api_image_box *box,
                        const api_clear_values *value);
    void (*blit_image)(struct api_context *ctx, api_blit_desc *desc);
-   void (*upload_image_data)(struct api_context *ctx, api_image *image, unsigned stride_in_bytes,
-                             void *data);
+   void (*upload_image_data)(struct api_context *ctx, api_queue_type queue, api_image *image,
+                             unsigned layer, unsigned stride_in_bytes, void *data);
    void (*image_write_png)(struct api_context *ctx, api_queue_type queue, api_image *image,
                            unsigned layer, const char *filename, bool write_alpha);
    void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,

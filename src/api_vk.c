@@ -522,7 +522,7 @@ vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num
 static api_image *
 vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
                 unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                VkImageUsageFlags usage)
+                VkImageUsageFlags usage, VkImageLayout layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -532,6 +532,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    image->samples = samples;
    image->format = format;
    image->heap = heap;
+   image->layout = layout;
 
    assert(type != VK_IMAGE_TYPE_1D || depth == 1);
 
@@ -554,6 +555,7 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                              .samples = samples,
                              .tiling = tiling,
                              .usage = usage,
+                             .initialLayout = layout,
                           },
                           NULL, &image->image));
 
@@ -2356,6 +2358,61 @@ vk_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint
 }
 
 static void
+vk_upload_image_data(api_context *ctx, api_queue_type queue, api_image *image,
+                     unsigned layer, unsigned stride_in_bytes, void *data)
+{
+   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D, image->format,
+                                        image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
+                                        api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                        VK_IMAGE_LAYOUT_PREINITIALIZED);
+
+   void *map;
+   vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
+
+   for (unsigned y = 0; y < image->height; y++) {
+      memcpy((uint8_t*)map + staging->linear_offset + y * staging->linear_row_pitch,
+             (uint8_t*)data + y * stride_in_bytes,
+             image->width * get_pixel_size_from_format(image->format));
+   }
+
+   if (!staging->host_coherent) {
+      vk_check(vkFlushMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
+                                            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                            .memory = staging->mem,
+                                            .offset = 0,
+                                            .size = VK_WHOLE_SIZE,
+                                         }));
+   }
+
+   vkUnmapMemory(ctx->device, staging->mem);
+
+   vk_begin_cmdbuf(ctx, queue);
+   vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
+                         &(VkDependencyInfo){
+                            .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                            .memoryBarrierCount = 1,
+                            .pMemoryBarriers = &(VkMemoryBarrier2){
+                               .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
+                               .srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT,
+                               .srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT,
+                               .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                               .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+                            },
+                         });
+   vk_blit_image(ctx, &(api_blit_desc){
+                    .dst = image,
+                    .src = staging,
+                    .dst_box = {0, 0, layer, image->width, image->height, 1},
+                    .src_box = {0, 0, 0, image->width, image->height, 1},
+                 });
+
+   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+   vk_wait_for_idle(ctx);
+
+   vk_destroy_image(ctx, staging);
+}
+
+static void
 vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
                    const char *filename, bool write_alpha)
 {
@@ -2363,7 +2420,8 @@ vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
                                         format_is_integer(image->format) ?
                                            VK_FORMAT_R8G8B8A8_UINT : VK_FORMAT_R8G8B8A8_UNORM,
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
-                                        api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+                                        api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                        VK_IMAGE_LAYOUT_UNDEFINED);
 
    vk_begin_cmdbuf(ctx, queue);
    vk_blit_image(ctx, &(api_blit_desc){
@@ -3278,6 +3336,7 @@ vk_create_context(const program_options *options)
    ctx->destroy_image = vk_destroy_image;
    ctx->clear_image = vk_clear_image;
    ctx->blit_image = vk_blit_image;
+   ctx->upload_image_data = vk_upload_image_data;
    ctx->image_write_png = vk_image_write_png;
    ctx->barrier_images = vk_barrier_images;
 

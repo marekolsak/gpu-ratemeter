@@ -139,7 +139,7 @@ test_sanity(api_context *ctx)
                                            1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device,
                                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
    api_framebuffer *fb = ctx->create_framebuffer(ctx, 1, &colorbuf, NULL, colorbuf->width,
                                                  colorbuf->height, colorbuf->samples, 0x1);
    api_buffer *vb = init_cube_vb(ctx, vb_offsets);

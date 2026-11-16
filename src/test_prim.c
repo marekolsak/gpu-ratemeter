@@ -1653,7 +1653,8 @@ test_prim(api_context *ctx)
                                            FB_SIZE, FB_SIZE, 2, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device,
                                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                           (debug_png_dump ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0));
+                                           (debug_png_dump ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0),
+                                           VK_IMAGE_LAYOUT_UNDEFINED);
    state->fb = ctx->create_framebuffer(ctx, 1, &colorbuf, NULL, colorbuf->width,
                                        colorbuf->height, colorbuf->samples, 0x1);
 

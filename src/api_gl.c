@@ -465,7 +465,7 @@ create_texture(api_context *ctx, api_image *image, GLenum target, VkImageTiling 
 static api_image *
 gl_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
                 unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                VkImageUsageFlags usage)
+                VkImageUsageFlags usage, VkImageLayout layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -651,8 +651,8 @@ gl_blit_image(api_context *ctx, api_blit_desc *desc)
 }
 
 static void
-gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_bytes,
-                     void *data)
+gl_upload_image_data(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
+                     unsigned stride_in_bytes, void *data)
 {
    assert(image->samples == 1);
 
@@ -665,7 +665,7 @@ gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_byte
       break;
    case VK_IMAGE_TYPE_2D:
       if (image->depth > 1) {
-         glTextureSubImage3D(image->id, 0, 0, 0, 0, image->width, image->height, image->depth,
+         glTextureSubImage3D(image->id, 0, 0, 0, layer, image->width, image->height, 1,
                              image->glformat, image->gltype, data);
       } else {
          glTextureSubImage2D(image->id, 0, 0, 0, image->width, image->height,
@@ -673,7 +673,7 @@ gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_byte
       }
       break;
    case VK_IMAGE_TYPE_3D:
-      glTextureSubImage3D(image->id, 0, 0, 0, 0, image->width, image->height, image->depth,
+      glTextureSubImage3D(image->id, 0, 0, 0, layer, image->width, image->height, 1,
                           image->glformat, image->gltype, data);
       break;
    default:

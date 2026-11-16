@@ -22,7 +22,7 @@ d3d12_create_buffer(api_context *ctx, uint64_t size, api_heap_type heap, unsigne
 static api_image *
 d3d12_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
                    unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                   VkImageUsageFlags usage)
+                   VkImageUsageFlags usage, VkImageLayout layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
