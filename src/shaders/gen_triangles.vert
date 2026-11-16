@@ -1,15 +1,23 @@
-#version 450
+#version 460
+#extension GL_ARB_shader_viewport_layer_array : enable
+#ifdef VULKAN
+   #define gl_VertexID gl_VertexIndex
+#endif
 
-layout(location = 0) out vec3 vColor;
+/* This shader generates same-sized equilateral triangles at random positions on the screen
+ * with random vertex colors from VertexID.
+ *
+ * aspect_scale determines the triangle circumradius per axis for sizing and aspect correction.
+ */
 
-const float aspect = 1;
+layout(std140, binding = 0) uniform Uniforms {
+    vec2 aspect_scale;
+    uint num_layers;
+};
 
-// Triangle radius in normalized device coordinates.
-// NDC spans [-1, 1], so 0.10 is about 5% of the viewport width/height.
-const float TRI_RADIUS = 0.10;
+layout(location = 0) out vec4 vColor;
 
-// Hash utilities.
-uint hash_u32(uint x)
+uint rand_u32(uint x)
 {
     x ^= x >> 16;
     x *= 0x7feb352du;
@@ -21,59 +29,51 @@ uint hash_u32(uint x)
 
 float rand01(uint seed)
 {
-    return float(hash_u32(seed)) / 4294967295.0;
+    return float(rand_u32(seed)) / 4294967295.0;
 }
 
-vec2 rand2(uint seed)
+vec4 rand4(uint seed)
 {
-    return vec2(
-        rand01(seed * 2u + 0u),
-        rand01(seed * 2u + 1u)
+    return vec4(
+        rand01(seed * 4u + 0u),
+        rand01(seed * 4u + 1u),
+        rand01(seed * 4u + 2u),
+        rand01(seed * 4u + 3u)
     );
 }
 
-vec3 rand3(uint seed)
-{
-    return vec3(
-        rand01(seed * 3u + 0u),
-        rand01(seed * 3u + 1u),
-        rand01(seed * 3u + 2u)
-    );
-}
+const float PI2 = 6.28318530718;
 
 void main()
 {
-    uint vertexID = uint(gl_VertexIndex);
+    uint vertexID = uint(gl_VertexID);
 
     uint primitiveID = vertexID / 3u;
     uint vertexInTriangle = vertexID % 3u;
 
-    // Keep the entire triangle inside the visible NDC viewport.
-    float marginX = TRI_RADIUS / max(aspect, 0.0001);
-    float marginY = TRI_RADIUS;
+    uint primSeed = primitiveID;
+    uint angleSeed = primitiveID ^ 0xabcabcab;
+    uint layerSeed = primitiveID ^ 0x65432198;
+    uint zSeed = vertexID ^ 0x65465465;
+    uint colorSeed = primitiveID ^ 0xfedcba98;
 
-    vec2 r = rand2(primitiveID);
+    vec2 center = rand4(primSeed).xy * 2 - 1;   // The center of the triangle.
+    float angle = rand01(angleSeed) * PI2;      // Random rotation per triangle.
 
-    vec2 center = vec2(
-        mix(-1.0 + marginX, 1.0 - marginX, r.x),
-        mix(-1.0 + marginY, 1.0 - marginY, r.y)
-    );
+    // All 3 vertices are 120 degress apart on the circumcircle, forming an equilateral triangle.
+    float cornerAngle = angle + float(vertexInTriangle) * PI2 / 3;
 
-    // Random rotation per triangle.
-    float angle = rand01(primitiveID + 10000u) * 6.28318530718;
+    // Generate the vector from the center to one of the 3 vertices.
+    vec2 offset = vec2(cos(cornerAngle), sin(cornerAngle));
 
-    // Equilateral triangle in local space.
-    float cornerAngle = angle + float(vertexInTriangle) * 2.09439510239;
+    // Aspect correction and size scaling, so that triangles look equilateral on the screen and are
+    // the right size. This includes circumradius scaling from local space to NDC space.
+    offset *= aspect_scale;
 
-    vec2 offset = vec2(cos(cornerAngle), sin(cornerAngle)) * TRI_RADIUS;
+    gl_Position = vec4(center + offset, rand01(zSeed), 1.0);
+#if <layered>
+    gl_Layer = int(rand_u32(layerSeed) % num_layers);
+#endif
 
-    // Aspect correction so triangles look roughly equilateral on screen.
-    offset.x /= max(aspect, 0.0001);
-
-    vec2 position = center + offset;
-
-    gl_Position = vec4(position, 0.0, 1.0);
-
-    // Random stable color per triangle.
-    vColor = rand3(primitiveID + 20000u);
+    vColor = rand4(colorSeed);     // Random color per vertex.
 }
