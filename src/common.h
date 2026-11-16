@@ -117,6 +117,8 @@ typedef struct {
    VkImageView render_compatible_view; /* 3D images use 2D array views */
    VkImageLayout layout;
    bool host_coherent;
+   uint64_t linear_offset;
+   unsigned linear_row_pitch;
 #endif
 } api_image;
 
@@ -744,7 +746,8 @@ noreturn void exit_test(const char *format, ...) printflike(1, 2);
 unsigned fui(float f);
 char *strdup(const char *s);
 void print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned print_period);
-void write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels, bool write_alpha);
+void write_png_rgba8(const char *path, api_image *image_info, unsigned row_pitch_in_bytes,
+                     uint8_t *pixels, bool write_alpha);
 void run_image_viewer(const char *image_filename);
 unsigned get_pixel_size_from_format(VkFormat format);
 bool format_is_integer(VkFormat format);

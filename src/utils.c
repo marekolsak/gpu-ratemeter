@@ -152,7 +152,8 @@ print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned pr
 }
 
 void
-write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels, bool write_alpha)
+write_png_rgba8(const char *path, api_image *image_info, unsigned row_pitch_in_bytes,
+                uint8_t *pixels, bool write_alpha)
 {
    FILE *f = NULL;
    png_structp png_writer = NULL;
@@ -161,7 +162,7 @@ write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels, bool w
    uint8_t **rows = (uint8_t **)malloc(sizeof(rows[0]) * image_info->height);
 
    for (unsigned y = 0; y < image_info->height; y++)
-      rows[y] = pixels + y * image_info->width * 4;
+      rows[y] = pixels + y * row_pitch_in_bytes;
 
    f = fopen(path, "wb");
    if (!f)

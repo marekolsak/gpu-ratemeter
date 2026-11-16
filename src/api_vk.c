@@ -611,6 +611,20 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                                  NULL, &image->render_compatible_view));
    }
 
+   if (tiling == VK_IMAGE_TILING_LINEAR && !format_is_depth_or_stencil(image->format)) {
+      VkSubresourceLayout layout;
+
+      vkGetImageSubresourceLayout(ctx->device, image->image,
+                                  &(VkImageSubresource){
+                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                                     .mipLevel = 0,
+                                     .arrayLayer = 0,
+                                  }, &layout);
+
+      image->linear_offset = layout.offset;
+      image->linear_row_pitch = layout.rowPitch;
+   }
+
    if (heap == api_heap_device)
       atomic_fetch_add(&ctx->device_mem_usage_mb, image->mem_size >> 20);
    return image;
@@ -2387,7 +2401,8 @@ vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
                                               }));
    }
 
-   write_png_rgba8(filename, staging, map, write_alpha);
+   write_png_rgba8(filename, staging, staging->linear_row_pitch,
+                   (uint8_t*)map + staging->linear_offset, write_alpha);
    vkUnmapMemory(ctx->device, staging->mem);
 }
 

@@ -704,7 +704,7 @@ gl_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
    }
 
    gl_check_no_error();
-   write_png_rgba8(filename, image, data, write_alpha);
+   write_png_rgba8(filename, image, image->width * 4, data, write_alpha);
    free(data);
 }
 
