@@ -116,6 +116,19 @@ exit_test(const char *format, ...)
    exit(0);
 }
 
+union fi {
+   float f;
+   uint32_t ui;
+};
+
+unsigned
+fui(float f)
+{
+   union fi fi;
+   fi.f = f;
+   return fi.ui;
+}
+
 char *
 strdup(const char *s)
 {

@@ -741,6 +741,7 @@ void print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
                                        const char *string_format, unsigned bandwidth_exp2_divisor);
 noreturn void error(const char *format, ...) printflike(1, 2);
 noreturn void exit_test(const char *format, ...) printflike(1, 2);
+unsigned fui(float f);
 char *strdup(const char *s);
 void print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned print_period);
 void write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels, bool write_alpha);
