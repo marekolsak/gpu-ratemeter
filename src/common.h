@@ -508,6 +508,7 @@ typedef struct api_context {
    unsigned max_storage_buffer_range;
    unsigned max_uniform_buffer_range;
    unsigned sparse_buffer_alignment;
+   unsigned uniform_buffer_alignment;
    VkSampleCountFlags supported_color_sample_counts;
    VkSampleCountFlags fb_format_sample_count_support[FORMAT_COUNT];
    VkSampleCountFlags linear_fb_format_sample_count_support[FORMAT_COUNT];

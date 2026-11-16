@@ -2308,11 +2308,15 @@ vk_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, u
 
    vkUnmapMemory(ctx->device, *staging->mem);
 
-   vk_begin_cmdbuf(ctx, queue);
+   const bool inside_cmdbuf = ctx->current_cmd_buffer != NULL;
+
+   if (!inside_cmdbuf)
+      vk_begin_cmdbuf(ctx, queue);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
    vk_copy_buffer(ctx, buf, staging, offset, 0, size);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
-   vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+   if (!inside_cmdbuf)
+      vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
 static void
@@ -3185,6 +3189,7 @@ vk_create_context(const program_options *options)
    ctx->max_storage_buffer_range = device_props.properties.limits.maxStorageBufferRange;
    ctx->max_uniform_buffer_range = device_props.properties.limits.maxUniformBufferRange;
    ctx->supported_color_sample_counts = device_props.properties.limits.framebufferColorSampleCounts;
+   ctx->uniform_buffer_alignment = device_props.properties.limits.minUniformBufferOffsetAlignment;
 
    /* Get sparse buffer alignment. */
    if (ctx->has_sparse_buffer) {

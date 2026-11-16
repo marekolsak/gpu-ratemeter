@@ -1814,6 +1814,7 @@ gl_create_context(const program_options *options)
 
    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, (GLint*)&ctx->max_storage_buffer_range);
    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, (GLint*)&ctx->max_uniform_buffer_range);
+   glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, (GLint*)&ctx->uniform_buffer_alignment);
 
    /*if (GLAD_GL_ARB_sparse_buffer)
       glGetIntegerv(GL_SPARSE_BUFFER_PAGE_SIZE_ARB, (int*)&ctx->sparse_buffer_alignment);*/

@@ -374,6 +374,8 @@ Decoding subtest fill identifiers in subtest names:
 - `fill_fragmented2`: same as `fill_random`, but sample 0 and the remaining samples contain different random noise where the remaining samples contain the same noise (exercising decently effective MSAA compression with 4-8 samples and defeating MSAA compression with 2 samples)
 - `fill_fragmented4`: same as `fill_random`, but sample 0, sample 1, sample 2, and the remaining samples contain different random noise where the remaining samples contain the same noise (exercising limited MSAA compression with 8 samples and defeating MSAA compression with 4 samples)
 - `fill_fragmented8`: same as `fill_random`, but all samples contain different random noise (defeating MSAA compression with 8 samples)
+- `fill_smooth_NxN_tris`: the source image is initialized by drawing smooth-shaded colored triangles into it that each have roughly N*N pixel area
+- `fill_textured_NxN_tris`: the source image is initialized by drawing textured triangles into it that each have roughly N*N pixel area
 
 Decoding the clear/copy/blit/resolve region identifiers in subtest names:
 - `region_full`: the operation runs on the whole image

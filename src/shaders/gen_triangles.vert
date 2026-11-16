@@ -46,16 +46,16 @@ const float PI2 = 6.28318530718;
 
 void main()
 {
-    uint vertexID = uint(gl_VertexID);
-
-    uint primitiveID = vertexID / 3u;
-    uint vertexInTriangle = vertexID % 3u;
+    uint primitiveID = gl_VertexID / 3u;
+    uint vertexInTriangle = gl_VertexID % 3u;
 
     uint primSeed = primitiveID;
-    uint angleSeed = primitiveID ^ 0xabcabcab;
-    uint layerSeed = primitiveID ^ 0x65432198;
-    uint zSeed = vertexID ^ 0x65465465;
-    uint colorSeed = primitiveID ^ 0xfedcba98;
+    uint vertexSeed = gl_VertexID;
+
+    uint angleSeed = primSeed ^ 0xabcabcab;
+    uint layerSeed = primSeed ^ 0x65432198;
+    uint zSeed = vertexSeed ^ 0x65465465;
+    uint colorSeed = vertexSeed ^ 0xfedcba98;
 
     vec2 center = rand4(primSeed).xy * 2 - 1;   // The center of the triangle.
     float angle = rand01(angleSeed) * PI2;      // Random rotation per triangle.

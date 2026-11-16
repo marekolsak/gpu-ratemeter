@@ -54,18 +54,31 @@ static const test_formats formats[] = {
 
 typedef struct {
    api_shader *vs_passthrough[2]; /* layered / non-layered variants */
+   api_shader *vs_gen_triangles[2]; /* layered / non-layered variants */
    api_shader *fs_gradient[7]; /* output format variants */
    api_shader *fs_random[10]; /* output format variants */
-
    api_shader *fs_solid[ARRAY_SIZE(formats)];
+   api_shader *fs_color_passthrough_fs[ARRAY_SIZE(formats)];
+   api_shader *fs_fragpos_texture_fs[ARRAY_SIZE(formats)];
+
+   api_descriptor_set_layout *layout_draw_triangles;
    api_gfx_pipeline *pipeline_draw_solid[MAX_FB_SETS];
+   api_gfx_pipeline *pipeline_draw_triangles[MAX_FB_SETS][2]; /* color passthrough / textured */
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
    api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
    unsigned num_delete_items;
 
+   api_buffer *ubo;
+   api_descriptor_set *desc_draw_triangles[1024];
+   unsigned draw_tris_upload_index;
+
+   api_image *random_texture;
+   api_sampler *sampler;
+
    const void *shader_param_regexs_vs_quad;
-   const void *shader_param_regexs_fs_solid;
+   const void *shader_param_regexs_vs_gen_triangles;
+   const void *shader_param_regexs_fs_mrt;
    const void *shader_param_regexs_fs_gradient;
    const void *shader_param_regexs_fs_random;
 } misc_state;
@@ -94,6 +107,35 @@ get_passthrough_vs(api_context *ctx, misc_state *state, bool layered)
    char source[1000];
    regex_replace(source, sizeof(source), imgbw_quad_vert, state->shader_param_regexs_vs_quad,
                  ARRAY_SIZE(shader_params), values);
+
+   *vs = ctx->create_shader(ctx, source, api_shader_vs);
+   return *vs;
+}
+
+static api_shader *
+get_gen_triangles_vs(api_context *ctx, misc_state *state, bool layered)
+{
+   api_shader **vs = &state->vs_gen_triangles[layered];
+
+   if (*vs)
+      return *vs;
+
+   static const char *shader_params[] = {
+      [0] = "layered",
+   };
+
+   if (!state->shader_param_regexs_vs_gen_triangles) {
+      state->shader_param_regexs_vs_gen_triangles =
+         compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
+   }
+
+   replacement_value values[ARRAY_SIZE(shader_params)] = {
+      [0] = {.uint64 = layered},
+   };
+
+   char source[2400];
+   regex_replace(source, sizeof(source), gen_triangles_vert,
+                 state->shader_param_regexs_vs_gen_triangles, ARRAY_SIZE(shader_params), values);
 
    *vs = ctx->create_shader(ctx, source, api_shader_vs);
    return *vs;
@@ -191,50 +233,112 @@ get_vec_type(VkFormat format)
    return format_is_sint(format) ? "ivec4" : format_is_integer(format) ? "uvec4" : "vec4";
 }
 
-static api_shader *
-get_solid_color_fs(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_config_index)
+static unsigned
+get_fs_output_value_multiplier(api_image *cb)
 {
-   assert(fb_config_index < ARRAY_SIZE(state->fs_solid));
-   api_shader **fs = &state->fs_solid[fb_config_index];
+   if (!cb || !format_is_integer(cb->format))
+      return 1;
 
+   const unsigned bpc = get_pixel_size_from_format(cb->format) / format_get_num_channels(cb->format);
+   const unsigned log_bpc = LOG2_POT(bpc);
+
+   static const unsigned uint_multiplier[] = {
+      UINT8_MAX,
+      UINT16_MAX,
+      UINT32_MAX,
+   };
+
+   static const unsigned sint_multiplier[] = {
+      INT8_MAX,
+      INT16_MAX,
+      UINT32_MAX,
+   };
+   assert(log_bpc < 3);
+
+   if (format_is_sint(cb->format))
+      return sint_multiplier[log_bpc];
+   else
+      return uint_multiplier[log_bpc];
+}
+
+static api_shader *
+get_fs(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_config_index,
+       api_shader **fs, const char *code)
+{
    if (*fs)
       return *fs;
 
    static const char *shader_params[] = {
       [0] = "n",
       [1] = "vec_type0",
-      [2] = "0_is_integer",
-      [3] = "vec_type1",
-      [4] = "1_is_integer",
-      [5] = "vec_type2",
-      [6] = "2_is_integer",
-      [7] = "vec_type3",
+      [2] = "vec_type1",
+      [3] = "vec_type2",
+      [4] = "vec_type3",
+      [5] = "0_is_integer",
+      [6] = "1_is_integer",
+      [7] = "2_is_integer",
       [8] = "3_is_integer",
+      [9] = "multiplier0",
+      [10] = "multiplier1",
+      [11] = "multiplier2",
+      [12] = "multiplier3",
    };
 
-   if (!state->shader_param_regexs_fs_solid) {
-      state->shader_param_regexs_fs_solid =
+   if (!state->shader_param_regexs_fs_mrt) {
+      state->shader_param_regexs_fs_mrt =
          compile_shader_param_regexs(shader_params, ARRAY_SIZE(shader_params));
    }
 
    replacement_value values[ARRAY_SIZE(shader_params)] = {
       [0] = {.uint64 = fb->num_color_attachments},
       [1] = {.string = fb->colorbufs[0] ? get_vec_type(fb->colorbufs[0]->format) : ""},
-      [2] = {.uint64 = fb->colorbufs[0] && format_is_integer(fb->colorbufs[0]->format)},
-      [3] = {.string = fb->colorbufs[1] ? get_vec_type(fb->colorbufs[1]->format) : ""},
-      [4] = {.uint64 = fb->colorbufs[1] && format_is_integer(fb->colorbufs[1]->format)},
-      [5] = {.string = fb->colorbufs[2] ? get_vec_type(fb->colorbufs[2]->format) : ""},
-      [6] = {.uint64 = fb->colorbufs[2] && format_is_integer(fb->colorbufs[2]->format)},
-      [7] = {.string = fb->colorbufs[3] ? get_vec_type(fb->colorbufs[3]->format) : ""},
+      [2] = {.string = fb->colorbufs[1] ? get_vec_type(fb->colorbufs[1]->format) : ""},
+      [3] = {.string = fb->colorbufs[2] ? get_vec_type(fb->colorbufs[2]->format) : ""},
+      [4] = {.string = fb->colorbufs[3] ? get_vec_type(fb->colorbufs[3]->format) : ""},
+      [5] = {.uint64 = fb->colorbufs[0] && format_is_integer(fb->colorbufs[0]->format)},
+      [6] = {.uint64 = fb->colorbufs[1] && format_is_integer(fb->colorbufs[1]->format)},
+      [7] = {.uint64 = fb->colorbufs[2] && format_is_integer(fb->colorbufs[2]->format)},
       [8] = {.uint64 = fb->colorbufs[3] && format_is_integer(fb->colorbufs[3]->format)},
+      [9] = {.uint64 = get_fs_output_value_multiplier(fb->colorbufs[0])},
+      [10] = {.uint64 = get_fs_output_value_multiplier(fb->colorbufs[1])},
+      [11] = {.uint64 = get_fs_output_value_multiplier(fb->colorbufs[2])},
+      [12] = {.uint64 = get_fs_output_value_multiplier(fb->colorbufs[3])},
    };
 
    char source[1000];
-   regex_replace(source, sizeof(source), imgbw_solid_frag, state->shader_param_regexs_fs_solid,
+   regex_replace(source, sizeof(source), code, state->shader_param_regexs_fs_mrt,
                  ARRAY_SIZE(shader_params), values);
 
    *fs = ctx->create_shader(ctx, source, api_shader_fs);
    return *fs;
+}
+
+static api_shader *
+get_solid_color_fs(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_config_index)
+{
+   assert(fb_config_index < ARRAY_SIZE(state->fs_solid));
+
+   return get_fs(ctx, state, fb, fb_config_index, &state->fs_solid[fb_config_index], imgbw_solid_frag);
+}
+
+static api_shader *
+get_color_passthrough_fs(api_context *ctx, misc_state *state, api_framebuffer *fb,
+                         unsigned fb_config_index)
+{
+   assert(fb_config_index < ARRAY_SIZE(state->fs_color_passthrough_fs));
+
+   return get_fs(ctx, state, fb, fb_config_index, &state->fs_color_passthrough_fs[fb_config_index],
+                 imgbw_color_passthrough_frag);
+}
+
+static api_shader *
+get_fragpos_texture_fs(api_context *ctx, misc_state *state, api_framebuffer *fb,
+                       unsigned fb_config_index)
+{
+   assert(fb_config_index < ARRAY_SIZE(state->fs_fragpos_texture_fs));
+
+   return get_fs(ctx, state, fb, fb_config_index, &state->fs_fragpos_texture_fs[fb_config_index],
+                 imgbw_fragpos_texture_frag);
 }
 
 static api_shader *
@@ -439,6 +543,152 @@ draw_solid(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = fb->layers});
 }
 
+static void
+draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned triangle_size_index,
+               api_framebuffer *fb, unsigned fb_set, unsigned fb_config_index)
+{
+   static const unsigned triangle_sizes[4] = {
+      32 * 32,
+      16 * 16,
+      8 * 8,
+      4 * 4,
+   };
+   assert(triangle_size_index < ARRAY_SIZE(triangle_sizes));
+   const unsigned pixels_per_triangle = triangle_sizes[triangle_size_index];
+   const bool layered = fb->layers > 1;
+   api_shader *vs = get_gen_triangles_vs(ctx, state, layered);
+   api_shader *fs = textured ? get_fragpos_texture_fs(ctx, state, fb, fb_config_index) :
+                               get_color_passthrough_fs(ctx, state, fb, fb_config_index);
+   api_gfx_pipeline **pipeline = &state->pipeline_draw_triangles[fb_set][textured];
+
+   if (!state->layout_draw_triangles) {
+      state->layout_draw_triangles =
+         ctx->create_descriptor_set_layout(ctx, &(api_descriptor_set_layout_desc){
+                                              .uniform_buffer[0].array_size = 1,
+                                              .combined_image_sampler[0].array_size = 1,
+                                              .combined_image_sampler[0].vk_binding = 1,
+                                           });
+   }
+
+   if (textured && !state->random_texture) {
+      /* Create a random noise texture that will be used to generate a texture-like pattern
+       * in the fragment shader.
+       */
+      const unsigned width = 128;
+
+      state->random_texture =
+         ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                           width, width, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                           api_heap_device,
+                           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
+
+      srand(0x1263c379);
+
+      char *img_data = malloc(width * width * 4);
+      for (unsigned y = 0; y < width; y++) {
+         for (unsigned x = 0; x < width; x++) {
+            char *pix = &img_data[(y * width + x) * 4];
+
+            pix[0] = rand() % 256;
+            pix[1] = rand() % 256;
+            pix[2] = rand() % 256;
+            pix[3] = rand() % 256;
+         }
+      }
+
+      ctx->upload_image_data(ctx, api_queue_gfx, state->random_texture, 0, width * 4, img_data);
+      free(img_data);
+
+      state->sampler = ctx->create_sampler(ctx, &(api_sampler_desc){
+                                              .min_filter = VK_FILTER_LINEAR,
+                                              .mag_filter = VK_FILTER_LINEAR,
+                                              .wrap_u = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                              .wrap_v = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                           });
+   }
+
+   /* The shader generates equilateral triangles at random positions with the triangle circumradius
+    * in X,Y axes as inputs. (X != Y when width != height for aspect correction).
+    *
+    * An equilateral triangle has:
+    *    area = (3 * sqrt(3) / 4) * radius²
+    * That implies:
+    *    sqrt(4 * area / (3 * sqrt(3))) = radius
+    */
+   const float radius_pixels = sqrtf(4.f * pixels_per_triangle / (3.f * sqrtf(3.f)));
+
+   const uint32_t vs_uniforms[4] = {
+      fui(2.f * radius_pixels / fb->width),
+      fui(2.f * radius_pixels / fb->height),
+      fb->layers,
+   };
+
+   if (!state->ubo)
+      state->ubo = ctx->create_buffer(ctx, 64 * 1024, api_heap_device, 0);
+
+   /* Upload the UBO data. */
+   unsigned ubo_offset = state->draw_tris_upload_index *
+                         MAX2(sizeof(vs_uniforms), ctx->uniform_buffer_alignment);
+   assert(ubo_offset + sizeof(vs_uniforms) <= state->ubo->size);
+   assert(state->draw_tris_upload_index < ARRAY_SIZE(state->desc_draw_triangles));
+
+   /* Prepare the descriptor set. */
+   api_descriptor_set **set = &state->desc_draw_triangles[state->draw_tris_upload_index];
+
+   if (!*set)
+      *set = ctx->create_descriptor_set(ctx, state->layout_draw_triangles);
+
+   ctx->set_uniform_buffer_descriptor(ctx, *set, 0, state->ubo, ubo_offset, sizeof(vs_uniforms));
+   if (textured) {
+      ctx->set_combined_image_sampler_descriptors(ctx, api_queue_gfx, *set, 0, 1,
+                                                  &state->random_texture, &state->sampler);
+   }
+
+   state->draw_tris_upload_index++;
+
+   /* Create the pipeline. */
+   if (!*pipeline) {
+      *pipeline = ctx->create_gfx_pipeline(ctx,
+                                           &(api_gfx_pipeline_desc){
+                                              .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                              .desc_set_layout = state->layout_draw_triangles,
+                                              .vs = vs,
+                                              .fs = fs,
+                                              .vrs_fragment_size = {1, 1},
+                                              .samplemask = ~0,
+                                              .colormask = 0xf,
+                                              .depth_enabled = true,
+                                              .depth_write_enabled = true,
+                                              .depth_compare_op = VK_COMPARE_OP_ALWAYS,
+                                              .fb = fb,
+                                           });
+   }
+
+   /* Calculate the number of triangles from how much overdraw we want.
+    *
+    * Due to the random placement of triangles, some areas may stay cleared while others may get
+    * triangles on top of each other. overdraw_amount = 2 and 3 leaves about 13.5% and 5% uncovered
+    * (e^-2 and e^-3), respectively.
+    */
+   const double overdraw_amount = 3;
+   const double fb_area = (double)fb->width * fb->height * fb->layers;
+   const unsigned num_triangles = ceil(overdraw_amount * fb_area / pixels_per_triangle);
+
+   ctx->begin_cmdbuf(ctx, api_queue_gfx);
+   ctx->upload_buffer_data(ctx, api_queue_gfx, state->ubo, ubo_offset, sizeof(vs_uniforms),
+                           vs_uniforms);
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc) {
+                             .fb = fb,
+                             .clear = true,
+                          });
+   ctx->bind_descriptor_set(ctx, *set);
+   ctx->bind_gfx_pipeline(ctx, *pipeline);
+   ctx->draw(ctx, &(api_draw_desc){.count = num_triangles * 3, .instance_count = 1});
+   ctx->end_render_pass(ctx);
+   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+}
+
 enum {
    TEST_CLEAR_FB,
    TEST_CLEAR_FB_THEN_DRAW,
@@ -522,6 +772,14 @@ enum {
    FILL_RANDOM_FRAGMENTED2,
    FILL_RANDOM_FRAGMENTED4,
    FILL_RANDOM_FRAGMENTED8,
+   FILL_SMOOTH_32X32_TRIANGLES,
+   FILL_SMOOTH_16X16_TRIANGLES,
+   FILL_SMOOTH_8X8_TRIANGLES,
+   FILL_SMOOTH_4X4_TRIANGLES,
+   FILL_TEXTURED_32X32_TRIANGLES,
+   FILL_TEXTURED_16X16_TRIANGLES,
+   FILL_TEXTURED_8X8_TRIANGLES,
+   FILL_TEXTURED_4X4_TRIANGLES,
    NUM_FILLS,
 };
 
@@ -533,6 +791,14 @@ static const char *fill_strings[] = {
    [FILL_RANDOM_FRAGMENTED2] = "fragmented2",
    [FILL_RANDOM_FRAGMENTED4] = "fragmented4",
    [FILL_RANDOM_FRAGMENTED8] = "fragmented8",
+   [FILL_SMOOTH_32X32_TRIANGLES] = "smooth_32x32_tris",
+   [FILL_SMOOTH_16X16_TRIANGLES] = "smooth_16x16_tris",
+   [FILL_SMOOTH_8X8_TRIANGLES] = "smooth_8x8_tris",
+   [FILL_SMOOTH_4X4_TRIANGLES] = "smooth_4x4_tris",
+   [FILL_TEXTURED_32X32_TRIANGLES] = "textured_32x32_tris",
+   [FILL_TEXTURED_16X16_TRIANGLES] = "textured_16x16_tris",
+   [FILL_TEXTURED_8X8_TRIANGLES] = "textured_8x8_tris",
+   [FILL_TEXTURED_4X4_TRIANGLES] = "textured_4x4_tris",
 };
 
 static bool
@@ -788,7 +1054,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         api_image *dst_color[MAX_COLOR_ATTACHMENTS];
                         api_image *dst_zs;
                         api_image *all[MAX_COLOR_ATTACHMENTS + 1];
-                        api_framebuffer *fb;
+                        api_framebuffer *src_fb;
+                        api_framebuffer *dst_fb;
                      } sets[MAX_FB_SETS] = {0};
 
                      unsigned num_image_sets = 0;
@@ -906,6 +1173,16 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
                                  sets[num_image_sets].src;
+
+                              sets[num_image_sets].src_fb =
+                                 ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
+                                                         formats[format_index].color_format ?
+                                                            &sets[num_image_sets].src : NULL,
+                                                         formats[format_index].zs_format ?
+                                                            sets[num_image_sets].src : NULL,
+                                                         sets[num_image_sets].src_width,
+                                                         sets[num_image_sets].src_height,
+                                                         src_samples, 0x1);
                            }
 
                            for (unsigned i = 0; i < formats[format_index].num_color_attachments; i++) {
@@ -945,7 +1222,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               assert(sets[num_image_sets].dst);
                            }
 
-                           sets[num_image_sets].fb =
+                           sets[num_image_sets].dst_fb =
                               ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
                                                       sets[num_image_sets].dst_color,
                                                       sets[num_image_sets].dst_zs,
@@ -983,18 +1260,24 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
                            continue;
 
-                        if (((samples == 1 || formats[format_index].zs_format) &&
-                             fill_option >= FILL_RANDOM_FRAGMENTED2) ||
-                            (samples == 2 && fill_option >= FILL_RANDOM_FRAGMENTED4) ||
-                            (samples == 4 && fill_option >= FILL_RANDOM_FRAGMENTED8))
+                        /* Skip tests with N unique samples for Z/S or if the number of samples
+                         * is less.
+                         */
+                        if (fill_option >= FILL_RANDOM_FRAGMENTED2 +
+                            (formats[format_index].zs_format ? 0 : LOG2_POT(samples)) &&
+                            fill_option <= FILL_RANDOM_FRAGMENTED8)
                            continue;
 
                         if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
                             fill_option != FILL_RANDOM)
                            continue;
 
-                        if (fill_option == FILL_GRADIENT &&
+                        if ((fill_option == FILL_GRADIENT || fill_option >= FILL_SMOOTH_32X32_TRIANGLES) &&
                             formats[format_index].zs_format == VK_FORMAT_S8_UINT)
+                           continue;
+
+                        if (formats[format_index].zs_format &&
+                            fill_option >= FILL_TEXTURED_32X32_TRIANGLES)
                            continue;
 
                         api_clear_values clear_values = {0};
@@ -1059,6 +1342,24 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     /* Make samples 0..6 different. */
                                     for (unsigned i = 0; i <= 6; i++)
                                        set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
+                                    break;
+
+                                 case FILL_SMOOTH_32X32_TRIANGLES:
+                                 case FILL_SMOOTH_16X16_TRIANGLES:
+                                 case FILL_SMOOTH_8X8_TRIANGLES:
+                                 case FILL_SMOOTH_4X4_TRIANGLES:
+                                    draw_triangles(ctx, &misc_state, false,
+                                                   fill_option - FILL_SMOOTH_32X32_TRIANGLES,
+                                                   sets[set].src_fb, set, format_index);
+                                    break;
+
+                                 case FILL_TEXTURED_32X32_TRIANGLES:
+                                 case FILL_TEXTURED_16X16_TRIANGLES:
+                                 case FILL_TEXTURED_8X8_TRIANGLES:
+                                 case FILL_TEXTURED_4X4_TRIANGLES:
+                                    draw_triangles(ctx, &misc_state, true,
+                                                   fill_option - FILL_TEXTURED_32X32_TRIANGLES,
+                                                   sets[set].src_fb, set, format_index);
                                     break;
 
                                  default:
@@ -1230,7 +1531,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                     ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                                                              .fb = sets[set].fb
+                                                              .fb = sets[set].dst_fb
                                                            });
                                  }
 
@@ -1249,7 +1550,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                        if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                           ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                                                                    .fb = sets[set].fb
+                                                                    .fb = sets[set].dst_fb
                                                                  });
                                        }
                                     }
@@ -1259,12 +1560,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     case TEST_CLEAR_FB_THEN_DRAW:
                                        ctx->begin_render_pass(ctx,
                                                               &(api_render_pass_desc) {
-                                                                 .fb = sets[set].fb,
+                                                                 .fb = sets[set].dst_fb,
                                                                  .clear = true,
                                                                  .clear_values = clear_values,
                                                               });
                                        if (test_index == TEST_CLEAR_FB_THEN_DRAW)
-                                          draw_solid(ctx, &misc_state, sets[set].fb, set, format_index);
+                                          draw_solid(ctx, &misc_state, sets[set].dst_fb, set, format_index);
                                        ctx->end_render_pass(ctx);
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
                                                            sets[set].all, false);
@@ -1361,9 +1662,23 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
                         }
 
+                        /* Release draw_triangles pipelines because they are tied to specific FB states. */
+                        for (unsigned i = 0; i < ARRAY_SIZE(misc_state.pipeline_draw_triangles); i++) {
+                           for (unsigned j = 0; j < 2; j++) {
+                              if (misc_state.pipeline_draw_triangles[i][j]) {
+                                 ctx->destroy_gfx_pipeline(ctx, misc_state.pipeline_draw_triangles[i][j]);
+                                 misc_state.pipeline_draw_triangles[i][j] = NULL;
+                              }
+                           }
+                        }
+
+                        misc_state.draw_tris_upload_index = 0;
+
                         for (unsigned set = 0; set < num_image_sets; set++) {
-                           if (sets[set].fb)
-                              ctx->destroy_framebuffer(ctx, sets[set].fb);
+                           if (sets[set].src_fb)
+                              ctx->destroy_framebuffer(ctx, sets[set].src_fb);
+                           if (sets[set].dst_fb)
+                              ctx->destroy_framebuffer(ctx, sets[set].dst_fb);
                            for (unsigned i = 0; i < sets[set].num_all_images; i++)
                               ctx->destroy_image(ctx, sets[set].all[i]);
                         }
