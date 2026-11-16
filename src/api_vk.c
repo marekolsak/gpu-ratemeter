@@ -1009,6 +1009,7 @@ vk_create_descriptor_set_layout(api_context *ctx,
    layout->desc = *desc;
 
    VkShaderStageFlags stage_flags = (ctx->max_mesh_workgroup_size ? VK_SHADER_STAGE_MESH_BIT_EXT : 0) |
+                                    VK_SHADER_STAGE_VERTEX_BIT |
                                     VK_SHADER_STAGE_FRAGMENT_BIT |
                                     VK_SHADER_STAGE_COMPUTE_BIT;
    unsigned num_bindings = 0;
