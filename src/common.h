@@ -205,6 +205,7 @@ typedef struct {
 
    GLuint tbo_ids[MAX_UNIFORM_TEXEL_BUFFER_BINDINGS][MAX_UNIFORM_TEXEL_BUFFER_ARRAY_SIZE];
    GLuint tex_ids[MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE];
+   GLuint sampler_ids[MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE];
    GLuint image_ids[MAX_STORAGE_IMAGE_ARRAY_SIZE];
 #endif
 
@@ -373,6 +374,26 @@ typedef struct {
 #endif
 } api_fence;
 
+typedef struct {
+   VkFilter mag_filter;
+   VkFilter min_filter;
+   VkSamplerAddressMode wrap_u;
+   VkSamplerAddressMode wrap_v;
+   VkSamplerAddressMode wrap_w;
+} api_sampler_desc;
+
+typedef struct {
+   api_sampler_desc desc;
+
+#ifdef GL_PRIVATE
+   GLuint id;
+#endif
+
+#ifdef VK_PRIVATE
+   VkSampler sampler;
+#endif
+} api_sampler;
+
 #define MAX_COMMAND_BUFFERS   256
 
 typedef enum {
@@ -534,6 +555,10 @@ typedef struct api_context {
    void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,
                           bool after_shader_writes);
 
+   /* Sampler functions. */
+   api_sampler *(*create_sampler)(struct api_context *ctx, const api_sampler_desc *desc);
+   void (*destroy_sampler)(struct api_context *ctx, api_sampler *sampler);
+
    /* Framebuffer functions. */
    api_framebuffer *(*create_framebuffer)(struct api_context *ctx, unsigned num_color_attachments,
                                           api_image **colorbufs, api_image *zsbuf,
@@ -561,9 +586,10 @@ typedef struct api_context {
                                                 unsigned binding_index, unsigned num_buffers,
                                                 api_buffer **buffers, VkFormat *formats,
                                                 uint64_t *offsets, uint64_t *sizes);
-   void (*set_combined_image_sampler_descriptors)(struct api_context *ctx, api_descriptor_set *set,
-                                                  unsigned binding_index, unsigned num_samplers,
-                                                  api_image **images);
+   void (*set_combined_image_sampler_descriptors)(struct api_context *ctx, api_queue_type queue,
+                                                  api_descriptor_set *set, unsigned binding_index,
+                                                  unsigned num_desc, api_image **images,
+                                                  api_sampler **samplers);
    void (*set_storage_image_descriptors)(struct api_context *ctx, api_queue_type queue,
                                          api_descriptor_set *set, unsigned binding_index,
                                          unsigned num_images, api_image **images);

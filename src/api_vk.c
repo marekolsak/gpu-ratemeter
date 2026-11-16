@@ -775,6 +775,30 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
    }
 }
 
+static api_sampler *
+vk_create_sampler(api_context *ctx, const api_sampler_desc *desc)
+{
+   api_sampler *sampler = calloc(1, sizeof(api_sampler));
+   sampler->desc = *desc;
+
+   vk_check(vkCreateSampler(ctx->device, &(VkSamplerCreateInfo){
+                               .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                               .magFilter = desc->mag_filter,
+                               .minFilter = desc->min_filter,
+                               .addressModeU = desc->wrap_u,
+                               .addressModeV = desc->wrap_v,
+                               .addressModeW = desc->wrap_w,
+                            }, NULL, &sampler->sampler));
+   return sampler;
+}
+
+static void
+vk_destroy_sampler(struct api_context *ctx, api_sampler *sampler)
+{
+   vkDestroySampler(ctx->device, sampler->sampler, NULL);
+   free(sampler);
+}
+
 static unsigned
 get_attachment_optimal_layout(api_image *image)
 {
@@ -1057,6 +1081,20 @@ vk_create_descriptor_set_layout(api_context *ctx,
       }
    }
 
+   for (unsigned i = 0; i < MAX_COMBINED_IMAGE_SAMPLER_BINDINGS; i++) {
+      if (desc->combined_image_sampler[i].array_size) {
+         assert(desc->combined_image_sampler[i].array_size <= MAX_COMBINED_IMAGE_SAMPLER_ARRAY_SIZE);
+         assert(num_bindings < ARRAY_SIZE(desc_set_layout_bindings));
+
+         desc_set_layout_bindings[num_bindings++] = (VkDescriptorSetLayoutBinding){
+            .binding = desc->combined_image_sampler[i].vk_binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = desc->combined_image_sampler[i].array_size,
+            .stageFlags = stage_flags,
+         };
+      }
+   }
+
    for (unsigned i = 0; i < MAX_STORAGE_IMAGE_BINDINGS; i++) {
       if (desc->storage_image[i].array_size) {
          assert(desc->storage_image[i].array_size <= MAX_STORAGE_IMAGE_ARRAY_SIZE);
@@ -1185,6 +1223,45 @@ vk_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *se
                              .descriptorCount = num_buffers,
                              .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
                              .pTexelBufferView = set->texel_buffer_views[binding_index],
+                          },
+                          0, NULL);
+}
+
+static void
+vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue,
+                                          api_descriptor_set *set, unsigned binding_index,
+                                          unsigned num_desc, api_image **images,
+                                          api_sampler **samplers)
+{
+   assert(num_desc <= set->layout->desc.combined_image_sampler[binding_index].array_size);
+   VkDescriptorImageInfo *image_infos = alloca(sizeof(*image_infos) * num_desc);
+   VkImageLayout *need_layouts = alloca(num_desc * sizeof(need_layouts[0]));
+
+   for (unsigned i = 0; i < num_desc; i++)
+      need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
+
+   vk_transition_image_layouts(ctx, queue, num_desc, images, need_layouts, true);
+
+   for (unsigned i = 0; i < num_desc; i++) {
+      /* TODO: 3D samplers need a 3D image view, not the render-compatible view */
+      assert(images[i]->type != VK_IMAGE_TYPE_3D);
+      /* TODO: Z/S samplers need a separate view per aspect */
+      assert(!format_is_depth_or_stencil(images[i]->format));
+
+      image_infos[i].sampler = samplers[i]->sampler;
+      image_infos[i].imageView = images[i]->render_compatible_view;
+      image_infos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+   }
+
+   vkUpdateDescriptorSets(ctx->device, 1,
+                          &(VkWriteDescriptorSet){
+                             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                             .dstSet = set->set,
+                             .dstBinding = set->layout->desc.combined_image_sampler[binding_index].vk_binding,
+                             .dstArrayElement = 0,
+                             .descriptorCount = num_desc,
+                             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                             .pImageInfo = image_infos,
                           },
                           0, NULL);
 }
@@ -2949,8 +3026,8 @@ vk_create_context(const program_options *options)
                                    &(VkDescriptorPoolCreateInfo){
                                       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                       .maxSets = MAX_DESCRIPTOR_SETS,
-                                      .poolSizeCount = 4,
-                                      .pPoolSizes = (VkDescriptorPoolSize[4]){
+                                      .poolSizeCount = 5,
+                                      .pPoolSizes = (VkDescriptorPoolSize[5]){
                                          {
                                             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                                             .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_UNIFORM_BUFFER_BINDINGS,
@@ -2958,6 +3035,10 @@ vk_create_context(const program_options *options)
                                          {
                                             .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                             .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_STORAGE_BUFFER_BINDINGS,
+                                         },
+                                         {
+                                            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                            .descriptorCount = MAX_DESCRIPTOR_SETS * MAX_COMBINED_IMAGE_SAMPLER_BINDINGS,
                                          },
                                          {
                                             .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -3185,6 +3266,9 @@ vk_create_context(const program_options *options)
    ctx->image_write_png = vk_image_write_png;
    ctx->barrier_images = vk_barrier_images;
 
+   ctx->create_sampler = vk_create_sampler;
+   ctx->destroy_sampler = vk_destroy_sampler;
+
    ctx->create_framebuffer = vk_create_framebuffer;
    ctx->destroy_framebuffer = vk_destroy_framebuffer;
 
@@ -3199,6 +3283,7 @@ vk_create_context(const program_options *options)
    ctx->set_uniform_buffer_descriptor = vk_set_uniform_buffer_descriptors;
    ctx->set_storage_buffer_descriptor = vk_set_storage_buffer_descriptors;
    ctx->set_uniform_texel_buffer_descriptors = vk_set_uniform_texel_buffer_descriptors;
+   ctx->set_combined_image_sampler_descriptors = vk_set_combined_image_sampler_descriptors;
    ctx->set_storage_image_descriptors = vk_set_storage_image_descriptors;
    ctx->bind_descriptor_set = vk_bind_descriptor_set;
 

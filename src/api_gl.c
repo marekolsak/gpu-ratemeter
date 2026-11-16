@@ -708,6 +708,61 @@ gl_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
    free(data);
 }
 
+static GLenum
+translate_filter(VkFilter filter)
+{
+   switch (filter) {
+   case VK_FILTER_NEAREST:
+      return GL_NEAREST;
+   case VK_FILTER_LINEAR:
+      return GL_LINEAR;
+   default:
+      error("invalid filter");
+   }
+}
+
+static GLenum
+translate_wrap_mode(VkSamplerAddressMode mode)
+{
+   switch (mode) {
+   case VK_SAMPLER_ADDRESS_MODE_REPEAT:
+      return GL_REPEAT;
+   case VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+      return GL_CLAMP_TO_EDGE;
+   default:
+      error("invalid wrap mode");
+   }
+}
+
+static api_sampler *
+gl_create_sampler(api_context *ctx, const api_sampler_desc *desc)
+{
+   api_sampler *sampler = calloc(1, sizeof(api_sampler));
+   sampler->desc = *desc;
+
+   GLenum mag_filter = translate_filter(desc->mag_filter);
+   GLenum min_filter = translate_filter(desc->min_filter);
+   GLenum wrap_u = translate_wrap_mode(desc->wrap_u);
+   GLenum wrap_v = translate_wrap_mode(desc->wrap_v);
+   GLenum wrap_w = translate_wrap_mode(desc->wrap_w);
+
+   glGenSamplers(1, &sampler->id);
+   glSamplerParameteri(sampler->id, GL_TEXTURE_MAG_FILTER, mag_filter);
+   glSamplerParameteri(sampler->id, GL_TEXTURE_MIN_FILTER, min_filter);
+   glSamplerParameteri(sampler->id, GL_TEXTURE_WRAP_S, wrap_u);
+   glSamplerParameteri(sampler->id, GL_TEXTURE_WRAP_T, wrap_v);
+   glSamplerParameteri(sampler->id, GL_TEXTURE_WRAP_R, wrap_w);
+
+   return sampler;
+}
+
+static void
+gl_destroy_sampler(struct api_context *ctx, api_sampler *sampler)
+{
+   glDeleteSamplers(1, &sampler->id);
+   free(sampler);
+}
+
 static api_framebuffer *
 gl_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_image **colorbufs,
                       api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
@@ -915,23 +970,21 @@ gl_set_uniform_texel_buffer_descriptors(api_context *ctx, api_descriptor_set *se
 }
 
 static void
-gl_set_combined_image_sampler_descriptors(api_context *ctx, api_descriptor_set *set,
-                                          unsigned binding_index, unsigned num_samplers,
-                                          api_image **images)
+gl_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue,
+                                          api_descriptor_set *set, unsigned binding_index,
+                                          unsigned num_desc, api_image **images,
+                                          api_sampler **samplers)
 {
-   assert(num_samplers <= set->layout->desc.combined_image_sampler[binding_index].array_size);
+   assert(num_desc <= set->layout->desc.combined_image_sampler[binding_index].array_size);
 
-   glDeleteTextures(num_samplers, set->tex_ids);
+   glDeleteTextures(num_desc, set->tex_ids);
 
-   for (unsigned i = 0; i < num_samplers; i++) {
+   for (unsigned i = 0; i < num_desc; i++) {
       glGenTextures(1, &set->tex_ids[i]);
       glTextureView(set->tex_ids[i], images[i]->gltarget, images[i]->id, images[i]->glinternalformat,
                     0, 1, 0, images[i]->type == VK_IMAGE_TYPE_3D ? 1 : images[i]->depth);
 
-      if (images[i]->samples == 1) {
-         glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-         glTextureParameteri(set->tex_ids[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-      }
+      set->sampler_ids[i] = samplers[i]->id;
    }
 
    gl_check_no_error();
@@ -975,6 +1028,8 @@ gl_bind_descriptor_set(api_context *ctx, api_descriptor_set *set)
       if (set->layout->desc.combined_image_sampler[i].array_size) {
          glBindTextures(set->layout->desc.combined_image_sampler[i].gl_binding,
                         set->layout->desc.combined_image_sampler[i].array_size, set->tex_ids);
+         glBindSamplers(set->layout->desc.combined_image_sampler[i].gl_binding,
+                        set->layout->desc.combined_image_sampler[i].array_size, set->sampler_ids);
       }
    }
 
@@ -1842,6 +1897,9 @@ gl_create_context(const program_options *options)
    ctx->upload_image_data = gl_upload_image_data;
    ctx->image_write_png = gl_image_write_png;
    ctx->barrier_images = gl_barrier_images;
+
+   ctx->create_sampler = gl_create_sampler;
+   ctx->destroy_sampler = gl_destroy_sampler;
 
    ctx->create_framebuffer = gl_create_framebuffer;
    ctx->destroy_framebuffer = gl_destroy_framebuffer;
