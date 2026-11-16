@@ -689,7 +689,7 @@ gl_upload_image_data(api_context *ctx, api_image *image, unsigned stride_in_byte
 
 static void
 gl_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
-                   const char *filename)
+                   const char *filename, bool write_alpha)
 {
    uint64_t size = (uint64_t)image->width * image->height * 4;
    GLenum format = format_is_integer(image->format) ? GL_RGBA_INTEGER : GL_RGBA;
@@ -704,7 +704,7 @@ gl_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
    }
 
    gl_check_no_error();
-   write_png_rgba8(filename, image, data);
+   write_png_rgba8(filename, image, data, write_alpha);
    free(data);
 }
 

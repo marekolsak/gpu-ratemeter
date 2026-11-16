@@ -133,7 +133,7 @@ d3d12_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf
 
 static void
 d3d12_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
-                      const char *filename)
+                      const char *filename, bool write_alpha)
 {
 }
 

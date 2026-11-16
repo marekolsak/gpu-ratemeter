@@ -192,6 +192,6 @@ test_sanity(api_context *ctx)
    ctx->end_render_pass(ctx);
    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
-   ctx->image_write_png(ctx, api_queue_gfx, fb->colorbufs[0], 0, "output.png");
+   ctx->image_write_png(ctx, api_queue_gfx, fb->colorbufs[0], 0, "output.png", false);
    run_image_viewer("output.png");
 }

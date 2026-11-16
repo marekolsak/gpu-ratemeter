@@ -1367,7 +1367,7 @@ run_test_pix(api_context *ctx, unsigned samples,
          ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
 
          if (raster && raster_dump_image && !raster_dumped_images && fbs[f].colorbuf_raster) {
-            ctx->image_write_png(ctx, api_queue_gfx, fbs[f].colorbuf_raster, 0, "raster.png");
+            ctx->image_write_png(ctx, api_queue_gfx, fbs[f].colorbuf_raster, 0, "raster.png", false);
             raster_dumped_images = true;
          }
 

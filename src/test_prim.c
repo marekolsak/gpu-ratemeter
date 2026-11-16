@@ -1702,7 +1702,7 @@ test_prim(api_context *ctx)
       create_pipeline(ctx, state, &test, num_varyings);
       init_buffers(ctx, state, &test);
       run_pipeline(ctx, state, 1, &test, num_varyings);
-      ctx->image_write_png(ctx, api_queue_gfx, colorbuf, 0, "output.png");
+      ctx->image_write_png(ctx, api_queue_gfx, colorbuf, 0, "output.png", false);
       run_image_viewer("output.png");
       return;
    }

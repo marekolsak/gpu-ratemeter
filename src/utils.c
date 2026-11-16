@@ -139,7 +139,7 @@ print_progress(unsigned num_items, atomic_uint *num_processed_items, unsigned pr
 }
 
 void
-write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels)
+write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels, bool write_alpha)
 {
    FILE *f = NULL;
    png_structp png_writer = NULL;
@@ -166,13 +166,14 @@ write_png_rgba8(const char *path, api_image *image_info, uint8_t *pixels)
    png_init_io(png_writer, f);
    png_set_IHDR(png_writer, png_info,
                 image_info->width, image_info->height,
-                8, PNG_COLOR_TYPE_RGBA,
+                8, write_alpha ? PNG_COLOR_TYPE_RGBA : PNG_COLOR_TYPE_RGB,
                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                 PNG_FILTER_TYPE_DEFAULT);
    png_write_info(png_writer, png_info);
    png_set_rows(png_writer, png_info, rows);
    png_set_write_user_transform_fn(png_writer, NULL);
-   png_write_png(png_writer, png_info, PNG_TRANSFORM_IDENTITY, NULL);
+   png_write_png(png_writer, png_info,
+                 write_alpha ? PNG_TRANSFORM_IDENTITY : PNG_TRANSFORM_STRIP_FILLER_AFTER, NULL);
 
    png_destroy_write_struct(&png_writer, &png_info);
 

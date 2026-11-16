@@ -562,7 +562,7 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
                   test_strings[test_index], image->type + 1, formats[format_index].name,
                   layout_strings[layout], image->width, image->height, fill_strings[fill_option], z);
 
-         ctx->image_write_png(ctx, api_queue_gfx, image, z, filename);
+         ctx->image_write_png(ctx, api_queue_gfx, image, z, filename, true);
       }
    }
 }

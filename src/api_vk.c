@@ -2266,7 +2266,7 @@ vk_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint
 
 static void
 vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
-                   const char *filename)
+                   const char *filename, bool write_alpha)
 {
    api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D,
                                         format_is_integer(image->format) ?
@@ -2310,7 +2310,7 @@ vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
                                               }));
    }
 
-   write_png_rgba8(filename, staging, map);
+   write_png_rgba8(filename, staging, map, write_alpha);
    vkUnmapMemory(ctx->device, staging->mem);
 }
 
