@@ -359,7 +359,7 @@ vk_copy_buffer(api_context *ctx, api_buffer *dst, api_buffer *src, uint64_t dst_
 }
 
 static void
-vk_copy_memory_indirect(struct api_context *ctx, unsigned num_copies, uint64_t indirect_address,
+vk_copy_memory_indirect(api_context *ctx, unsigned num_copies, uint64_t indirect_address,
                         unsigned stride, VkAddressCopyFlagsKHR dst_flags,
                         VkAddressCopyFlagsKHR src_flags)
 {
@@ -807,7 +807,7 @@ vk_create_sampler(api_context *ctx, const api_sampler_desc *desc)
 }
 
 static void
-vk_destroy_sampler(struct api_context *ctx, api_sampler *sampler)
+vk_destroy_sampler(api_context *ctx, api_sampler *sampler)
 {
    vkDestroySampler(ctx->device, sampler->sampler, NULL);
    free(sampler);
@@ -2048,7 +2048,7 @@ vk_end_render_pass(api_context *ctx)
 }
 
 static void
-vk_clear_attachments(struct api_context *ctx, api_clear_attachments_desc *desc)
+vk_clear_attachments(api_context *ctx, api_clear_attachments_desc *desc)
 {
    unsigned num_att = 0;
    VkClearAttachment att[MAX_COLOR_ATTACHMENTS + 1];

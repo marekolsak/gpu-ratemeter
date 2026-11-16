@@ -757,7 +757,7 @@ gl_create_sampler(api_context *ctx, const api_sampler_desc *desc)
 }
 
 static void
-gl_destroy_sampler(struct api_context *ctx, api_sampler *sampler)
+gl_destroy_sampler(api_context *ctx, api_sampler *sampler)
 {
    glDeleteSamplers(1, &sampler->id);
    free(sampler);
