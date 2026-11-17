@@ -769,9 +769,9 @@ enum {
    FILL_SOLID,
    FILL_GRADIENT,
    FILL_RANDOM,
-   FILL_RANDOM_FRAGMENTED2,
-   FILL_RANDOM_FRAGMENTED4,
-   FILL_RANDOM_FRAGMENTED8,
+   FILL_RANDOM_2UNIQUE_SAMPLES,
+   FILL_RANDOM_4UNIQUE_SAMPLES,
+   FILL_RANDOM_8UNIQUE_SAMPLES,
    FILL_SMOOTH_32X32_TRIANGLES,
    FILL_SMOOTH_16X16_TRIANGLES,
    FILL_SMOOTH_8X8_TRIANGLES,
@@ -788,9 +788,9 @@ static const char *fill_strings[] = {
    [FILL_SOLID] = "solid",
    [FILL_GRADIENT] = "gradient",
    [FILL_RANDOM] = "random",
-   [FILL_RANDOM_FRAGMENTED2] = "fragmented2",
-   [FILL_RANDOM_FRAGMENTED4] = "fragmented4",
-   [FILL_RANDOM_FRAGMENTED8] = "fragmented8",
+   [FILL_RANDOM_2UNIQUE_SAMPLES] = "2_unique_samples",
+   [FILL_RANDOM_4UNIQUE_SAMPLES] = "4_unique_samples",
+   [FILL_RANDOM_8UNIQUE_SAMPLES] = "8_unique_samples",
    [FILL_SMOOTH_32X32_TRIANGLES] = "smooth_32x32_tris",
    [FILL_SMOOTH_16X16_TRIANGLES] = "smooth_16x16_tris",
    [FILL_SMOOTH_8X8_TRIANGLES] = "smooth_8x8_tris",
@@ -1263,9 +1263,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         /* Skip tests with N unique samples for Z/S or if the number of samples
                          * is less.
                          */
-                        if (fill_option >= FILL_RANDOM_FRAGMENTED2 +
+                        if (fill_option >= FILL_RANDOM_2UNIQUE_SAMPLES +
                             (formats[format_index].zs_format ? 0 : LOG2_POT(samples)) &&
-                            fill_option <= FILL_RANDOM_FRAGMENTED8)
+                            fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
                            continue;
 
                         if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
@@ -1318,7 +1318,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
                                     break;
 
-                                 case FILL_RANDOM_FRAGMENTED2:
+                                 case FILL_RANDOM_2UNIQUE_SAMPLES:
                                     assert(samples >= 2);
                                     /* Make all samples equal. */
                                     set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
@@ -1326,7 +1326,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     set_random_pixels(ctx, &misc_state, sets[set].src, 0x1);
                                     break;
 
-                                 case FILL_RANDOM_FRAGMENTED4:
+                                 case FILL_RANDOM_4UNIQUE_SAMPLES:
                                     assert(samples >= 4);
                                     /* Make all samples equal. */
                                     set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
@@ -1335,7 +1335,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
                                     break;
 
-                                 case FILL_RANDOM_FRAGMENTED8:
+                                 case FILL_RANDOM_8UNIQUE_SAMPLES:
                                     assert(samples == 8);
                                     /* Make all samples equal. */
                                     set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
