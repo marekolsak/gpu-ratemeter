@@ -42,7 +42,6 @@ static const test_formats formats[] = {
    {"rgba8",               1, VK_FORMAT_R8G8B8A8_UNORM},
    {"rgba8_d32s8",         1, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
    {"rgba8_d32s8_4mrt",    4, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D32_SFLOAT_S8_UINT},
-   {"r32f",                1, VK_FORMAT_R32_SFLOAT},
    {"rgba16f",             1, VK_FORMAT_R16G16B16A16_SFLOAT},
    {"rgba16f_d32s8",       1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
    {"rgba16f_d32s8_4mrt",  4, VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT},
@@ -1276,6 +1275,24 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                             fill_option >= FILL_TEXTURED_32X32_TRIANGLES)
                            continue;
 
+                        if (test_index == TEST_BLIT && fill_option != FILL_RANDOM &&
+                            fill_option != FILL_SMOOTH_32X32_TRIANGLES &&
+                            fill_option != FILL_TEXTURED_32X32_TRIANGLES)
+                           continue;
+
+                        /* For color formats with 1 sample, keep only 32x32 triangle fill options.
+                         * Keep everything for MSAA and Z/S compression since those are affected
+                         * by geometry density.
+                         */
+                        if (src_samples == 1 && !formats[format_index].zs_format &&
+                            fill_option >= FILL_SMOOTH_16X16_TRIANGLES &&
+                            fill_option != FILL_TEXTURED_32X32_TRIANGLES)
+                           continue;
+
+                        if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
+                            (fill_option == FILL_BLACK || fill_option == FILL_SOLID))
+                           continue;
+
                         api_clear_values clear_values = {0};
 
                         if (formats[format_index].color_format) {
@@ -1374,14 +1391,13 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            bool yflip = region_option == REGION_FULL_YFLIP;
 
                            /* Skip invalid and unimportant tests. */
-                           if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW) &&
+                           if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW ||
+                                layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
+                                is_scaled_blit(test_index)) &&
                                region_option != REGION_FULL)
                               continue;
 
                            if (yflip && (is_clear || test_index == TEST_COPY))
-                              continue;
-
-                           if (is_scaled_blit(test_index) && region_option != REGION_FULL)
                               continue;
 
                            char name[128];
