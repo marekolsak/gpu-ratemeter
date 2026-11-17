@@ -31,7 +31,6 @@
  *   - buffer-to-image, image-to-buffer
  *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  * - add -pix option to print pixel throughput
- * - transfer queue
  * - cache miss throughput
  * - (maybe) no barrier
  *
@@ -162,7 +161,9 @@ static const option_desc cs_launch_options[] = {
 };
 
 static const option_desc imgbw_options[] = {
+   {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
    {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
+   {OPTION_BOOL, "-transfer", offsetof(program_options, transfer)},
 };
 
 static const option_desc latency_options[] = {

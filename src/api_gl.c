@@ -134,8 +134,8 @@ gl_barrier_buffers(api_context *ctx, unsigned num_buffers, api_buffer **buffers,
 }
 
 static void
-gl_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
-                  bool after_shader_writes)
+gl_barrier_images(api_context *ctx, unsigned num_images, api_image **images, bool after_shader_writes,
+                  api_queue_type src_queue, api_queue_type dst_queue)
 {
    /* GL only needs barriers after shader writes. */
    if (!after_shader_writes)

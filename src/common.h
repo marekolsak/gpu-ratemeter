@@ -558,7 +558,7 @@ typedef struct api_context {
    void (*image_write_png)(struct api_context *ctx, api_queue_type queue, api_image *image,
                            unsigned layer, const char *filename, bool write_alpha);
    void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,
-                          bool after_shader_writes);
+                          bool after_shader_writes, api_queue_type src_queue, api_queue_type dst_queue);
 
    /* Sampler functions. */
    api_sampler *(*create_sampler)(struct api_context *ctx, const api_sampler_desc *desc);
@@ -665,7 +665,8 @@ typedef struct api_context {
    VkQueue queue[api_num_queues];
    VkCommandPool cmd_pool[api_num_queues];
    unsigned num_queue_family_indices;
-   uint32_t queue_family_indices[api_num_queues];
+   unsigned queue_family_indices[api_num_queues];
+   unsigned queue_type_to_family[api_num_queues];
 
    /* Extension functions. */
    PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;

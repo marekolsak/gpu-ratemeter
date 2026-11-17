@@ -481,8 +481,8 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
 
    ctx->end_render_pass(ctx);
-   ctx->barrier_images(ctx, 1, &image, false);
-   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+   ctx->barrier_images(ctx, 1, &image, false, api_queue_gfx, api_queue_gfx);
+   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_fbs));
@@ -685,7 +685,19 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
    ctx->bind_gfx_pipeline(ctx, *pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = num_triangles * 3, .instance_count = 1});
    ctx->end_render_pass(ctx);
-   ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+
+   /* Execute an image barrier. */
+   /*api_image *images[9];
+   unsigned num_images = 0;
+
+   for (unsigned i = 0; i < fb->num_color_attachments; i++)
+      images[num_images++] = fb->colorbufs[i];
+
+   if (fb->zsbuf)
+      images[num_images++] = fb->zsbuf;
+
+   ctx->barrier_images(ctx, num_images, images, false, api_queue_gfx, ctx->options.queue);*/
+   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
 enum {
@@ -868,6 +880,21 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
    }
 }
 
+static void
+transfer_ownership(api_context *ctx, unsigned num_images, api_image **images,
+                   api_queue_type src_queue, api_queue_type dst_queue)
+{
+   /* Release queue ownership. */
+   ctx->begin_cmdbuf(ctx, src_queue);
+   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue);
+   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+
+   /* Acquire queue ownership. */
+   ctx->begin_cmdbuf(ctx, dst_queue);
+   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue);
+   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+}
+
 static const VkClearColorValue black_color_float = {.float32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_float = {.float32 = {0.2, 0.3, 0.4, 0.5}};
 static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
@@ -926,6 +953,21 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                    ((multiple_attachments || formats[format_index].zs_format) &&
                     img_type == VK_IMAGE_TYPE_3D))
                   continue;
+
+               /* Reject subtests that are illegal on other queues. */
+               if (ctx->options.queue != api_queue_gfx) {
+                  if (!is_clear && test_index != TEST_COPY)
+                     continue;
+
+                  /* The compute queue only allows color clears. The transfer queue doesn't allow any clears. */
+                  if (is_clear && (test_index != TEST_CLEAR_IMAGE || formats[format_index].zs_format ||
+                                   ctx->options.queue == api_queue_transfer))
+                     continue;
+
+                  /* Only single-sample Z/S copies are allowed. */
+                  if (test_index == TEST_COPY && formats[format_index].zs_format && samples != 1)
+                     continue;
+               }
 
                for (unsigned layer_count_option = 0; layer_count_option < NUM_LAYER_COUNTS;
                    layer_count_option++) {
@@ -1053,6 +1095,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         api_framebuffer *dst_fb;
                      } sets[MAX_FB_SETS] = {0};
 
+                     api_image *allocated_srcs[MAX_FB_SETS] = {0};
+                     unsigned num_allocated_srcs = 0;
                      unsigned num_image_sets = 0;
 
                      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
@@ -1168,6 +1212,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
                                  sets[num_image_sets].src;
+                              allocated_srcs[num_allocated_srcs++] = sets[num_image_sets].src;
 
                               sets[num_image_sets].src_fb =
                                  ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
@@ -1319,7 +1364,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  case FILL_SOLID: {
                                     ctx->begin_cmdbuf(ctx, api_queue_gfx);
                                     ctx->clear_image(ctx, sets[set].src, NULL, &clear_values);
-                                    ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+                                    ctx->barrier_images(ctx, 1, &sets[set].src, false, api_queue_gfx,
+                                                        api_queue_gfx);
+                                    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
                                     break;
                                  }
 
@@ -1387,13 +1434,19 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
                         }
 
+                        if (stage == RUN && !unsupported && test_index == TEST_COPY &&
+                            ctx->options.queue != api_queue_gfx) {
+                           transfer_ownership(ctx, num_allocated_srcs, allocated_srcs, api_queue_gfx,
+                                              ctx->options.queue);
+                        }
+
                         for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
                            bool yflip = region_option == REGION_FULL_YFLIP;
 
                            /* Skip invalid and unimportant tests. */
                            if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW ||
                                 layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
-                                is_scaled_blit(test_index)) &&
+                                is_scaled_blit(test_index) || ctx->options.queue == api_queue_transfer) &&
                                region_option != REGION_FULL)
                               continue;
 
@@ -1512,7 +1565,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                               if (stage == RUN) {
-                                 ctx->begin_cmdbuf(ctx, api_queue_gfx);
+                                 ctx->begin_cmdbuf(ctx, ctx->options.queue);
 
                                  if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                     ctx->begin_render_pass(ctx, &(api_render_pass_desc){
@@ -1527,7 +1580,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                           ctx->end_render_pass(ctx);
                                           ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                              sets[set].all, false);
+                                                              sets[set].all, false, ctx->options.queue,
+                                                              ctx->options.queue);
                                        }
 
                                        ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
@@ -1553,7 +1607,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                           draw_solid(ctx, &misc_state, sets[set].dst_fb, set, format_index);
                                        ctx->end_render_pass(ctx);
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false);
+                                                           sets[set].all, false, ctx->options.queue,
+                                                           ctx->options.queue);
                                        break;
 
                                     case TEST_CLEAR_ATTACHMENTS:
@@ -1570,7 +1625,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                         region_option == REGION_FULL ? NULL : &dst_box,
                                                         &clear_values);
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false);
+                                                           sets[set].all, false, ctx->options.queue,
+                                                           ctx->options.queue);
                                        break;
 
                                     case TEST_COPY:
@@ -1592,7 +1648,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                             test_index == TEST_BLIT_MAGNIFY_LINEAR,
                                                        });
                                        ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false);
+                                                           sets[set].all, false, ctx->options.queue,
+                                                           ctx->options.queue);
                                        break;
                                     }
 
@@ -1604,11 +1661,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  if (test_index == TEST_CLEAR_ATTACHMENTS) {
                                     ctx->end_render_pass(ctx);
                                     ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                        sets[set].all, false);
+                                                        sets[set].all, false, ctx->options.queue,
+                                                        ctx->options.queue);
                                  }
 
                                  ctx->write_next_query_value(ctx, timestamps);
-                                 ctx->end_cmdbuf_and_submit(ctx, 0, NULL, NULL);
+                                 ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
                               }
 
                               if (stage == RUN)
@@ -1633,6 +1691,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            if (stage == REPORT)
                               fprintf(ctx->output, "\n");
+                        }
+
+                        if (stage == RUN && !unsupported && test_index == TEST_COPY &&
+                            ctx->options.queue != api_queue_gfx) {
+                           transfer_ownership(ctx, num_allocated_srcs, allocated_srcs, ctx->options.queue,
+                                              api_queue_gfx);
                         }
                      }
 

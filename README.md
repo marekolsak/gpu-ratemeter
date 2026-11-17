@@ -115,6 +115,11 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 - `-compute`: execute on the compute queue
 - `-transfer`: execute on the transfer queue
 
+#### `imgbw` parameters
+
+- `-compute`: execute on the compute queue
+- `-transfer`: execute on the transfer queue
+
 #### `latency` parameters
 
 - `-maxsize=N` (**required**): The maximum buffer size to test. The value should be a power of two. Buffer sizes between 1K and this size are tested, with ~1.3-1.5x size increments. If needed to measure memory (cache miss) latency, it should also be > last level cache size.

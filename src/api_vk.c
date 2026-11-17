@@ -441,10 +441,17 @@ get_image_aspect(api_image *image)
 }
 
 static void
-barrier_images(api_context *ctx, unsigned num_images, api_image **images,
-               VkImageLayout *new_layouts)
+barrier_images(api_context *ctx, unsigned num_images, api_image **images, VkImageLayout *new_layouts,
+               api_queue_type src_queue, api_queue_type dst_queue)
 {
    VkImageMemoryBarrier2 *barriers = alloca(sizeof(barriers[0]) * num_images);
+   unsigned src_queue_family_index = VK_QUEUE_FAMILY_IGNORED;
+   unsigned dst_queue_family_index = VK_QUEUE_FAMILY_IGNORED;
+
+   if (src_queue != dst_queue) {
+      src_queue_family_index = ctx->queue_type_to_family[src_queue];
+      dst_queue_family_index = ctx->queue_type_to_family[dst_queue];
+   }
 
    for (unsigned i = 0; i < num_images; i++) {
       barriers[i] = (VkImageMemoryBarrier2){
@@ -457,8 +464,8 @@ barrier_images(api_context *ctx, unsigned num_images, api_image **images,
                           VK_ACCESS_2_MEMORY_WRITE_BIT,
          .oldLayout = images[i]->layout,
          .newLayout = new_layouts ? new_layouts[i] : images[i]->layout,
-         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .srcQueueFamilyIndex = src_queue_family_index,
+         .dstQueueFamilyIndex = dst_queue_family_index,
          .image = images[i]->image,
          .subresourceRange = {
             .aspectMask = get_image_aspect(images[i]),
@@ -483,10 +490,10 @@ barrier_images(api_context *ctx, unsigned num_images, api_image **images,
 }
 
 static void
-vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images,
-                  bool after_shader_writes)
+vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images, bool after_shader_writes,
+                  api_queue_type src_queue, api_queue_type dst_queue)
 {
-   barrier_images(ctx, num_images, images, NULL);
+   barrier_images(ctx, num_images, images, NULL, src_queue, dst_queue);
 }
 
 static void
@@ -512,7 +519,8 @@ vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num
       else
          assert(queue == api_num_queues);
 
-      barrier_images(ctx, num_transition_images, transition_images, transition_new_layouts);
+      barrier_images(ctx, num_transition_images, transition_images, transition_new_layouts,
+                     ctx->current_queue, ctx->current_queue);
 
       if (cmdbuf_not_started)
          ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
@@ -2150,6 +2158,9 @@ vk_driver_workaround(api_context *ctx, driver_wa wa)
 {
    VkPipelineStageFlagBits2 stage_bits = 0;
 
+   if (ctx->current_queue != api_queue_gfx)
+      return;
+
    switch (wa) {
    case WA_RDNA4_TIMESTAMP_BUG:
       if (ctx->options.rdna4_timestamp_wa) {
@@ -2744,14 +2755,16 @@ vk_create_context(const program_options *options)
    for (unsigned i = 0; i < api_num_queues; i++)
       default_queue_priorities[i] = 1;
 
-   unsigned queue_type_to_family[api_num_queues] = {0};
    unsigned queue_type_to_index[api_num_queues] = {0};
    unsigned num_queue_infos = 0;
    VkDeviceQueueCreateInfo *queue_infos = calloc(num_queue_families, sizeof(*queue_infos));
 
    for (unsigned family = 0; family < num_queue_families; family++) {
       for (unsigned type = 0; type < api_num_queues; type++) {
-         if (!ctx->has_queue[type] && queue_props[family].queueFlags & queue_require_flags[type] &&
+         /* Timestamp support in queues is required by most tests. */
+         if (!ctx->has_queue[type] &&
+             (type == api_queue_sparse || queue_props[family].timestampValidBits) &&
+             queue_props[family].queueFlags & queue_require_flags[type] &&
              !(queue_props[family].queueFlags & queue_disallow_flags[type])) {
 
             /* Find the family in the infos. */
@@ -2776,7 +2789,7 @@ vk_create_context(const program_options *options)
                continue;
 
             ctx->has_queue[type] = true;
-            queue_type_to_family[type] = family;
+            ctx->queue_type_to_family[type] = family;
             queue_type_to_index[type] = queue_infos[info_index].queueCount++;
 
             /* If the queue family is not in the list, add it. */
@@ -3064,7 +3077,7 @@ vk_create_context(const program_options *options)
 
       vkGetDeviceQueue2(ctx->device, &(VkDeviceQueueInfo2) {
                            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2,
-                           .queueFamilyIndex = queue_type_to_family[i],
+                           .queueFamilyIndex = ctx->queue_type_to_family[i],
                            .queueIndex = queue_type_to_index[i],
                         }, &ctx->queue[i]);
 
@@ -3072,7 +3085,7 @@ vk_create_context(const program_options *options)
          vk_check(vkCreateCommandPool(ctx->device,
                                       &(const VkCommandPoolCreateInfo) {
                                          .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-                                         .queueFamilyIndex = queue_type_to_family[i],
+                                         .queueFamilyIndex = ctx->queue_type_to_family[i],
                                          .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
                                       },
                                       NULL, &ctx->cmd_pool[i]));
