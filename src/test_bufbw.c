@@ -149,7 +149,6 @@ next_size(unsigned size)
 typedef struct {
    unsigned num_tests;
    api_query_pool *timestamps;
-   api_queue_type queue;
    api_buffer *devmem0;
    api_buffer *devmem1;
    api_buffer *hostmem;
@@ -175,7 +174,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
       fprintf(ctx->output, "\n");
    }
 
-   const bool has_indirect = ctx->queue_has_copy_memory_indirect[state->queue];
+   const bool has_indirect = ctx->queue_has_copy_memory_indirect[ctx->options.queue];
    const unsigned num_test_types = 2 + has_indirect;
    atomic_uint num_visited_tests = 0;
 
@@ -204,7 +203,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
             i++;
          }
 
-         ctx->upload_buffer_data(ctx, state->queue, state->indirect, 0, buf_size, indirect_data);
+         ctx->upload_buffer_data(ctx, ctx->options.queue, state->indirect, 0, buf_size, indirect_data);
          free(indirect_data);
       }
 
@@ -282,7 +281,7 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
                      const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                      if (stage == RUN) {
-                        ctx->begin_cmdbuf(ctx, state->queue);
+                        ctx->begin_cmdbuf(ctx, ctx->options.queue);
 
                         for (unsigned iter = 0; iter < num_warmup_runs + num_runs; iter++) {
                            if (iter == num_warmup_runs)
@@ -390,20 +389,6 @@ run(api_context *ctx, test_stage stage, bufbw_test_state *state)
 void
 test_bufbw(api_context *ctx)
 {
-   api_queue_type queue;
-
-   if (ctx->options.compute)
-      queue = api_queue_compute;
-   else if (ctx->options.transfer)
-      queue = api_queue_transfer;
-   else
-      queue = api_queue_gfx;
-
-   if (!ctx->has_queue[queue])
-      exit_test("%s queue support is required.", queue_to_string(queue));
-
-   printf("Using the %s queue.\n", queue_to_string(queue));
-
    bufbw_test_state state = {0};
 
    /* Create buffers. */
@@ -412,7 +397,6 @@ test_bufbw(api_context *ctx)
    state.devmem0 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
    state.devmem1 = ctx->create_buffer(ctx, buf_size, api_heap_device, 0);
    state.hostmem = ctx->create_buffer(ctx, buf_size, api_heap_host_uncached, 0);
-   state.queue = queue;
 
    _mesa_hash_table_init(&state.indirect_params_ht, indirect_params_hash, indirect_params_equal);
 
@@ -422,7 +406,8 @@ test_bufbw(api_context *ctx)
       return;
 
    /* Create timestamp queries. */
-   state.timestamps = ctx->create_query_pool(ctx, state.queue, state.num_tests * 2, api_query_timestamp);
+   state.timestamps = ctx->create_query_pool(ctx, ctx->options.queue,
+                                             state.num_tests * 2, api_query_timestamp);
 
    printf("Executing tests ...");
    fflush(stdout);

@@ -403,9 +403,18 @@ typedef enum {
    API_VK_GPL = 1 << 1,
 } api_flags;
 
+typedef enum {
+   api_queue_gfx,
+   api_queue_compute,
+   api_queue_transfer,
+   api_queue_sparse,
+   api_num_queues,
+} api_queue_type;
+
 typedef struct {
    char name_prefix[32]; /* "api.test" */
    const void *regex_subtest_filter;
+   api_queue_type queue;
 
    /* API and test options. */
    api_flags api_flags;
@@ -448,14 +457,6 @@ typedef struct {
 typedef enum {
    WA_RDNA4_TIMESTAMP_BUG,
 } driver_wa;
-
-typedef enum {
-   api_queue_gfx,
-   api_queue_compute,
-   api_queue_transfer,
-   api_queue_sparse,
-   api_num_queues,
-} api_queue_type;
 
 #define api_wait_gfx          (1 << api_queue_gfx)
 #define api_wait_compute      (1 << api_queue_compute)

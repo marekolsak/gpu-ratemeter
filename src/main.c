@@ -364,6 +364,20 @@ main(int argc, char **argv)
    for (unsigned i = 0; i < num_re_groups; i++)
       free(re_groups[i]);
 
+   /* Check queue support. */
+   if (ctx->options.compute)
+      ctx->options.queue = api_queue_compute;
+   else if (ctx->options.transfer)
+      ctx->options.queue = api_queue_transfer;
+   else
+      ctx->options.queue = api_queue_gfx;
+
+   if (!ctx->has_queue[ctx->options.queue])
+      exit_test("%s queue support is required.", queue_to_string(ctx->options.queue));
+
+   if (ctx->options.queue != api_queue_gfx)
+      printf("Using the %s queue.\n", queue_to_string(ctx->options.queue));
+
    puts("Initializing test...");
    test_desc->execute(ctx);
    return 0;
