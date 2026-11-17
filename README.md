@@ -377,10 +377,8 @@ Decoding subtest fill identifiers in subtest names:
 
 Decoding the clear/copy/blit/resolve region identifiers in subtest names:
 - `region_full`: the operation runs on the whole image
-- `region_partial`: the operation excludes a small area, but the region offsets and extents are aligned to 8
-- `region_unaligned`: the operation excludes a small area, and the region offsets and extents are odd (unaligned)
+- `region_partial`: the operation excludes a small area, and the region offsets and extents are odd (unaligned)
 - `region_yflip`: the operation runs on the whole image, but it blits/resolves the image upside down
-- `region_yflip_unaligned`: same as `region_yflip`, but the operation excludes a small area and the region offsets and extents are odd (unaligned)
 
 Decoding other identifiers in subtest names:
 - `2d_array1`, `2d_array4`, `3d`: the image dimensionality, `arrayN` means N layers

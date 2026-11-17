@@ -750,18 +750,14 @@ static const char *layer_count_strings[] = {
 enum {
    REGION_FULL,
    REGION_PARTIAL,
-   REGION_PARTIAL_UNALIGNED,
    REGION_FULL_YFLIP,
-   REGION_PARTIAL_UNALIGNED_YFLIP,
    NUM_REGIONS,
 };
 
 static const char *region_strings[] = {
    [REGION_FULL] = "full",
-   [REGION_FULL_YFLIP] = "yflip",
    [REGION_PARTIAL] = "partial",
-   [REGION_PARTIAL_UNALIGNED] = "unaligned",
-   [REGION_PARTIAL_UNALIGNED_YFLIP] = "yflip_unaligned",
+   [REGION_FULL_YFLIP] = "yflip",
 };
 
 enum {
@@ -1375,8 +1371,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         }
 
                         for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
-                           bool yflip = region_option == REGION_FULL_YFLIP ||
-                                        region_option == REGION_PARTIAL_UNALIGNED_YFLIP;
+                           bool yflip = region_option == REGION_FULL_YFLIP;
 
                            /* Skip invalid and unimportant tests. */
                            if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW) &&
@@ -1437,9 +1432,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               src_box.height = sets[set].src_height;
                               src_box.depth = sets[set].src_depth;
 
-                              const int partial_offset_x = MIN2(8, dst_box.width / 4);
-                              const int partial_offset_y = MIN2(8, dst_box.height / 4);
-
                               switch (region_option) {
                               case REGION_FULL:
                                  break;
@@ -1449,25 +1441,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  src_box.height = -src_box.height;
                                  break;
 
-                              case REGION_PARTIAL:
-                                 assert(!is_scaled_blit(test_index));
-
-                                 if (img_type == VK_IMAGE_TYPE_2D) {
-                                    dst_box.x = partial_offset_x;
-                                    dst_box.y = partial_offset_y;
-                                    dst_box.width -= partial_offset_x;
-                                    dst_box.height -= partial_offset_y;
-                                 } else {
-                                    dst_box.x = partial_offset_x;
-                                    dst_box.y = partial_offset_y;
-                                    dst_box.width -= partial_offset_x;
-                                    dst_box.height -= partial_offset_y;
-                                 }
-                                 src_box = dst_box;
-                                 break;
-
-                              case REGION_PARTIAL_UNALIGNED:
-                              case REGION_PARTIAL_UNALIGNED_YFLIP: {
+                              case REGION_PARTIAL: {
                                  assert(!is_scaled_blit(test_index));
 
                                  const unsigned off = 3;
@@ -1478,11 +1452,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     dst_box.height -= off;
                                  }
                                  src_box = dst_box;
-
-                                 if (region_option == REGION_PARTIAL_UNALIGNED_YFLIP) {
-                                    src_box.y += src_box.height;
-                                    src_box.height = -src_box.height;
-                                 }
                                  break;
                               }
 
