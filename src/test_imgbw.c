@@ -858,7 +858,7 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
                 unsigned format_index, unsigned samples, unsigned layer_count_option,
                 unsigned layout, unsigned fill_option, unsigned region_option)
 {
-   const unsigned name_indent = 86;
+   const unsigned name_indent = 90;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
