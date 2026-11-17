@@ -884,6 +884,9 @@ static void
 transfer_ownership(api_context *ctx, unsigned num_images, api_image **images,
                    api_queue_type src_queue, api_queue_type dst_queue)
 {
+   if (ctx->options.concurrent_queue_image_ownership_mask)
+      return;
+
    /* Release queue ownership. */
    ctx->begin_cmdbuf(ctx, src_queue);
    ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue);

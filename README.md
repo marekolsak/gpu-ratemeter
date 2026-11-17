@@ -107,6 +107,7 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 
 #### Vulkan parameters
 
+- `-concurrent=comma-separated-list`: a list of queues that will have concurrent ownership of all images (options: gfx, compute, transfer); used for testing the effect of concurrent-queue image ownership on image compression
 - `-device=N`: the device index of the device to use (default: 0), Vulkan only
 - `-no-validator`: disable the Vulkan validation layer (the layer is enabled by default)
 

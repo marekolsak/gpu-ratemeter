@@ -390,6 +390,9 @@ test_cs_launch(api_context *ctx)
    if (ctx->options.subgroup_time && ctx->options.report_time_per_invocation_count)
       error("Only one option can be present: -subgrouptime or -timeperinvocs=N");
 
+   if (ctx->options.concurrent)
+      error("-concurrent isn't allowed with cs_launch.");
+
    ctx->options.report_time = true;
 
    run(ctx, COUNT_TESTS, &state);

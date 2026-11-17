@@ -414,7 +414,10 @@ typedef enum {
 typedef struct {
    char name_prefix[32]; /* "api.test" */
    const void *regex_subtest_filter;
+
+   /* Derived options. */
    api_queue_type queue;
+   unsigned concurrent_queue_image_ownership_mask;
 
    /* API and test options. */
    api_flags api_flags;
@@ -451,6 +454,7 @@ typedef struct {
    const void *regex_format;
 
    /* STRING options. */
+   const char *concurrent;
    const char *output_file;
 } program_options;
 
@@ -667,6 +671,8 @@ typedef struct api_context {
    unsigned num_queue_family_indices;
    unsigned queue_family_indices[api_num_queues];
    unsigned queue_type_to_family[api_num_queues];
+   unsigned image_concurrent_family_indices[api_num_queues];
+   unsigned image_concurrent_family_count;
 
    /* Extension functions. */
    PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;

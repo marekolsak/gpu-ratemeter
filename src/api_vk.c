@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <shaderc/shaderc.h>
 
 #define VK_PRIVATE
@@ -564,6 +565,10 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
                              .tiling = tiling,
                              .usage = usage,
                              .initialLayout = layout,
+                             .sharingMode = ctx->image_concurrent_family_count > 1 ?
+                                             VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
+                             .queueFamilyIndexCount = ctx->image_concurrent_family_count,
+                             .pQueueFamilyIndices = ctx->image_concurrent_family_indices,
                           },
                           NULL, &image->image));
 
@@ -3322,6 +3327,71 @@ vk_create_context(const program_options *options)
       ctx->queue_has_copy_memory_indirect[api_queue_transfer] =
          ctx->has_queue[api_queue_transfer] &&
          KHR_copy_memory_indirect_props.supportedQueues & VK_QUEUE_TRANSFER_BIT;
+   }
+
+   /* Parse the concurrent option. */
+   if (ctx->options.concurrent) {
+      unsigned queue_mask = 0;
+      const char *pos = ctx->options.concurrent;
+
+      while (pos) {
+         char *next_comma = strchr(pos, ',');
+         unsigned word_len = next_comma ? next_comma - pos : strlen(pos);
+         api_queue_type queue;
+
+         if (word_len == 3 && !strncmp(pos, "gfx", word_len))
+            queue = api_queue_gfx;
+         else if (word_len == 7 && ctx->has_queue[api_queue_compute] &&
+                  !strncmp(pos, "compute", word_len))
+            queue = api_queue_compute;
+         else if (word_len == 8 && ctx->has_queue[api_queue_transfer] &&
+                  !strncmp(pos, "transfer", word_len))
+            queue = api_queue_transfer;
+         else {
+            error("invalid option in -concurrent: '%.*s', allowed comma-separated identifiers: "
+                  "gfx, compute, transfer (only if supported)", (int)word_len, pos);
+         }
+
+         queue_mask |= 1u << queue;
+
+         if (next_comma)
+            pos += word_len + 1;
+         else
+            break;
+      }
+
+      unsigned family_mask = 0;
+
+      /* Gather the mask of queue family indices. */
+      for (unsigned q = 0; q < api_num_queues; q++) {
+         assert(ctx->queue_type_to_family[q] < 32);
+
+         if ((1u << q) & queue_mask && !((1u << ctx->queue_type_to_family[q]) & family_mask))
+            family_mask |= 1u << ctx->queue_type_to_family[q];
+      }
+
+      /* Assemble the list of unique family indices. */
+      while (family_mask) {
+         unsigned i = ffs(family_mask) - 1;
+         family_mask &= ~(1u << i);
+
+         ctx->image_concurrent_family_indices[ctx->image_concurrent_family_count++] = i;
+      }
+
+      ctx->options.concurrent_queue_image_ownership_mask = queue_mask;
+
+      if (queue_mask) {
+         if (!(queue_mask & (1 << api_queue_gfx)))
+            error("when concurrent-queue image ownership is enabled, gfx must be present in the list");
+
+         if (ctx->options.compute &&
+             !(queue_mask & (1 << api_queue_compute)))
+            error("when concurrent-queue image ownership is enabled and compute is tested, compute must be present in the list");
+
+         if (ctx->options.transfer &&
+             !(queue_mask & (1 << api_queue_transfer)))
+            error("when concurrent-queue image ownership is enabled and transfer is tested, transfer must be present in the list");
+      }
    }
 
    /* Set up the GLSL compiler. */
