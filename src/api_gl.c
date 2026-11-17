@@ -1785,7 +1785,6 @@ gl_create_context(const program_options *options)
 
    ctx->has_blit_image_3d = false;
    ctx->has_blit_image_msaa = true;
-   ctx->has_blit_image_zs = true;
    ctx->has_buffer_device_address = false;
    ctx->has_clear_image_region = true;
    ctx->has_depth_msaa_resolve = true;
@@ -1856,8 +1855,10 @@ gl_create_context(const program_options *options)
       glGetInternalformativ(GL_TEXTURE_2D_MULTISAMPLE, internalformat, GL_SHADER_IMAGE_STORE, 1,
                             &ms_image_store_support);
 
-      if (fb_support)
+      if (fb_support) {
          ctx->fb_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT | supported_tex_samples_mask;
+         ctx->image_format_blit_support[i] = true;
+      }
 
       if (image_store_support) {
          ctx->storage_image_format_sample_count_support[i] |= VK_SAMPLE_COUNT_1_BIT;

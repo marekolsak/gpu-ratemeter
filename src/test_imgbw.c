@@ -1013,9 +1013,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         continue;
 
                      if (is_blit(test_index)) {
-                        if ((formats[format_index].zs_format &&
-                             format_has_stencil(formats[format_index].zs_format)) ||
-                            samples > 1)
+                        if (samples > 1)
                            continue;
                      } else if (test_index == TEST_RESOLVE) {
                         if (img_type != VK_IMAGE_TYPE_2D || samples == 1 ||
@@ -1041,8 +1039,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                          !ctx->has_blit_image_3d)
                         unsupported = true;
 
-                     if (is_blit(test_index) && formats[format_index].zs_format &&
-                         !ctx->has_blit_image_zs)
+                     if (is_blit(test_index) &&
+                         !ctx->image_format_blit_support[formats[format_index].color_format ?
+                                                            formats[format_index].color_format :
+                                                            formats[format_index].zs_format])
                         unsupported = true;
 
                      if (test_index == TEST_RESOLVE && formats[format_index].zs_format &&

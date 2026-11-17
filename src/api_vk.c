@@ -771,9 +771,6 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                          });
       }
    } else {
-      assert(!format_is_depth_or_stencil(desc->src->format));
-      assert(!format_is_depth_or_stencil(desc->dst->format));
-
       vkCmdBlitImage2(ctx->current_cmd_buffer, &(VkBlitImageInfo2){
                          .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
                          .srcImage = desc->src->image,
@@ -3171,7 +3168,6 @@ vk_create_context(const program_options *options)
 
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
-   ctx->has_blit_image_zs = false;
    ctx->has_buffer_device_address = Vulkan12.bufferDeviceAddress;
    ctx->has_clear_image_region = false;
    ctx->has_depth_msaa_resolve = KHR_maintenance10.maintenance10;
@@ -3306,6 +3302,10 @@ vk_create_context(const program_options *options)
          else if (r != VK_ERROR_FORMAT_NOT_SUPPORTED)
             vk_check(r);
       }
+
+      if (format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT &&
+          format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)
+         ctx->image_format_blit_support[i] = true;
    }
 
    if (KHR_copy_memory_indirect.indirectMemoryCopy) {

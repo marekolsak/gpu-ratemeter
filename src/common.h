@@ -483,7 +483,6 @@ typedef struct api_context {
    /* Feature properties. */
    bool has_blit_image_3d;
    bool has_blit_image_msaa;
-   bool has_blit_image_zs;
    bool has_buffer_device_address;
    bool has_clear_image_region;
    bool has_depth_msaa_resolve;
@@ -515,6 +514,7 @@ typedef struct api_context {
    VkSampleCountFlags linear_fb_format_sample_count_support[FORMAT_COUNT];
    VkSampleCountFlags linear3d_fb_format_sample_count_support[FORMAT_COUNT];
    VkSampleCountFlags storage_image_format_sample_count_support[FORMAT_COUNT];
+   bool image_format_blit_support[FORMAT_COUNT];
    bool queue_has_copy_memory_indirect[api_num_queues];
 
    /* Dynamic info. */
