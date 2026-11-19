@@ -24,7 +24,6 @@
 
 #define MAX_FB_SETS        ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
 #define MAX_RING_SIZE      (MAX_FB_SETS * MAX_SIZE / MIN_SIZE)
-#define MAX_DELETE_ITEMS   (128 * MAX_RING_SIZE)
 #define MAX_DESC_SETS      (4 * MAX_FB_SETS)
 
 #define DEBUG_DUMP_IMAGES  0
@@ -64,10 +63,8 @@ typedef struct {
 
    api_descriptor_set_layout *layout_draw_triangles;
    api_gfx_pipeline *pipeline_draw_solid[MAX_FB_SETS];
+   api_gfx_pipeline *pipeline_draw_gradient_random[MAX_FB_SETS][8][2]; /* [last samplemask bit][random] */
    api_gfx_pipeline *pipeline_draw_triangles[MAX_FB_SETS][2]; /* color passthrough / textured */
-
-   api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
-   unsigned num_delete_items;
 
    api_buffer *ubo;
    api_descriptor_set *desc_draw_triangles[MAX_DESC_SETS];
@@ -444,53 +441,60 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 
 static void
 generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
-                api_shader *fs, unsigned samplemask)
+                api_shader *fs, unsigned samplemask, unsigned set, bool random)
 {
    bool layered = image->depth > 1;
    api_shader *vs = get_passthrough_vs(ctx, state, layered);
-   api_gfx_pipeline *pipeline =
-      ctx->create_gfx_pipeline(ctx,
-                               &(api_gfx_pipeline_desc){
-                                  .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
-                                  .vs = vs,
-                                  .fs = fs,
-                                  .vrs_fragment_size = {1, 1},
-                                  .samplemask = samplemask,
-                                  .colormask = 0xf,
-                                  .depth_enabled = true,
-                                  .depth_write_enabled = true,
-                                  .depth_compare_op = VK_COMPARE_OP_ALWAYS,
-                                  /* The FS stencil output should overwrite stencil. */
-                                  .stencil_enabled = true,
-                                  .stencil_front.passOp = VK_STENCIL_OP_REPLACE,
-                                  .stencil_front.compareOp = VK_COMPARE_OP_ALWAYS,
-                                  .stencil_front.writeMask = 0xff,
-                                  .stencil_back.passOp = VK_STENCIL_OP_REPLACE,
-                                  .stencil_back.compareOp = VK_COMPARE_OP_ALWAYS,
-                                  .stencil_back.writeMask = 0xff,
-                                  .fb = fb,
-                               });
 
-   ctx->bind_gfx_pipeline(ctx, pipeline);
+   samplemask &= 0xff;
+
+   assert(samplemask);
+   api_gfx_pipeline **pipeline =
+      &state->pipeline_draw_gradient_random[set][last_bit(samplemask) - 1][random];
+
+   if (!*pipeline) {
+      *pipeline =
+         ctx->create_gfx_pipeline(ctx,
+                                  &(api_gfx_pipeline_desc){
+                                     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                     .vs = vs,
+                                     .fs = fs,
+                                     .vrs_fragment_size = {1, 1},
+                                     .samplemask = samplemask,
+                                     .colormask = 0xf,
+                                     .depth_enabled = true,
+                                     .depth_write_enabled = true,
+                                     .depth_compare_op = VK_COMPARE_OP_ALWAYS,
+                                     /* The FS stencil output should overwrite stencil. */
+                                     .stencil_enabled = true,
+                                     .stencil_front.passOp = VK_STENCIL_OP_REPLACE,
+                                     .stencil_front.compareOp = VK_COMPARE_OP_ALWAYS,
+                                     .stencil_front.writeMask = 0xff,
+                                     .stencil_back.passOp = VK_STENCIL_OP_REPLACE,
+                                     .stencil_back.compareOp = VK_COMPARE_OP_ALWAYS,
+                                     .stencil_back.writeMask = 0xff,
+                                     .fb = fb,
+                                  });
+   }
+
+   ctx->bind_gfx_pipeline(ctx, *pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
-
-   assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
-   state->delete_pipelines[state->num_delete_items] = pipeline;
-   state->num_delete_items++;
 }
 
 static void
-set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb)
+set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
+                    unsigned set)
 {
    generate_pixels(ctx, state, image, fb, get_gradient_fs(ctx, state, image->format),
-                   (1 << image->samples) - 1);
+                   (1 << image->samples) - 1, set, false);
 }
 
 static void
 set_random_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
-                  unsigned samplemask)
+                  unsigned samplemask, unsigned set)
 {
-   generate_pixels(ctx, state, image, fb, get_random_pixel_fs(ctx, state, image->format), samplemask);
+   generate_pixels(ctx, state, image, fb, get_random_pixel_fs(ctx, state, image->format), samplemask,
+                   set, true);
 }
 
 static void
@@ -1393,44 +1397,44 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                     case FILL_GRADIENT:
                                        set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                           sets[set].ring[r].src_fb);
+                                                           sets[set].ring[r].src_fb, set);
                                        break;
 
                                     case FILL_RANDOM:
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0);
+                                                         sets[set].ring[r].src_fb, ~0, set);
                                        break;
 
                                     case FILL_RANDOM_2UNIQUE_SAMPLES:
                                        assert(samples >= 2);
                                        /* Make all samples equal. */
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0);
+                                                         sets[set].ring[r].src_fb, ~0, set);
                                        /* Make sample 0 different. */
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, 0x1);
+                                                         sets[set].ring[r].src_fb, 0x1, set);
                                        break;
 
                                     case FILL_RANDOM_4UNIQUE_SAMPLES:
                                        assert(samples >= 4);
                                        /* Make all samples equal. */
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0);
+                                                         sets[set].ring[r].src_fb, ~0, set);
                                        /* Make samples 0..2 different. */
                                        for (unsigned i = 0; i <= 2; i++)
                                           set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, 1 << i);
+                                                            sets[set].ring[r].src_fb, 1 << i, set);
                                        break;
 
                                     case FILL_RANDOM_8UNIQUE_SAMPLES:
                                        assert(samples == 8);
                                        /* Make all samples equal. */
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0);
+                                                         sets[set].ring[r].src_fb, ~0, set);
                                        /* Make samples 0..6 different. */
                                        for (unsigned i = 0; i <= 6; i++)
                                           set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, 1 << i);
+                                                            sets[set].ring[r].src_fb, 1 << i, set);
                                        break;
 
                                     case FILL_SMOOTH_32X32_TRIANGLES:
@@ -1729,6 +1733,18 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               }
                            }
 
+                           /* Release pipeline_draw_gradient_random pipelines because they are tied to specific FB states. */
+                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_gradient_random); i++) {
+                              for (unsigned j = 0; j < 8; j++) {
+                                 for (unsigned k = 0; k < 2; k++) {
+                                    if (misc_state->pipeline_draw_gradient_random[i][j][k]) {
+                                       ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_gradient_random[i][j][k]);
+                                       misc_state->pipeline_draw_gradient_random[i][j][k] = NULL;
+                                    }
+                                 }
+                              }
+                           }
+
                            /* Release draw_triangles pipelines because they are tied to specific FB states. */
                            for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_triangles); i++) {
                               for (unsigned j = 0; j < 2; j++) {
@@ -1751,11 +1767,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               free(sets[set].ring);
                            }
-
-                           for (unsigned i = 0; i < misc_state->num_delete_items; i++)
-                              ctx->destroy_gfx_pipeline(ctx, misc_state->delete_pipelines[i]);
-
-                           misc_state->num_delete_items = 0;
 
                            /* Reset descriptors. */
                            memset(misc_state->reset_desc, true, sizeof(misc_state->reset_desc));

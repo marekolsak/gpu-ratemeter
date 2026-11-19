@@ -785,6 +785,17 @@ bitcount(unsigned n)
 }
 
 unsigned
+last_bit(unsigned u)
+{
+   unsigned r = 0;
+   while (u) {
+      r++;
+      u >>= 1;
+   }
+   return r;
+}
+
+unsigned
 logbase2(unsigned n)
 {
    unsigned pos = 0;

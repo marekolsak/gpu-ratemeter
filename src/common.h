@@ -783,6 +783,7 @@ bool format_is_valid(VkFormat format);
 unsigned get_next_power_of_two(unsigned x);
 uint16_t float_to_half(float val);
 unsigned bitcount(unsigned n);
+unsigned last_bit(unsigned u);
 unsigned logbase2(unsigned n);
 const char *heap_to_string(api_heap_type heap);
 const char *queue_to_string(api_queue_type queue);
