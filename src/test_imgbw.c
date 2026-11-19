@@ -67,7 +67,6 @@ typedef struct {
    api_gfx_pipeline *pipeline_draw_triangles[MAX_FB_SETS][2]; /* color passthrough / textured */
 
    api_gfx_pipeline *delete_pipelines[MAX_DELETE_ITEMS];
-   api_framebuffer *delete_fbs[MAX_DELETE_ITEMS];
    unsigned num_delete_items;
 
    api_buffer *ubo;
@@ -444,14 +443,10 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 }
 
 static void
-generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shader *fs,
-                unsigned samplemask)
+generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
+                api_shader *fs, unsigned samplemask)
 {
    bool layered = image->depth > 1;
-   bool is_zs = format_is_depth_or_stencil(image->format);
-   api_framebuffer *fb = ctx->create_framebuffer(ctx, is_zs ? 0 : 1, is_zs ? NULL : &image,
-                                                 is_zs ? image : NULL, image->width, image->height,
-                                                 image->samples, 0x1);
    api_shader *vs = get_passthrough_vs(ctx, state, layered);
    api_gfx_pipeline *pipeline =
       ctx->create_gfx_pipeline(ctx,
@@ -487,23 +482,22 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_shade
    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
-   assert(state->num_delete_items < ARRAY_SIZE(state->delete_fbs));
    state->delete_pipelines[state->num_delete_items] = pipeline;
-   state->delete_fbs[state->num_delete_items] = fb;
    state->num_delete_items++;
 }
 
 static void
-set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image)
+set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb)
 {
-   generate_pixels(ctx, state, image, get_gradient_fs(ctx, state, image->format),
+   generate_pixels(ctx, state, image, fb, get_gradient_fs(ctx, state, image->format),
                    (1 << image->samples) - 1);
 }
 
 static void
-set_random_pixels(api_context *ctx, misc_state *state, api_image *image, unsigned samplemask)
+set_random_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
+                  unsigned samplemask)
 {
-   generate_pixels(ctx, state, image, get_random_pixel_fs(ctx, state, image->format), samplemask);
+   generate_pixels(ctx, state, image, fb, get_random_pixel_fs(ctx, state, image->format), samplemask);
 }
 
 static void
@@ -1414,37 +1408,45 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        }
 
                                        case FILL_GRADIENT:
-                                          set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src);
+                                          set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                              sets[set].ring[r].src_fb);
                                           break;
 
                                        case FILL_RANDOM:
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, ~0);
                                           break;
 
                                        case FILL_RANDOM_2UNIQUE_SAMPLES:
                                           assert(samples >= 2);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, ~0);
                                           /* Make sample 0 different. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 0x1);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, 0x1);
                                           break;
 
                                        case FILL_RANDOM_4UNIQUE_SAMPLES:
                                           assert(samples >= 4);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, ~0);
                                           /* Make samples 0..2 different. */
                                           for (unsigned i = 0; i <= 2; i++)
-                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 1 << i);
+                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                               sets[set].ring[r].src_fb, 1 << i);
                                           break;
 
                                        case FILL_RANDOM_8UNIQUE_SAMPLES:
                                           assert(samples == 8);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, ~0);
                                           /* Make samples 0..6 different. */
                                           for (unsigned i = 0; i <= 6; i++)
-                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 1 << i);
+                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                               sets[set].ring[r].src_fb, 1 << i);
                                           break;
 
                                        case FILL_SMOOTH_32X32_TRIANGLES:
@@ -1754,10 +1756,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               free(sets[set].ring);
                            }
 
-                           for (unsigned i = 0; i < misc_state->num_delete_items; i++) {
+                           for (unsigned i = 0; i < misc_state->num_delete_items; i++)
                               ctx->destroy_gfx_pipeline(ctx, misc_state->delete_pipelines[i]);
-                              ctx->destroy_framebuffer(ctx, misc_state->delete_fbs[i]);
-                           }
+
                            misc_state->num_delete_items = 0;
 
                            /* Reset descriptors. */
