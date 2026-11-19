@@ -483,6 +483,7 @@ typedef struct api_context {
    bool allow_parallel_create_pipeline;
    bool buffer_barrier_has_gl_semantics;
    double timestamp_period_in_seconds;
+   unsigned max_memory_allocations;
 
    /* Feature properties. */
    bool has_blit_image_3d;

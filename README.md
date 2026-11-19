@@ -363,8 +363,8 @@ The table below shows how subtests are mapped to API functions.
 | Subtest name         | OpenGL                   | Vulkan                                                                                                                            |
 |----------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | `clear_framebuffer`  | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld)                                                             |
-| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then the whole image is overdrawn with a different solid color and stencil, while Z gets a sloped quad. |
 | `clear_attachment`   | scissored `glClear`      | `vkCmdClearAttachments`                                                                                                           |
+| `clear_fb_then_draw` | `glClear`                | `vkCmdBeginRenderPass` (vk, vkl) or `vkCmdBeginRendering` (vkd, vkld), then the whole image is overdrawn with a different solid color and stencil, while Z gets a sloped quad. |
 | `clear_image`        | `glClearTex{Sub}Image`   | `vkCmdClearColorImage` and `vkCmdClearDepthStencilImage`                                                                          |
 | `copy`               | `glCopyImageSubData`     | `vkCmdCopyImage2`                                                                                                                 |
 | `blit`               | `glBlitNamedFramebuffer` | `vkCmdBlitImage2` - for the scaled variants, the memory footpring of one image is 2x the size of the other image (√2x larger in each dimension). |
@@ -387,6 +387,7 @@ Decoding the clear/copy/blit/resolve region identifiers in subtest names:
 - `region_yflip`: the operation runs on the whole image, but it blits/resolves the image upside down
 
 Decoding other identifiers in subtest names:
+- `hit`, `miss`: the test exercises only cache hits or cache misses
 - `2d_array1`, `2d_array4`, `3d`: the image dimensionality, `arrayN` means N layers
 - `1s`-`8s`: the number of samples
 - `src_linear`: the source image uses linear tiling

@@ -1775,6 +1775,7 @@ gl_create_context(const program_options *options)
    ctx->has_queue[api_queue_gfx] = true;
    ctx->buffer_barrier_has_gl_semantics = true;
    ctx->timestamp_period_in_seconds = 0.000000001;
+   ctx->max_memory_allocations = UINT32_MAX;
 
    unsigned supported_subgroup_ops = 0;
    unsigned required_subgroup_ops = GL_SUBGROUP_FEATURE_BASIC_BIT_KHR |

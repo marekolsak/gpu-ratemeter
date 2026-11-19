@@ -3221,6 +3221,7 @@ vk_create_context(const program_options *options)
    ctx->allow_parallel_create_pipeline = true;
    ctx->timestamp_period_in_seconds = device_props.properties.limits.timestampPeriod * 0.000000001;
    ctx->non_coherent_atom_size = device_props.properties.limits.nonCoherentAtomSize;
+   ctx->max_memory_allocations = device_props.properties.limits.maxMemoryAllocationCount;
 
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;

@@ -22,8 +22,10 @@
 #define EXECUTION_SIZE     (256 * 1024 * 1024)
 #define MAX_RUNS           4096
 
-#define MAX_DELETE_ITEMS   128
 #define MAX_FB_SETS        ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
+#define MAX_RING_SIZE      (MAX_FB_SETS * MAX_SIZE / MIN_SIZE)
+#define MAX_DELETE_ITEMS   (128 * MAX_RING_SIZE)
+#define MAX_DESC_SETS      (4 * MAX_FB_SETS)
 
 #define DEBUG_DUMP_IMAGES  0
 
@@ -69,8 +71,8 @@ typedef struct {
    unsigned num_delete_items;
 
    api_buffer *ubo;
-   api_descriptor_set *desc_draw_triangles[1024];
-   unsigned draw_tris_upload_index;
+   api_descriptor_set *desc_draw_triangles[MAX_DESC_SETS];
+   bool reset_desc[MAX_DESC_SETS];
 
    api_image *random_texture;
    api_sampler *sampler;
@@ -569,7 +571,7 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
                                            });
    }
 
-   if (textured && !state->random_texture) {
+   if (!state->random_texture) {
       /* Create a random noise texture that will be used to generate a texture-like pattern
        * in the fragment shader.
        */
@@ -607,44 +609,48 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
                                            });
    }
 
-   /* The shader generates equilateral triangles at random positions with the triangle circumradius
-    * in X,Y axes as inputs. (X != Y when width != height for aspect correction).
-    *
-    * An equilateral triangle has:
-    *    area = (3 * sqrt(3) / 4) * radius²
-    * That implies:
-    *    sqrt(4 * area / (3 * sqrt(3))) = radius
-    */
-   const float radius_pixels = sqrtf(4.f * pixels_per_triangle / (3.f * sqrtf(3.f)));
+   const unsigned desc_index = triangle_size_index * MAX_FB_SETS + fb_set;
+   api_descriptor_set **set = &state->desc_draw_triangles[desc_index];
 
-   const uint32_t vs_uniforms[4] = {
-      fui(2.f * radius_pixels / fb->width),
-      fui(2.f * radius_pixels / fb->height),
-      fb->layers,
-   };
+   if (!*set || state->reset_desc[desc_index]) {
+      /* The shader generates equilateral triangles at random positions with the triangle circumradius
+       * in X,Y axes as inputs. (X != Y when width != height for aspect correction).
+       *
+       * An equilateral triangle has:
+       *    area = (3 * sqrt(3) / 4) * radius²
+       * That implies:
+       *    sqrt(4 * area / (3 * sqrt(3))) = radius
+       */
+      const float radius_pixels = sqrtf(4.f * pixels_per_triangle / (3.f * sqrtf(3.f)));
 
-   if (!state->ubo)
-      state->ubo = ctx->create_buffer(ctx, 64 * 1024, api_heap_device, 0);
+      const uint32_t vs_uniforms[4] = {
+         fui(2.f * radius_pixels / fb->width),
+         fui(2.f * radius_pixels / fb->height),
+         fb->layers,
+      };
 
-   /* Upload the UBO data. */
-   unsigned ubo_offset = state->draw_tris_upload_index *
-                         MAX2(sizeof(vs_uniforms), ctx->uniform_buffer_alignment);
-   assert(ubo_offset + sizeof(vs_uniforms) <= state->ubo->size);
-   assert(state->draw_tris_upload_index < ARRAY_SIZE(state->desc_draw_triangles));
+      const unsigned ubo_upload_size = MAX2(sizeof(vs_uniforms), ctx->uniform_buffer_alignment);
 
-   /* Prepare the descriptor set. */
-   api_descriptor_set **set = &state->desc_draw_triangles[state->draw_tris_upload_index];
+      if (!state->ubo)
+         state->ubo = ctx->create_buffer(ctx, MAX_DESC_SETS * ubo_upload_size, api_heap_device, 0);
 
-   if (!*set)
-      *set = ctx->create_descriptor_set(ctx, state->layout_draw_triangles);
+      /* Upload the UBO data. */
+      unsigned ubo_offset = desc_index * ubo_upload_size;
+      assert(ubo_offset + sizeof(vs_uniforms) <= state->ubo->size);
+      assert(desc_index < ARRAY_SIZE(state->desc_draw_triangles));
 
-   ctx->set_uniform_buffer_descriptor(ctx, *set, 0, state->ubo, ubo_offset, sizeof(vs_uniforms));
-   if (textured) {
+      ctx->upload_buffer_data(ctx, api_queue_gfx, state->ubo, ubo_offset, sizeof(vs_uniforms),
+                              vs_uniforms);
+
+      /* Prepare the descriptor set. */
+      if (!*set)
+         *set = ctx->create_descriptor_set(ctx, state->layout_draw_triangles);
+
+      ctx->set_uniform_buffer_descriptor(ctx, *set, 0, state->ubo, ubo_offset, sizeof(vs_uniforms));
       ctx->set_combined_image_sampler_descriptors(ctx, api_queue_gfx, *set, 0, 1,
                                                   &state->random_texture, &state->sampler);
+      state->reset_desc[desc_index] = false;
    }
-
-   state->draw_tris_upload_index++;
 
    /* Create the pipeline. */
    if (!*pipeline) {
@@ -675,8 +681,6 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
    const unsigned num_triangles = ceil(overdraw_amount * fb_area / pixels_per_triangle);
 
    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-   ctx->upload_buffer_data(ctx, api_queue_gfx, state->ubo, ubo_offset, sizeof(vs_uniforms),
-                           vs_uniforms);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc) {
                              .fb = fb,
                              .clear = true,
@@ -843,20 +847,20 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
 static void
 get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_index,
                  VkImageType img_type, unsigned format_index, unsigned samples,
-                 unsigned layer_count_option, unsigned layout, unsigned fill_option,
+                 unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                  unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%ud%s.%s.%us.fill_%s%s.region_%s",
+   snprintf(out, max_len, "%s.%ud%s.%s.%us.%s.fill_%s%s.region_%s",
             test_strings[test_index], img_type + 1,
             img_type == VK_IMAGE_TYPE_2D ? layer_count_strings[layer_count_option] : "",
-            formats[format_index].name, samples, fill_strings[fill_option], layout_strings[layout],
-            region_strings[region_option]);
+            formats[format_index].name, samples, cache_miss ? "miss" : "hit",
+            fill_strings[fill_option], layout_strings[layout], region_strings[region_option]);
 }
 
 static void
 print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType img_type,
                 unsigned format_index, unsigned samples, unsigned layer_count_option,
-                unsigned layout, unsigned fill_option, unsigned region_option)
+                bool cache_miss, unsigned layout, unsigned fill_option, unsigned region_option)
 {
    const unsigned name_indent = 90;
 
@@ -874,7 +878,7 @@ print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType 
       char subtest[128];
 
       get_subtest_name(ctx, subtest, sizeof(subtest), test_index, img_type, format_index, samples,
-                       layer_count_option, layout, fill_option, region_option);
+                       layer_count_option, cache_miss, layout, fill_option, region_option);
       fprintf(ctx->output, "%s.%-*s",
               ctx->options.name_prefix, (int)(name_indent - strlen(ctx->options.name_prefix) - 1), subtest);
    }
@@ -908,9 +912,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
     api_query_pool *timestamps)
 {
    if (stage == REPORT)
-      print_table_row(ctx, true, 0, 0, 0, 0, 0, 0, 0, 0);
+      print_table_row(ctx, true, 0, 0, 0, 0, 0, false, 0, 0, 0);
 
-   misc_state misc_state = {0};
+   misc_state *misc_state = calloc(1, sizeof(misc_state[0]));
    atomic_uint num_visited_tests = 0;
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
@@ -972,7 +976,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                      continue;
                }
 
-               for (unsigned cache_miss = 0; cache_miss < 1; cache_miss++) {
+               for (unsigned cache_miss = 0; cache_miss < 2; cache_miss++) {
                   for (unsigned layer_count_option = 0; layer_count_option < NUM_LAYER_COUNTS;
                       layer_count_option++) {
                      if (layer_count_option != LAYER_COUNT_1 && img_type != VK_IMAGE_TYPE_2D)
@@ -991,7 +995,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               char name[128];
                               get_subtest_name(ctx, name, sizeof(name),
                                                test_index, img_type, format_index, samples,
-                                               layer_count_option, layout, fill_option, region_option);
+                                               layer_count_option, cache_miss, layout, fill_option,
+                                               region_option);
 
                               if (!ctx->options.regex_subtest_filter ||
                                   regex_matches(ctx->options.regex_subtest_filter, name)) {
@@ -1104,7 +1109,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            ring_element_struct *ring;
                         } sets[MAX_FB_SETS] = {0};
 
-                        api_image *allocated_srcs[MAX_FB_SETS] = {0};
+                        api_image **allocated_srcs = calloc(MAX_RING_SIZE, sizeof(allocated_srcs[0]));
                         unsigned num_allocated_srcs = 0;
                         unsigned num_image_sets = 0;
 
@@ -1177,9 +1182,19 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            sets[num_image_sets].exceeds_limits = false;
 
+                           /* Don't allow the tested size to use >= 25% of max_memory_allocations because
+                            * the ring can be very large.
+                            *
+                            * 5 is the maximum number of images per set.
+                            */
+                           if (cache_miss) {
+                              sets[num_image_sets].exceeds_limits |=
+                                 (MAX_SIZE / size) * 5 >= ctx->max_memory_allocations / 4;
+                           }
+
                            /* Check against limits. */
                            if (img_type == VK_IMAGE_TYPE_2D) {
-                              sets[num_image_sets].exceeds_limits =
+                              sets[num_image_sets].exceeds_limits |=
                                  sets[num_image_sets].dst_width > ctx->max_image_dim_2d ||
                                  sets[num_image_sets].dst_height > ctx->max_image_dim_2d ||
                                  sets[num_image_sets].dst_depth > ctx->max_image_layers ||
@@ -1187,7 +1202,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  sets[num_image_sets].src_height > ctx->max_image_dim_2d ||
                                  sets[num_image_sets].src_depth > ctx->max_image_layers;
                            } else if (img_type == VK_IMAGE_TYPE_3D) {
-                              sets[num_image_sets].exceeds_limits =
+                              sets[num_image_sets].exceeds_limits |=
                                  sets[num_image_sets].dst_width > ctx->max_image_dim_3d ||
                                  sets[num_image_sets].dst_height > ctx->max_image_dim_3d ||
                                  sets[num_image_sets].dst_depth > ctx->max_image_dim_3d ||
@@ -1199,7 +1214,18 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
-                              sets[num_image_sets].ring_size = 1; // TODO
+                              if (cache_miss) {
+                                 /* Cache misses are implemented by cycling through a ring of images
+                                  * throughout testing instead of running the test on a single image
+                                  * to ensure that no image can stay in caches between tests assuming
+                                  * the cache isn't enormous. HW fast clear and compression might be
+                                  * able to defeat this in some cases.
+                                  */
+                                 sets[num_image_sets].ring_size = MAX_SIZE / size;
+                                 assert(sets[num_image_sets].ring_size);
+                              } else {
+                                 sets[num_image_sets].ring_size = 1;
+                              }
 
                               sets[num_image_sets].ring = calloc(sets[num_image_sets].ring_size,
                                                                  sizeof(ring_element_struct));
@@ -1300,7 +1326,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               char name[128];
                               get_subtest_name(ctx, name, sizeof(name),
                                                test_index, img_type, format_index, samples,
-                                               layer_count_option, layout, fill_option, region_option);
+                                               layer_count_option, cache_miss, layout, fill_option, region_option);
 
                               if (!ctx->options.regex_subtest_filter ||
                                   regex_matches(ctx->options.regex_subtest_filter, name)) {
@@ -1388,54 +1414,50 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        }
 
                                        case FILL_GRADIENT:
-                                          set_gradient_pixels(ctx, &misc_state, sets[set].ring[r].src);
+                                          set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src);
                                           break;
 
                                        case FILL_RANDOM:
-                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
                                           break;
 
                                        case FILL_RANDOM_2UNIQUE_SAMPLES:
                                           assert(samples >= 2);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
                                           /* Make sample 0 different. */
-                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 0x1);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 0x1);
                                           break;
 
                                        case FILL_RANDOM_4UNIQUE_SAMPLES:
                                           assert(samples >= 4);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
                                           /* Make samples 0..2 different. */
                                           for (unsigned i = 0; i <= 2; i++)
-                                             set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 1 << i);
+                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 1 << i);
                                           break;
 
                                        case FILL_RANDOM_8UNIQUE_SAMPLES:
                                           assert(samples == 8);
                                           /* Make all samples equal. */
-                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src, ~0);
                                           /* Make samples 0..6 different. */
                                           for (unsigned i = 0; i <= 6; i++)
-                                             set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 1 << i);
+                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src, 1 << i);
                                           break;
 
                                        case FILL_SMOOTH_32X32_TRIANGLES:
                                        case FILL_SMOOTH_16X16_TRIANGLES:
                                        case FILL_SMOOTH_8X8_TRIANGLES:
                                        case FILL_SMOOTH_4X4_TRIANGLES:
-                                          draw_triangles(ctx, &misc_state, false,
-                                                         fill_option - FILL_SMOOTH_32X32_TRIANGLES,
-                                                         sets[set].ring[r].src_fb, set, format_index);
-                                          break;
-
                                        case FILL_TEXTURED_32X32_TRIANGLES:
                                        case FILL_TEXTURED_16X16_TRIANGLES:
                                        case FILL_TEXTURED_8X8_TRIANGLES:
                                        case FILL_TEXTURED_4X4_TRIANGLES:
-                                          draw_triangles(ctx, &misc_state, true,
-                                                         fill_option - FILL_TEXTURED_32X32_TRIANGLES,
+                                          draw_triangles(ctx, misc_state,
+                                                         fill_option >= FILL_TEXTURED_32X32_TRIANGLES,
+                                                         (fill_option - FILL_SMOOTH_32X32_TRIANGLES) % 4,
                                                          sets[set].ring[r].src_fb, set, format_index);
                                           break;
 
@@ -1473,7 +1495,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               char name[128];
                               get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
-                                               samples, layer_count_option, layout, fill_option,
+                                               samples, layer_count_option, cache_miss, layout, fill_option,
                                                region_option);
 
                               if (ctx->options.regex_subtest_filter &&
@@ -1482,7 +1504,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               if (stage == REPORT) {
                                  print_table_row(ctx, false, test_index, img_type, format_index, samples,
-                                                 layer_count_option, layout, fill_option, region_option);
+                                                 layer_count_option, cache_miss, layout, fill_option, region_option);
                               }
 
                               bool report_na = unsupported;
@@ -1583,7 +1605,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                                  if (stage == RUN) {
-                                    const unsigned ring_elem = 0;
+                                    unsigned ring_elem = 0;
 
                                     ctx->begin_cmdbuf(ctx, ctx->options.queue);
 
@@ -1613,7 +1635,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                                        .clear_values = clear_values,
                                                                     });
                                           } else if (test_index == TEST_CLEAR_FB_THEN_DRAW) {
-                                             draw_solid(ctx, &misc_state, sets[set].ring[ring_elem].dst_fb, set, format_index);
+                                             draw_solid(ctx, misc_state, sets[set].ring[ring_elem].dst_fb, set, format_index);
                                           }
 
                                           ctx->end_render_pass(ctx);
@@ -1659,6 +1681,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        default:
                                           error("invalid test type");
                                        }
+
+                                       ring_elem = (ring_elem + 1) % sets[set].ring_size;
                                     }
 
                                     ctx->write_next_query_value(ctx, timestamps);
@@ -1700,24 +1724,22 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            ctx->wait_for_idle(ctx);
 
                            /* Release draw_solid pipelines because they are tied to specific FB states. */
-                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state.pipeline_draw_solid); i++) {
-                              if (misc_state.pipeline_draw_solid[i]) {
-                                 ctx->destroy_gfx_pipeline(ctx, misc_state.pipeline_draw_solid[i]);
-                                 misc_state.pipeline_draw_solid[i] = NULL;
+                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_solid); i++) {
+                              if (misc_state->pipeline_draw_solid[i]) {
+                                 ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_solid[i]);
+                                 misc_state->pipeline_draw_solid[i] = NULL;
                               }
                            }
 
                            /* Release draw_triangles pipelines because they are tied to specific FB states. */
-                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state.pipeline_draw_triangles); i++) {
+                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_triangles); i++) {
                               for (unsigned j = 0; j < 2; j++) {
-                                 if (misc_state.pipeline_draw_triangles[i][j]) {
-                                    ctx->destroy_gfx_pipeline(ctx, misc_state.pipeline_draw_triangles[i][j]);
-                                    misc_state.pipeline_draw_triangles[i][j] = NULL;
+                                 if (misc_state->pipeline_draw_triangles[i][j]) {
+                                    ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_triangles[i][j]);
+                                    misc_state->pipeline_draw_triangles[i][j] = NULL;
                                  }
                               }
                            }
-
-                           misc_state.draw_tris_upload_index = 0;
 
                            for (unsigned set = 0; set < num_image_sets; set++) {
                               for (unsigned r = 0; r < sets[set].ring_size; r++) {
@@ -1732,12 +1754,17 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               free(sets[set].ring);
                            }
 
-                           for (unsigned i = 0; i < misc_state.num_delete_items; i++) {
-                              ctx->destroy_gfx_pipeline(ctx, misc_state.delete_pipelines[i]);
-                              ctx->destroy_framebuffer(ctx, misc_state.delete_fbs[i]);
+                           for (unsigned i = 0; i < misc_state->num_delete_items; i++) {
+                              ctx->destroy_gfx_pipeline(ctx, misc_state->delete_pipelines[i]);
+                              ctx->destroy_framebuffer(ctx, misc_state->delete_fbs[i]);
                            }
-                           misc_state.num_delete_items = 0;
+                           misc_state->num_delete_items = 0;
+
+                           /* Reset descriptors. */
+                           memset(misc_state->reset_desc, true, sizeof(misc_state->reset_desc));
                         }
+
+                        free(allocated_srcs);
                      }
                   }
                }
@@ -1745,6 +1772,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
          }
       }
    }
+
+   free(misc_state);
 }
 
 void
