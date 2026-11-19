@@ -158,6 +158,13 @@ vk_find_heap(api_context *ctx, unsigned supported_heap_mask, api_heap_type heap)
    return index;
 }
 
+static bool
+staging_buf_last_use_submitted(api_context *ctx)
+{
+   return ctx->staging.last_use_queue_type != ctx->current_queue ||
+          ctx->staging.last_use_timeline_point != ctx->timeline_point[ctx->current_queue];
+}
+
 static void
 vk_wait_for_idle(api_context *ctx)
 {
@@ -172,6 +179,12 @@ vk_wait_for_idle(api_context *ctx)
                                    .pSemaphores = &ctx->semaphore[i],
                                    .pValues = &ctx->timeline_point[i],
                                 }, UINT64_MAX));
+   }
+
+
+   if (staging_buf_last_use_submitted(ctx)) {
+      /* The next suballocation will start from 0. */
+      ctx->staging.segment_index = ctx->staging.num_segments - 1;
    }
 }
 
@@ -2302,14 +2315,6 @@ vk_get_query_results(api_context *ctx, api_query_pool *pool)
 
 #define MAX_STAGING_BO_SIZE (2 * 1024 * 1024)
 
-static void
-assert_staging_buf_last_use_is_submittted(api_context *ctx)
-{
-   assert(!(ctx->staging.last_use_queue_type == ctx->current_queue &&
-            ctx->staging.last_use_timeline_point == ctx->timeline_point[ctx->current_queue]) &&
-          "the staging buffer can't be destroyed while it's referenced by an unflushed command buffer");
-}
-
 static uint64_t
 need_staging_buf(api_context *ctx, uint64_t size)
 {
@@ -2318,20 +2323,20 @@ need_staging_buf(api_context *ctx, uint64_t size)
 
    /* Resize the staging buffer if we need a larger one. */
    if (ctx->staging.buf && ctx->staging.segment_size < segment_size) {
-      assert_staging_buf_last_use_is_submittted(ctx);
+      assert(staging_buf_last_use_submitted(ctx));
       ctx->wait_for_idle(ctx);
 
       vkUnmapMemory(ctx->device, *ctx->staging.buf->mem);
       ctx->destroy_buffer(ctx, ctx->staging.buf);
 
       ctx->staging.buf = NULL;
-      ctx->staging.segment_index = 0;
    }
 
    if (!ctx->staging.buf) {
       ctx->staging.buf = vk_create_buffer(ctx, full_size, api_heap_host_cached, false);
       ctx->staging.segment_size = segment_size;
       ctx->staging.num_segments = full_size / segment_size;
+      ctx->staging.segment_index = 0;
 
       vk_check(vkMapMemory(ctx->device, *ctx->staging.buf->mem, 0, VK_WHOLE_SIZE, 0,
                            (void**)&ctx->staging.map));
@@ -2340,8 +2345,9 @@ need_staging_buf(api_context *ctx, uint64_t size)
       ctx->staging.segment_index = (ctx->staging.segment_index + 1) % ctx->staging.num_segments;
 
       if (!ctx->staging.segment_index) {
-         assert_staging_buf_last_use_is_submittted(ctx);
+         assert(staging_buf_last_use_submitted(ctx));
          ctx->wait_for_idle(ctx);
+         ctx->staging.segment_index = 0;
       }
    }
 
