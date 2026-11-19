@@ -499,7 +499,7 @@ vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images, boo
 
 static void
 vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num_images,
-                            api_image **images, VkImageLayout *new_layouts, bool cmdbuf_not_started)
+                            api_image **images, VkImageLayout *new_layouts)
 {
    api_image **transition_images = alloca(num_images * sizeof(transition_images[0]));
    VkImageLayout *transition_new_layouts = alloca(num_images * sizeof(VkImageLayout));
@@ -515,15 +515,15 @@ vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num
    }
 
    if (num_transition_images) {
-      if (cmdbuf_not_started)
+      const bool inside_cmdbuf = ctx->current_cmd_buffer != NULL;
+
+      if (!inside_cmdbuf)
          ctx->begin_cmdbuf(ctx, queue);
-      else
-         assert(queue == api_num_queues);
 
       barrier_images(ctx, num_transition_images, transition_images, transition_new_layouts,
                      ctx->current_queue, ctx->current_queue);
 
-      if (cmdbuf_not_started)
+      if (!inside_cmdbuf)
          ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    }
 }
@@ -666,7 +666,7 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
    assert(!box);
 
    vk_transition_image_layouts(ctx, api_num_queues, 1, &image,
-                               (VkImageLayout[1]){VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
+                               (VkImageLayout[1]){VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL});
 
    if (format_is_depth_or_stencil(image->format)) {
       vkCmdClearDepthStencilImage(ctx->current_cmd_buffer, image->image,
@@ -720,7 +720,7 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
 
    vk_transition_image_layouts(ctx, api_num_queues, 2, (api_image*[2]){desc->src, desc->dst},
                                (VkImageLayout[2]){VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}, false);
+                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL});
 
    if (desc->is_copy || is_resolve) {
       assert(desc->dst_box.width == desc->src_box.width);
@@ -1266,7 +1266,7 @@ vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue
    for (unsigned i = 0; i < num_desc; i++)
       need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
 
-   vk_transition_image_layouts(ctx, queue, num_desc, images, need_layouts, true);
+   vk_transition_image_layouts(ctx, queue, num_desc, images, need_layouts);
 
    for (unsigned i = 0; i < num_desc; i++) {
       /* TODO: 3D samplers need a 3D image view, not the render-compatible view */
@@ -1303,7 +1303,7 @@ vk_set_storage_image_descriptors(api_context *ctx, api_queue_type queue, api_des
    for (unsigned i = 0; i < num_images; i++)
       need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
 
-   vk_transition_image_layouts(ctx, queue, num_images, images, need_layouts, true);
+   vk_transition_image_layouts(ctx, queue, num_images, images, need_layouts);
 
    for (unsigned i = 0; i < num_images; i++) {
       image_infos[i].sampler = NULL;
@@ -1953,7 +1953,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 
    if (num_transition_images) {
       vk_transition_image_layouts(ctx, api_num_queues, num_transition_images, transition_images,
-                                  transition_layouts, false);
+                                  transition_layouts);
    }
 
    /* Begin dynamic rendering or a render pass. */
