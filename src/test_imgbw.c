@@ -471,13 +471,8 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_frame
                                   .fb = fb,
                                });
 
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb});
-
    ctx->bind_gfx_pipeline(ctx, pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = layered ? image->depth : 1});
-
-   ctx->end_render_pass(ctx);
-   ctx->barrier_images(ctx, 1, &image, false, api_queue_gfx, api_queue_gfx);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
    state->delete_pipelines[state->num_delete_items] = pipeline;
@@ -634,7 +629,7 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
    const double fb_area = (double)fb->width * fb->height * fb->layers;
    const unsigned num_triangles = ceil(overdraw_amount * fb_area / pixels_per_triangle);
 
-   ctx->begin_render_pass(ctx, &(api_render_pass_desc) {
+   ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                              .fb = fb,
                              .clear = true,
                           });
@@ -1381,12 +1376,18 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     continue;
 
                                  for (unsigned r = 0; r < sets[set].ring_size; r++) {
+                                    if (fill_option >= FILL_GRADIENT &&
+                                        fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES) {
+                                       ctx->begin_render_pass(ctx, &(api_render_pass_desc){
+                                                                 .fb = sets[set].ring[r].src_fb,
+                                                                 .clear = fill_option >= FILL_SMOOTH_32X32_TRIANGLES,
+                                                              });
+                                    }
+
                                     switch (fill_option) {
                                     case FILL_BLACK:
                                     case FILL_SOLID: {
                                        ctx->clear_image(ctx, sets[set].ring[r].src, NULL, &clear_values);
-                                       ctx->barrier_images(ctx, 1, &sets[set].ring[r].src, false, api_queue_gfx,
-                                                           api_queue_gfx);
                                        break;
                                     }
 
@@ -1449,9 +1450,15 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     default:
                                        error("invalid fill option");
                                     }
+
+                                    if (fill_option >= FILL_GRADIENT &&
+                                        fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
+                                       ctx->end_render_pass(ctx);
                                  }
                               }
 
+                              ctx->barrier_images(ctx, num_allocated_srcs, allocated_srcs, false,
+                                                  api_queue_gfx, api_queue_gfx);
                               ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
                               if (DEBUG_DUMP_IMAGES) {
