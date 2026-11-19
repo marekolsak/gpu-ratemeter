@@ -702,8 +702,8 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
 
 enum {
    TEST_CLEAR_FB,
-   TEST_CLEAR_FB_THEN_DRAW,
    TEST_CLEAR_ATTACHMENTS,
+   TEST_CLEAR_FB_THEN_DRAW,
    TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
@@ -717,8 +717,8 @@ enum {
 
 static const char *test_strings[] = {
    [TEST_CLEAR_FB] = "clear_framebuffer",
-   [TEST_CLEAR_FB_THEN_DRAW] = "clear_fb_then_draw",
    [TEST_CLEAR_ATTACHMENTS] = "clear_attachments",
+   [TEST_CLEAR_FB_THEN_DRAW] = "clear_fb_then_draw",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
@@ -915,8 +915,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       bool is_clear = test_index == TEST_CLEAR_FB ||
-                      test_index == TEST_CLEAR_FB_THEN_DRAW ||
                       test_index == TEST_CLEAR_ATTACHMENTS ||
+                      test_index == TEST_CLEAR_FB_THEN_DRAW ||
                       test_index == TEST_CLEAR_IMAGE;
 
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
@@ -1011,8 +1011,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                           formats[format_index].zs_format))
                         continue;
 
-                     if (multiple_attachments && test_index != TEST_CLEAR_FB &&
-                         test_index != TEST_CLEAR_FB_THEN_DRAW && test_index != TEST_CLEAR_ATTACHMENTS)
+                     if (multiple_attachments && (!is_clear || test_index == TEST_CLEAR_IMAGE))
                         continue;
 
                      if (is_blit(test_index)) {
@@ -1078,6 +1077,17 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                      const unsigned bpe_total = bpe * (dst_samples + src_samples);
                      assert(bpe_total);
 
+                     typedef struct {
+                        unsigned num_all_images;
+                        api_image *src;
+                        api_image *dst;
+                        api_image *dst_color[MAX_COLOR_ATTACHMENTS];
+                        api_image *dst_zs;
+                        api_image *all[MAX_COLOR_ATTACHMENTS + 1];
+                        api_framebuffer *src_fb;
+                        api_framebuffer *dst_fb;
+                     } ring_element_struct;
+
                      /* Create textures. */
                      struct {
                         unsigned dst_width;
@@ -1087,15 +1097,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         unsigned src_height;
                         unsigned src_depth;
                         unsigned size;
-                        unsigned num_all_images;
                         bool exceeds_limits;
-                        api_image *src;
-                        api_image *dst;
-                        api_image *dst_color[MAX_COLOR_ATTACHMENTS];
-                        api_image *dst_zs;
-                        api_image *all[MAX_COLOR_ATTACHMENTS + 1];
-                        api_framebuffer *src_fb;
-                        api_framebuffer *dst_fb;
+                        unsigned ring_size;
+
+                        ring_element_struct *ring;
                      } sets[MAX_FB_SETS] = {0};
 
                      api_image *allocated_srcs[MAX_FB_SETS] = {0};
@@ -1193,85 +1198,92 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         }
 
                         if (stage == RUN && !unsupported && !sets[num_image_sets].exceeds_limits) {
-                           if (!is_clear) {
-                              assert(!multiple_attachments);
+                           sets[num_image_sets].ring_size = 1; // TODO
 
-                              sets[num_image_sets].src =
-                                 ctx->create_image(ctx, img_type,
-                                                   formats[format_index].color_format ?
-                                                      formats[format_index].color_format :
-                                                      formats[format_index].zs_format,
-                                                   sets[num_image_sets].src_width,
-                                                   sets[num_image_sets].src_height,
-                                                   sets[num_image_sets].src_depth, src_samples, src_tiling,
-                                                   api_heap_device,
-                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                                   (formats[format_index].color_format ?
-                                                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT :
-                                                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
-                                                   VK_IMAGE_LAYOUT_UNDEFINED);
-                              assert(sets[num_image_sets].src);
+                           sets[num_image_sets].ring = calloc(sets[num_image_sets].ring_size,
+                                                              sizeof(ring_element_struct));
 
-                              sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
-                                 sets[num_image_sets].src;
-                              allocated_srcs[num_allocated_srcs++] = sets[num_image_sets].src;
+                           for (unsigned r = 0; r < sets[num_image_sets].ring_size; r++) {
+                              if (!is_clear) {
+                                 assert(!multiple_attachments);
 
-                              sets[num_image_sets].src_fb =
-                                 ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
-                                                         formats[format_index].color_format ?
-                                                            &sets[num_image_sets].src : NULL,
-                                                         formats[format_index].zs_format ?
-                                                            sets[num_image_sets].src : NULL,
-                                                         sets[num_image_sets].src_width,
-                                                         sets[num_image_sets].src_height,
-                                                         src_samples, 0x1);
-                           }
+                                 sets[num_image_sets].ring[r].src =
+                                    ctx->create_image(ctx, img_type,
+                                                      formats[format_index].color_format ?
+                                                         formats[format_index].color_format :
+                                                         formats[format_index].zs_format,
+                                                      sets[num_image_sets].src_width,
+                                                      sets[num_image_sets].src_height,
+                                                      sets[num_image_sets].src_depth, src_samples, src_tiling,
+                                                      api_heap_device,
+                                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                      (formats[format_index].color_format ?
+                                                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT :
+                                                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
+                                                      VK_IMAGE_LAYOUT_UNDEFINED);
+                                 assert(sets[num_image_sets].ring[r].src);
 
-                           for (unsigned i = 0; i < formats[format_index].num_color_attachments; i++) {
-                              sets[num_image_sets].dst_color[i] =
-                                 ctx->create_image(ctx, img_type, formats[format_index].color_format,
-                                                   sets[num_image_sets].dst_width,
-                                                   sets[num_image_sets].dst_height,
-                                                   sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
-                                                   api_heap_device,
-                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                                   VK_IMAGE_LAYOUT_UNDEFINED);
+                                 sets[num_image_sets].ring[r].all[sets[num_image_sets].ring[r].num_all_images++] =
+                                    sets[num_image_sets].ring[r].src;
+                                 allocated_srcs[num_allocated_srcs++] = sets[num_image_sets].ring[r].src;
 
-                              sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
-                                 sets[num_image_sets].dst_color[i];
-                           }
+                                 sets[num_image_sets].ring[r].src_fb =
+                                    ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
+                                                            formats[format_index].color_format ?
+                                                               &sets[num_image_sets].ring[r].src : NULL,
+                                                            formats[format_index].zs_format ?
+                                                               sets[num_image_sets].ring[r].src : NULL,
+                                                            sets[num_image_sets].src_width,
+                                                            sets[num_image_sets].src_height,
+                                                            src_samples, 0x1);
+                              }
 
-                           if (formats[format_index].zs_format) {
-                              sets[num_image_sets].dst_zs =
-                                 ctx->create_image(ctx, img_type, formats[format_index].zs_format,
-                                                   sets[num_image_sets].dst_width,
-                                                   sets[num_image_sets].dst_height,
-                                                   sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
-                                                   api_heap_device,
-                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                                                   VK_IMAGE_LAYOUT_UNDEFINED);
-
-                              sets[num_image_sets].all[sets[num_image_sets].num_all_images++] =
-                                 sets[num_image_sets].dst_zs;
-                           }
-
-                           if (!multiple_attachments) {
-                              sets[num_image_sets].dst = sets[num_image_sets].dst_color[0] ?
-                                                            sets[num_image_sets].dst_color[0] :
-                                                            sets[num_image_sets].dst_zs;
-                              assert(sets[num_image_sets].dst);
-                           }
-
-                           sets[num_image_sets].dst_fb =
-                              ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
-                                                      sets[num_image_sets].dst_color,
-                                                      sets[num_image_sets].dst_zs,
+                              for (unsigned i = 0; i < formats[format_index].num_color_attachments; i++) {
+                                 sets[num_image_sets].ring[r].dst_color[i] =
+                                    ctx->create_image(ctx, img_type, formats[format_index].color_format,
                                                       sets[num_image_sets].dst_width,
                                                       sets[num_image_sets].dst_height,
-                                                      dst_samples, 0x1);
+                                                      sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
+                                                      api_heap_device,
+                                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                      VK_IMAGE_LAYOUT_UNDEFINED);
+
+                                 sets[num_image_sets].ring[r].all[sets[num_image_sets].ring[r].num_all_images++] =
+                                    sets[num_image_sets].ring[r].dst_color[i];
+                              }
+
+                              if (formats[format_index].zs_format) {
+                                 sets[num_image_sets].ring[r].dst_zs =
+                                    ctx->create_image(ctx, img_type, formats[format_index].zs_format,
+                                                      sets[num_image_sets].dst_width,
+                                                      sets[num_image_sets].dst_height,
+                                                      sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
+                                                      api_heap_device,
+                                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                                      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                      VK_IMAGE_LAYOUT_UNDEFINED);
+
+                                 sets[num_image_sets].ring[r].all[sets[num_image_sets].ring[r].num_all_images++] =
+                                    sets[num_image_sets].ring[r].dst_zs;
+                              }
+
+                              if (!multiple_attachments) {
+                                 sets[num_image_sets].ring[r].dst = sets[num_image_sets].ring[r].dst_color[0] ?
+                                                               sets[num_image_sets].ring[r].dst_color[0] :
+                                                               sets[num_image_sets].ring[r].dst_zs;
+                                 assert(sets[num_image_sets].ring[r].dst);
+                              }
+
+                              sets[num_image_sets].ring[r].dst_fb =
+                                 ctx->create_framebuffer(ctx, formats[format_index].num_color_attachments,
+                                                         sets[num_image_sets].ring[r].dst_color,
+                                                         sets[num_image_sets].ring[r].dst_zs,
+                                                         sets[num_image_sets].dst_width,
+                                                         sets[num_image_sets].dst_height,
+                                                         dst_samples, 0x1);
+                           }
                         }
 
                         num_image_sets++;
@@ -1362,75 +1374,77 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  if (sets[set].exceeds_limits)
                                     continue;
 
-                                 switch (fill_option) {
-                                 case FILL_BLACK:
-                                 case FILL_SOLID: {
-                                    ctx->begin_cmdbuf(ctx, api_queue_gfx);
-                                    ctx->clear_image(ctx, sets[set].src, NULL, &clear_values);
-                                    ctx->barrier_images(ctx, 1, &sets[set].src, false, api_queue_gfx,
-                                                        api_queue_gfx);
-                                    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
-                                    break;
-                                 }
+                                 for (unsigned r = 0; r < sets[set].ring_size; r++) {
+                                    switch (fill_option) {
+                                    case FILL_BLACK:
+                                    case FILL_SOLID: {
+                                       ctx->begin_cmdbuf(ctx, api_queue_gfx);
+                                       ctx->clear_image(ctx, sets[set].ring[r].src, NULL, &clear_values);
+                                       ctx->barrier_images(ctx, 1, &sets[set].ring[r].src, false, api_queue_gfx,
+                                                           api_queue_gfx);
+                                       ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+                                       break;
+                                    }
 
-                                 case FILL_GRADIENT:
-                                    set_gradient_pixels(ctx, &misc_state, sets[set].src);
-                                    break;
+                                    case FILL_GRADIENT:
+                                       set_gradient_pixels(ctx, &misc_state, sets[set].ring[r].src);
+                                       break;
 
-                                 case FILL_RANDOM:
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
-                                    break;
+                                    case FILL_RANDOM:
+                                       set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                       break;
 
-                                 case FILL_RANDOM_2UNIQUE_SAMPLES:
-                                    assert(samples >= 2);
-                                    /* Make all samples equal. */
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
-                                    /* Make sample 0 different. */
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, 0x1);
-                                    break;
+                                    case FILL_RANDOM_2UNIQUE_SAMPLES:
+                                       assert(samples >= 2);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                       /* Make sample 0 different. */
+                                       set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 0x1);
+                                       break;
 
-                                 case FILL_RANDOM_4UNIQUE_SAMPLES:
-                                    assert(samples >= 4);
-                                    /* Make all samples equal. */
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
-                                    /* Make samples 0..2 different. */
-                                    for (unsigned i = 0; i <= 2; i++)
-                                       set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
-                                    break;
+                                    case FILL_RANDOM_4UNIQUE_SAMPLES:
+                                       assert(samples >= 4);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                       /* Make samples 0..2 different. */
+                                       for (unsigned i = 0; i <= 2; i++)
+                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 1 << i);
+                                       break;
 
-                                 case FILL_RANDOM_8UNIQUE_SAMPLES:
-                                    assert(samples == 8);
-                                    /* Make all samples equal. */
-                                    set_random_pixels(ctx, &misc_state, sets[set].src, ~0);
-                                    /* Make samples 0..6 different. */
-                                    for (unsigned i = 0; i <= 6; i++)
-                                       set_random_pixels(ctx, &misc_state, sets[set].src, 1 << i);
-                                    break;
+                                    case FILL_RANDOM_8UNIQUE_SAMPLES:
+                                       assert(samples == 8);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, ~0);
+                                       /* Make samples 0..6 different. */
+                                       for (unsigned i = 0; i <= 6; i++)
+                                          set_random_pixels(ctx, &misc_state, sets[set].ring[r].src, 1 << i);
+                                       break;
 
-                                 case FILL_SMOOTH_32X32_TRIANGLES:
-                                 case FILL_SMOOTH_16X16_TRIANGLES:
-                                 case FILL_SMOOTH_8X8_TRIANGLES:
-                                 case FILL_SMOOTH_4X4_TRIANGLES:
-                                    draw_triangles(ctx, &misc_state, false,
-                                                   fill_option - FILL_SMOOTH_32X32_TRIANGLES,
-                                                   sets[set].src_fb, set, format_index);
-                                    break;
+                                    case FILL_SMOOTH_32X32_TRIANGLES:
+                                    case FILL_SMOOTH_16X16_TRIANGLES:
+                                    case FILL_SMOOTH_8X8_TRIANGLES:
+                                    case FILL_SMOOTH_4X4_TRIANGLES:
+                                       draw_triangles(ctx, &misc_state, false,
+                                                      fill_option - FILL_SMOOTH_32X32_TRIANGLES,
+                                                      sets[set].ring[r].src_fb, set, format_index);
+                                       break;
 
-                                 case FILL_TEXTURED_32X32_TRIANGLES:
-                                 case FILL_TEXTURED_16X16_TRIANGLES:
-                                 case FILL_TEXTURED_8X8_TRIANGLES:
-                                 case FILL_TEXTURED_4X4_TRIANGLES:
-                                    draw_triangles(ctx, &misc_state, true,
-                                                   fill_option - FILL_TEXTURED_32X32_TRIANGLES,
-                                                   sets[set].src_fb, set, format_index);
-                                    break;
+                                    case FILL_TEXTURED_32X32_TRIANGLES:
+                                    case FILL_TEXTURED_16X16_TRIANGLES:
+                                    case FILL_TEXTURED_8X8_TRIANGLES:
+                                    case FILL_TEXTURED_4X4_TRIANGLES:
+                                       draw_triangles(ctx, &misc_state, true,
+                                                      fill_option - FILL_TEXTURED_32X32_TRIANGLES,
+                                                      sets[set].ring[r].src_fb, set, format_index);
+                                       break;
 
-                                 default:
-                                    error("invalid fill option");
+                                    default:
+                                       error("invalid fill option");
+                                    }
                                  }
 
                                  if (DEBUG_DUMP_IMAGES) {
-                                    verify_content(ctx, sets[set].src, test_index, format_index, layout,
+                                    verify_content(ctx, sets[set].ring[0].src, test_index, format_index, layout,
                                                    fill_option);
                                  }
                               }
@@ -1541,7 +1555,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               assert(dst_box.y + dst_box.height <= sets[set].dst_height);
                               assert(dst_box.z + dst_box.depth <= sets[set].dst_depth);
 
-                              if (sets[set].src) {
+                              if (!is_clear) {
                                  assert(src_box.width);
                                  assert(src_box.height);
                                  assert(src_box.depth > 0);
@@ -1568,67 +1582,52 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
 
                               if (stage == RUN) {
-                                 ctx->begin_cmdbuf(ctx, ctx->options.queue);
+                                 const unsigned ring_elem = 0;
 
-                                 if (test_index == TEST_CLEAR_ATTACHMENTS) {
-                                    ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                                                              .fb = sets[set].dst_fb
-                                                           });
-                                 }
+                                 ctx->begin_cmdbuf(ctx, ctx->options.queue);
 
                                  /* Run tests. */
                                  for (unsigned i = 0; i < num_warmup_runs + num_runs; i++) {
                                     /* The first few just warm up caches and the hw. */
                                     if (i == num_warmup_runs) {
-                                       if (test_index == TEST_CLEAR_ATTACHMENTS) {
-                                          ctx->end_render_pass(ctx);
-                                          ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                              sets[set].all, false, ctx->options.queue,
-                                                              ctx->options.queue);
-                                       }
-
                                        ctx->driver_workaround(ctx, WA_RDNA4_TIMESTAMP_BUG);
                                        ctx->write_next_query_value(ctx, timestamps);
-
-                                       if (test_index == TEST_CLEAR_ATTACHMENTS) {
-                                          ctx->begin_render_pass(ctx, &(api_render_pass_desc){
-                                                                    .fb = sets[set].dst_fb
-                                                                 });
-                                       }
                                     }
 
                                     switch (test_index) {
                                     case TEST_CLEAR_FB:
+                                    case TEST_CLEAR_ATTACHMENTS:
                                     case TEST_CLEAR_FB_THEN_DRAW:
                                        ctx->begin_render_pass(ctx,
                                                               &(api_render_pass_desc) {
-                                                                 .fb = sets[set].dst_fb,
-                                                                 .clear = true,
+                                                                 .fb = sets[set].ring[ring_elem].dst_fb,
+                                                                 .clear = test_index != TEST_CLEAR_ATTACHMENTS,
                                                                  .clear_values = clear_values,
                                                               });
-                                       if (test_index == TEST_CLEAR_FB_THEN_DRAW)
-                                          draw_solid(ctx, &misc_state, sets[set].dst_fb, set, format_index);
-                                       ctx->end_render_pass(ctx);
-                                       ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false, ctx->options.queue,
-                                                           ctx->options.queue);
-                                       break;
 
-                                    case TEST_CLEAR_ATTACHMENTS:
-                                       ctx->clear_attachments(ctx,
-                                                              &(api_clear_attachments_desc){
-                                                                 .box = dst_box,
-                                                                 .clear_values = clear_values,
-                                                              });
+                                       if (test_index == TEST_CLEAR_ATTACHMENTS) {
+                                          ctx->clear_attachments(ctx,
+                                                                 &(api_clear_attachments_desc){
+                                                                    .box = dst_box,
+                                                                    .clear_values = clear_values,
+                                                                 });
+                                       } else if (test_index == TEST_CLEAR_FB_THEN_DRAW) {
+                                          draw_solid(ctx, &misc_state, sets[set].ring[ring_elem].dst_fb, set, format_index);
+                                       }
+
+                                       ctx->end_render_pass(ctx);
+                                       ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
+                                                           sets[set].ring[ring_elem].all, false, ctx->options.queue,
+                                                           ctx->options.queue);
                                        break;
 
                                     case TEST_CLEAR_IMAGE:
                                        assert(!yflip);
-                                       ctx->clear_image(ctx, sets[set].dst,
+                                       ctx->clear_image(ctx, sets[set].ring[ring_elem].dst,
                                                         region_option == REGION_FULL ? NULL : &dst_box,
                                                         &clear_values);
-                                       ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false, ctx->options.queue,
+                                       ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
+                                                           sets[set].ring[ring_elem].all, false, ctx->options.queue,
                                                            ctx->options.queue);
                                        break;
 
@@ -1641,17 +1640,17 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     case TEST_RESOLVE: {
                                        ctx->blit_image(ctx,
                                                        &(api_blit_desc){
-                                                          .dst = sets[set].dst,
+                                                          .dst = sets[set].ring[ring_elem].dst,
                                                           .dst_box = dst_box,
-                                                          .src = sets[set].src,
+                                                          .src = sets[set].ring[ring_elem].src,
                                                           .src_box = src_box,
                                                           .is_copy = test_index == TEST_COPY,
                                                           .linear_filter =
                                                             test_index == TEST_BLIT_MINIFY_LINEAR ||
                                                             test_index == TEST_BLIT_MAGNIFY_LINEAR,
                                                        });
-                                       ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                           sets[set].all, false, ctx->options.queue,
+                                       ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
+                                                           sets[set].ring[ring_elem].all, false, ctx->options.queue,
                                                            ctx->options.queue);
                                        break;
                                     }
@@ -1659,13 +1658,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     default:
                                        error("invalid test type");
                                     }
-                                 }
-
-                                 if (test_index == TEST_CLEAR_ATTACHMENTS) {
-                                    ctx->end_render_pass(ctx);
-                                    ctx->barrier_images(ctx, sets[set].num_all_images,
-                                                        sets[set].all, false, ctx->options.queue,
-                                                        ctx->options.queue);
                                  }
 
                                  ctx->write_next_query_value(ctx, timestamps);
@@ -1727,12 +1719,16 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         misc_state.draw_tris_upload_index = 0;
 
                         for (unsigned set = 0; set < num_image_sets; set++) {
-                           if (sets[set].src_fb)
-                              ctx->destroy_framebuffer(ctx, sets[set].src_fb);
-                           if (sets[set].dst_fb)
-                              ctx->destroy_framebuffer(ctx, sets[set].dst_fb);
-                           for (unsigned i = 0; i < sets[set].num_all_images; i++)
-                              ctx->destroy_image(ctx, sets[set].all[i]);
+                           for (unsigned r = 0; r < sets[set].ring_size; r++) {
+                              if (sets[set].ring[r].src_fb)
+                                 ctx->destroy_framebuffer(ctx, sets[set].ring[r].src_fb);
+                              if (sets[set].ring[r].dst_fb)
+                                 ctx->destroy_framebuffer(ctx, sets[set].ring[r].dst_fb);
+                              for (unsigned i = 0; i < sets[set].ring[r].num_all_images; i++)
+                                 ctx->destroy_image(ctx, sets[set].ring[r].all[i]);
+                           }
+
+                           free(sets[set].ring);
                         }
 
                         for (unsigned i = 0; i < misc_state.num_delete_items; i++) {
