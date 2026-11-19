@@ -471,7 +471,6 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_frame
                                   .fb = fb,
                                });
 
-   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc){.fb = fb});
 
    ctx->bind_gfx_pipeline(ctx, pipeline);
@@ -479,7 +478,6 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_frame
 
    ctx->end_render_pass(ctx);
    ctx->barrier_images(ctx, 1, &image, false, api_queue_gfx, api_queue_gfx);
-   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
    assert(state->num_delete_items < ARRAY_SIZE(state->delete_pipelines));
    state->delete_pipelines[state->num_delete_items] = pipeline;
@@ -565,44 +563,6 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
                                            });
    }
 
-   if (!state->random_texture) {
-      /* Create a random noise texture that will be used to generate a texture-like pattern
-       * in the fragment shader.
-       */
-      const unsigned width = 128;
-
-      state->random_texture =
-         ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
-                           width, width, 1, 1, VK_IMAGE_TILING_OPTIMAL,
-                           api_heap_device,
-                           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                           VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
-
-      srand(0x1263c379);
-
-      char *img_data = malloc(width * width * 4);
-      for (unsigned y = 0; y < width; y++) {
-         for (unsigned x = 0; x < width; x++) {
-            char *pix = &img_data[(y * width + x) * 4];
-
-            pix[0] = rand() % 256;
-            pix[1] = rand() % 256;
-            pix[2] = rand() % 256;
-            pix[3] = rand() % 256;
-         }
-      }
-
-      ctx->upload_image_data(ctx, api_queue_gfx, state->random_texture, 0, width * 4, img_data);
-      free(img_data);
-
-      state->sampler = ctx->create_sampler(ctx, &(api_sampler_desc){
-                                              .min_filter = VK_FILTER_LINEAR,
-                                              .mag_filter = VK_FILTER_LINEAR,
-                                              .wrap_u = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                              .wrap_v = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                                           });
-   }
-
    const unsigned desc_index = triangle_size_index * MAX_FB_SETS + fb_set;
    api_descriptor_set **set = &state->desc_draw_triangles[desc_index];
 
@@ -674,7 +634,6 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
    const double fb_area = (double)fb->width * fb->height * fb->layers;
    const unsigned num_triangles = ceil(overdraw_amount * fb_area / pixels_per_triangle);
 
-   ctx->begin_cmdbuf(ctx, api_queue_gfx);
    ctx->begin_render_pass(ctx, &(api_render_pass_desc) {
                              .fb = fb,
                              .clear = true,
@@ -683,19 +642,6 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
    ctx->bind_gfx_pipeline(ctx, *pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = num_triangles * 3, .instance_count = 1});
    ctx->end_render_pass(ctx);
-
-   /* Execute an image barrier. */
-   /*api_image *images[9];
-   unsigned num_images = 0;
-
-   for (unsigned i = 0; i < fb->num_color_attachments; i++)
-      images[num_images++] = fb->colorbufs[i];
-
-   if (fb->zsbuf)
-      images[num_images++] = fb->zsbuf;
-
-   ctx->barrier_images(ctx, num_images, images, false, api_queue_gfx, ctx->options.queue);*/
-   ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
 enum {
@@ -910,6 +856,44 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
    misc_state *misc_state = calloc(1, sizeof(misc_state[0]));
    atomic_uint num_visited_tests = 0;
+
+   if (stage == RUN) {
+      /* Create a random noise texture that will be used to generate a texture-like pattern
+       * in the fragment shader.
+       */
+      const unsigned width = 128;
+
+      misc_state->random_texture =
+         ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+                           width, width, 1, 1, VK_IMAGE_TILING_OPTIMAL,
+                           api_heap_device,
+                           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
+
+      srand(0x1263c379);
+
+      char *img_data = malloc(width * width * 4);
+      for (unsigned y = 0; y < width; y++) {
+         for (unsigned x = 0; x < width; x++) {
+            char *pix = &img_data[(y * width + x) * 4];
+
+            pix[0] = rand() % 256;
+            pix[1] = rand() % 256;
+            pix[2] = rand() % 256;
+            pix[3] = rand() % 256;
+         }
+      }
+
+      ctx->upload_image_data(ctx, api_queue_gfx, misc_state->random_texture, 0, width * 4, img_data);
+      free(img_data);
+
+      misc_state->sampler = ctx->create_sampler(ctx, &(api_sampler_desc){
+                                                   .min_filter = VK_FILTER_LINEAR,
+                                                   .mag_filter = VK_FILTER_LINEAR,
+                                                   .wrap_u = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                                   .wrap_v = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                                                });
+   }
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       bool is_clear = test_index == TEST_CLEAR_FB ||
@@ -1389,89 +1373,94 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            /* Fill the source texture. */
-                           if (stage == RUN && !unsupported) {
-                              if (!is_clear) {
+                           if (stage == RUN && !unsupported && !is_clear) {
+                              ctx->begin_cmdbuf(ctx, api_queue_gfx);
+
+                              for (unsigned set = 0; set < num_image_sets; set++) {
+                                 if (sets[set].exceeds_limits)
+                                    continue;
+
+                                 for (unsigned r = 0; r < sets[set].ring_size; r++) {
+                                    switch (fill_option) {
+                                    case FILL_BLACK:
+                                    case FILL_SOLID: {
+                                       ctx->clear_image(ctx, sets[set].ring[r].src, NULL, &clear_values);
+                                       ctx->barrier_images(ctx, 1, &sets[set].ring[r].src, false, api_queue_gfx,
+                                                           api_queue_gfx);
+                                       break;
+                                    }
+
+                                    case FILL_GRADIENT:
+                                       set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                           sets[set].ring[r].src_fb);
+                                       break;
+
+                                    case FILL_RANDOM:
+                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                         sets[set].ring[r].src_fb, ~0);
+                                       break;
+
+                                    case FILL_RANDOM_2UNIQUE_SAMPLES:
+                                       assert(samples >= 2);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                         sets[set].ring[r].src_fb, ~0);
+                                       /* Make sample 0 different. */
+                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                         sets[set].ring[r].src_fb, 0x1);
+                                       break;
+
+                                    case FILL_RANDOM_4UNIQUE_SAMPLES:
+                                       assert(samples >= 4);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                         sets[set].ring[r].src_fb, ~0);
+                                       /* Make samples 0..2 different. */
+                                       for (unsigned i = 0; i <= 2; i++)
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, 1 << i);
+                                       break;
+
+                                    case FILL_RANDOM_8UNIQUE_SAMPLES:
+                                       assert(samples == 8);
+                                       /* Make all samples equal. */
+                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                         sets[set].ring[r].src_fb, ~0);
+                                       /* Make samples 0..6 different. */
+                                       for (unsigned i = 0; i <= 6; i++)
+                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
+                                                            sets[set].ring[r].src_fb, 1 << i);
+                                       break;
+
+                                    case FILL_SMOOTH_32X32_TRIANGLES:
+                                    case FILL_SMOOTH_16X16_TRIANGLES:
+                                    case FILL_SMOOTH_8X8_TRIANGLES:
+                                    case FILL_SMOOTH_4X4_TRIANGLES:
+                                    case FILL_TEXTURED_32X32_TRIANGLES:
+                                    case FILL_TEXTURED_16X16_TRIANGLES:
+                                    case FILL_TEXTURED_8X8_TRIANGLES:
+                                    case FILL_TEXTURED_4X4_TRIANGLES:
+                                       draw_triangles(ctx, misc_state,
+                                                      fill_option >= FILL_TEXTURED_32X32_TRIANGLES,
+                                                      (fill_option - FILL_SMOOTH_32X32_TRIANGLES) % 4,
+                                                      sets[set].ring[r].src_fb, set, format_index);
+                                       break;
+
+                                    default:
+                                       error("invalid fill option");
+                                    }
+                                 }
+                              }
+
+                              ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
+
+                              if (DEBUG_DUMP_IMAGES) {
                                  for (unsigned set = 0; set < num_image_sets; set++) {
                                     if (sets[set].exceeds_limits)
                                        continue;
 
-                                    for (unsigned r = 0; r < sets[set].ring_size; r++) {
-                                       switch (fill_option) {
-                                       case FILL_BLACK:
-                                       case FILL_SOLID: {
-                                          ctx->begin_cmdbuf(ctx, api_queue_gfx);
-                                          ctx->clear_image(ctx, sets[set].ring[r].src, NULL, &clear_values);
-                                          ctx->barrier_images(ctx, 1, &sets[set].ring[r].src, false, api_queue_gfx,
-                                                              api_queue_gfx);
-                                          ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
-                                          break;
-                                       }
-
-                                       case FILL_GRADIENT:
-                                          set_gradient_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                              sets[set].ring[r].src_fb);
-                                          break;
-
-                                       case FILL_RANDOM:
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, ~0);
-                                          break;
-
-                                       case FILL_RANDOM_2UNIQUE_SAMPLES:
-                                          assert(samples >= 2);
-                                          /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, ~0);
-                                          /* Make sample 0 different. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, 0x1);
-                                          break;
-
-                                       case FILL_RANDOM_4UNIQUE_SAMPLES:
-                                          assert(samples >= 4);
-                                          /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, ~0);
-                                          /* Make samples 0..2 different. */
-                                          for (unsigned i = 0; i <= 2; i++)
-                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                               sets[set].ring[r].src_fb, 1 << i);
-                                          break;
-
-                                       case FILL_RANDOM_8UNIQUE_SAMPLES:
-                                          assert(samples == 8);
-                                          /* Make all samples equal. */
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, ~0);
-                                          /* Make samples 0..6 different. */
-                                          for (unsigned i = 0; i <= 6; i++)
-                                             set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                               sets[set].ring[r].src_fb, 1 << i);
-                                          break;
-
-                                       case FILL_SMOOTH_32X32_TRIANGLES:
-                                       case FILL_SMOOTH_16X16_TRIANGLES:
-                                       case FILL_SMOOTH_8X8_TRIANGLES:
-                                       case FILL_SMOOTH_4X4_TRIANGLES:
-                                       case FILL_TEXTURED_32X32_TRIANGLES:
-                                       case FILL_TEXTURED_16X16_TRIANGLES:
-                                       case FILL_TEXTURED_8X8_TRIANGLES:
-                                       case FILL_TEXTURED_4X4_TRIANGLES:
-                                          draw_triangles(ctx, misc_state,
-                                                         fill_option >= FILL_TEXTURED_32X32_TRIANGLES,
-                                                         (fill_option - FILL_SMOOTH_32X32_TRIANGLES) % 4,
-                                                         sets[set].ring[r].src_fb, set, format_index);
-                                          break;
-
-                                       default:
-                                          error("invalid fill option");
-                                       }
-                                    }
-
-                                    if (DEBUG_DUMP_IMAGES) {
-                                       verify_content(ctx, sets[set].ring[0].src, test_index, format_index, layout,
-                                                      fill_option);
-                                    }
+                                    verify_content(ctx, sets[set].ring[0].src, test_index, format_index, layout,
+                                                   fill_option);
                                  }
                               }
                            }
