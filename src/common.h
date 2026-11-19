@@ -673,6 +673,7 @@ typedef struct api_context {
    unsigned queue_type_to_family[api_num_queues];
    unsigned image_concurrent_family_indices[api_num_queues];
    unsigned image_concurrent_family_count;
+   unsigned non_coherent_atom_size;
 
    /* Extension functions. */
    PFN_vkCmdCopyMemoryIndirectKHR vkCmdCopyMemoryIndirectKHR;
@@ -707,6 +708,17 @@ typedef struct api_context {
    /* The GLSL compiler. */
    shaderc_compiler_t glsl_compiler;
    shaderc_compile_options_t glsl_compiler_options;
+
+   /* Auxiliary allocations. */
+   struct {
+      api_buffer *buf;
+      uint8_t *map;
+      uint64_t segment_size;
+      unsigned num_segments;
+      unsigned segment_index;
+      unsigned last_use_queue_type;
+      uint64_t last_use_timeline_point;
+   } staging;
 #endif
 } api_context;
 

@@ -2300,34 +2300,87 @@ vk_get_query_results(api_context *ctx, api_query_pool *pool)
                                   stride, VK_QUERY_RESULT_64_BIT));
 }
 
+#define MAX_STAGING_BO_SIZE (2 * 1024 * 1024)
+
+static void
+assert_staging_buf_last_use_is_submittted(api_context *ctx)
+{
+   assert(!(ctx->staging.last_use_queue_type == ctx->current_queue &&
+            ctx->staging.last_use_timeline_point == ctx->timeline_point[ctx->current_queue]) &&
+          "the staging buffer can't be destroyed while it's referenced by an unflushed command buffer");
+}
+
+static uint64_t
+need_staging_buf(api_context *ctx, uint64_t size)
+{
+   uint64_t segment_size = ALIGN_POT(size, ctx->non_coherent_atom_size);
+   uint64_t full_size = MAX2(MAX_STAGING_BO_SIZE, segment_size);
+
+   /* Resize the staging buffer if we need a larger one. */
+   if (ctx->staging.buf && ctx->staging.segment_size < segment_size) {
+      assert_staging_buf_last_use_is_submittted(ctx);
+      ctx->wait_for_idle(ctx);
+
+      vkUnmapMemory(ctx->device, *ctx->staging.buf->mem);
+      ctx->destroy_buffer(ctx, ctx->staging.buf);
+
+      ctx->staging.buf = NULL;
+      ctx->staging.segment_index = 0;
+   }
+
+   if (!ctx->staging.buf) {
+      ctx->staging.buf = vk_create_buffer(ctx, full_size, api_heap_host_cached, false);
+      ctx->staging.segment_size = segment_size;
+      ctx->staging.num_segments = full_size / segment_size;
+
+      vk_check(vkMapMemory(ctx->device, *ctx->staging.buf->mem, 0, VK_WHOLE_SIZE, 0,
+                           (void**)&ctx->staging.map));
+   } else {
+      /* The staging buffer is divided into segments for parallelism. */
+      ctx->staging.segment_index = (ctx->staging.segment_index + 1) % ctx->staging.num_segments;
+
+      if (!ctx->staging.segment_index) {
+         assert_staging_buf_last_use_is_submittted(ctx);
+         ctx->wait_for_idle(ctx);
+      }
+   }
+
+   return ctx->staging.segment_size * ctx->staging.segment_index;
+}
+
+static void record_last_staging_buf_use(api_context *ctx)
+{
+   ctx->staging.last_use_queue_type = ctx->current_queue;
+   ctx->staging.last_use_timeline_point = ctx->timeline_point[ctx->current_queue];
+}
+
 static void
 vk_upload_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset,
                       uint64_t size, const void *data)
 {
-   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_uncached, false);
-   uint8_t *map;
+   uint64_t staging_offset = need_staging_buf(ctx, size);
 
-   vk_check(vkMapMemory(ctx->device, *staging->mem, 0, VK_WHOLE_SIZE, 0, (void**)&map));
-   memcpy(map, data, size);
+   memcpy(ctx->staging.map + staging_offset, data, size);
 
-   if (!staging->host_coherent) {
+   if (!ctx->staging.buf->host_coherent) {
       vk_check(vkFlushMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
                                             .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                            .memory = staging->mem[0],
-                                            .offset = 0,
-                                            .size = VK_WHOLE_SIZE,
+                                            .memory = ctx->staging.buf->mem[0],
+                                            .offset = staging_offset,
+                                            .size = ctx->staging.segment_size,
                                          }));
    }
 
-   vkUnmapMemory(ctx->device, *staging->mem);
 
    const bool inside_cmdbuf = ctx->current_cmd_buffer != NULL;
 
    if (!inside_cmdbuf)
       vk_begin_cmdbuf(ctx, queue);
+
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
-   vk_copy_buffer(ctx, buf, staging, offset, 0, size);
+   vk_copy_buffer(ctx, buf, ctx->staging.buf, offset, staging_offset, size);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, false);
+   record_last_staging_buf_use(ctx);
    if (!inside_cmdbuf)
       vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
@@ -2336,11 +2389,12 @@ static void
 vk_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint64_t offset, uint64_t size,
                    void *data)
 {
-   api_buffer *staging = vk_create_buffer(ctx, size, api_heap_host_cached, 0);
+   uint64_t staging_offset = need_staging_buf(ctx, size);
 
    vk_begin_cmdbuf(ctx, queue);
    vk_barrier_buffers(ctx, 1, &buf, (uint64_t[]){offset, size}, true);
-   vk_copy_buffer(ctx, staging, buf, 0, offset, size);
+   vk_copy_buffer(ctx, ctx->staging.buf, buf, staging_offset, offset, size);
+   record_last_staging_buf_use(ctx);
 
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
                          &(VkDependencyInfo){
@@ -2358,20 +2412,16 @@ vk_get_buffer_data(api_context *ctx, api_queue_type queue, api_buffer *buf, uint
    vk_end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
    vk_wait_for_idle(ctx);
 
-   void *map;
-   vk_check(vkMapMemory(ctx->device, staging->mem[0], 0, VK_WHOLE_SIZE, 0, &map));
-
-   if (!staging->host_coherent) {
+   if (!ctx->staging.buf->host_coherent) {
       vk_check(vkInvalidateMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
                                                  .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                                 .memory = staging->mem[0],
-                                                 .offset = 0,
-                                                 .size = VK_WHOLE_SIZE,
+                                                 .memory = ctx->staging.buf->mem[0],
+                                                 .offset = staging_offset,
+                                                 .size = ctx->staging.segment_size,
                                               }));
    }
 
-   memcpy(data, map, size);
-   vkUnmapMemory(ctx->device, staging->mem[0]);
+   memcpy(data, ctx->staging.map + staging_offset, size);
 }
 
 static void
@@ -3170,6 +3220,7 @@ vk_create_context(const program_options *options)
    ctx->allow_parallel_create_shader = true;
    ctx->allow_parallel_create_pipeline = true;
    ctx->timestamp_period_in_seconds = device_props.properties.limits.timestampPeriod * 0.000000001;
+   ctx->non_coherent_atom_size = device_props.properties.limits.nonCoherentAtomSize;
 
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
