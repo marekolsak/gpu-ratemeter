@@ -163,8 +163,10 @@ static const option_desc cs_launch_options[] = {
 
 static const option_desc imgbw_options[] = {
    {OPTION_BOOL, "-compute", offsetof(program_options, compute)},
-   {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
    {OPTION_BOOL, "-transfer", offsetof(program_options, transfer)},
+   {OPTION_BOOL, "-pix", offsetof(program_options, pix)},
+   {OPTION_BOOL, "-rdna4ts", offsetof(program_options, rdna4_timestamp_wa)},
+   {OPTION_UINT64, "-freq=", offsetof(program_options, freq_mhz)},
 };
 
 static const option_desc latency_options[] = {

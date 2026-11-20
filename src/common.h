@@ -436,6 +436,7 @@ typedef struct {
    bool int8;
    bool lean;
    bool no_validator;
+   bool pix;
    bool rdna4_timestamp_wa;
    bool samplerate;
    bool sparse_bound;

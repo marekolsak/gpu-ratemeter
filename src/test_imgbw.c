@@ -1710,7 +1710,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     if (test_index == TEST_CLEAR_FB_THEN_DRAW)
                                        bytes *= 2;
 
-                                    print_result_from_next_timestamps(ctx, timestamps, bytes, NULL,
+                                    uint64_t items = ctx->options.pix ? num_dst_pixels : bytes;
+
+                                    print_result_from_next_timestamps(ctx, timestamps, items, "%10.2f",
                                                                       "%10.2f", NULL, "%10s", 30);
                                  }
                               }
@@ -1801,6 +1803,9 @@ test_imgbw(api_context *ctx)
       if (max_size * MAX_FB_SETS_LIMITED(max_size) + other_allocations <= ctx->device_memory_size)
          break;
    }
+
+   if (ctx->options.pix)
+      ctx->options.report_bandwidth = false;
 
    if (max_size < MIN_SIZE)
       error("Not enough device memory for this test. At least 2 GB is recommended.");
