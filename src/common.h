@@ -414,9 +414,11 @@ typedef enum {
    api_num_queues,
 } api_queue_type;
 
+typedef struct pcre2_real_code_8 compiled_regex;
+
 typedef struct {
    char name_prefix[32]; /* "api.test" */
-   const void *regex_subtest_filter;
+   const compiled_regex *regex_subtest_filter;
 
    /* Derived options. */
    api_queue_type queue;
@@ -455,7 +457,7 @@ typedef struct {
    uint64_t report_time_per_invocation_count;
 
    /* REGEX regular expression options. */
-   const void *regex_format;
+   const compiled_regex *regex_format;
 
    /* STRING options. */
    const char *concurrent;
@@ -796,11 +798,11 @@ uint32_t fnv1a_hash(const void *data, size_t size);
 void init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_image **colorbufs,
                            api_image *zsbuf, unsigned width, unsigned height, unsigned samples,
                            unsigned view_mask);
-const void *regex_compile(const char *pattern);
-bool regex_matches(const void *re, const char *input);
-unsigned regex_groups(const void *re, const char *input, char **groups, unsigned max_groups);
-const void *compile_shader_param_regexs(const char **params, unsigned num_params);
-void regex_replace(char *output, size_t len, const char *input, const void *regexs,
+const compiled_regex *regex_compile(const char *pattern);
+bool regex_matches(const compiled_regex *re, const char *input);
+unsigned regex_groups(const compiled_regex *re, const char *input, char **groups, unsigned max_groups);
+const compiled_regex **compile_shader_param_regexs(const char **params, unsigned num_params);
+void regex_replace(char *output, size_t len, const char *input, const compiled_regex **regexs,
                    unsigned num_regexs, const replacement_value *value);
 
 #ifdef __cplusplus

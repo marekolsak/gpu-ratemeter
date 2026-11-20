@@ -45,7 +45,7 @@ typedef struct {
    api_buffer *result_buf;
    uint64_t *results;
 
-   const void *shader_param_regexs;
+   const compiled_regex **shader_param_regexs;
 } latency_test_state;
 
 static unsigned

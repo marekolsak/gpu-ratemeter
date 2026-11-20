@@ -233,7 +233,7 @@ parse_option(program_options *options, const option_desc *option, const char *ar
       return false;
    case OPTION_REGEX:
       if (!strncmp(arg, option->name, len)) {
-         *(const char**)((uint8_t*)options + option->offset) = regex_compile(arg + len);
+         *(const compiled_regex**)((uint8_t*)options + option->offset) = regex_compile(arg + len);
          return true;
       }
       return false;
@@ -274,8 +274,8 @@ main(int argc, char **argv)
    argc--;
 
    /* Parse the test name. */
-   const void *re_split2 = regex_compile("^([^.]+)\\.([^.]+)$");
-   const void *re_split3 = regex_compile("^([^.]+)\\.([^.]+)\\.(.*)$");
+   const compiled_regex *re_split2 = regex_compile("^([^.]+)\\.([^.]+)$");
+   const compiled_regex *re_split3 = regex_compile("^([^.]+)\\.([^.]+)\\.(.*)$");
    char *re_groups[3];
    unsigned num_re_groups;
 

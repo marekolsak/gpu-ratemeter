@@ -874,7 +874,7 @@ init_framebuffer_base(api_framebuffer *fb, unsigned num_color_attachments, api_i
    assert(!zsbuf || fb->layers == zsbuf->depth);
 }
 
-const void *
+const compiled_regex *
 regex_compile(const char *pattern)
 {
    PCRE2_SIZE error_offset;
@@ -895,7 +895,7 @@ regex_compile(const char *pattern)
 }
 
 bool
-regex_matches(const void *re, const char *input)
+regex_matches(const compiled_regex *re, const char *input)
 {
     pcre2_match_data *data = pcre2_match_data_create(1, NULL);
     if (!data)
@@ -908,7 +908,7 @@ regex_matches(const void *re, const char *input)
 }
 
 unsigned
-regex_groups(const void *re, const char *input, char **groups, unsigned max_groups)
+regex_groups(const compiled_regex *re, const char *input, char **groups, unsigned max_groups)
 {
     pcre2_match_data *data = pcre2_match_data_create_from_pattern(re, NULL);
     if (!data)
@@ -947,10 +947,10 @@ regex_groups(const void *re, const char *input, char **groups, unsigned max_grou
     return count;
 }
 
-const void *
+const compiled_regex **
 compile_shader_param_regexs(const char **params, unsigned num_params)
 {
-   const void **regexs = (const void **)calloc(num_params, sizeof(void*));
+   const compiled_regex **regexs = (const compiled_regex **)calloc(num_params, sizeof(compiled_regex*));
 
    if (!regexs)
       return NULL;
@@ -973,10 +973,9 @@ compile_shader_param_regexs(const char **params, unsigned num_params)
  * Intermediate strings may exceed len, but the final result must fit.
  */
 void
-regex_replace(char *output, size_t len, const char *input, const void *regexs,
+regex_replace(char *output, size_t len, const char *input, const compiled_regex **regexs,
               unsigned num_regexs, const replacement_value *values)
 {
-   const void *const *patterns = regexs;
    /* Start with current = input, and every applied substitution will generate a new version
     * of the input string, which will be fed to the next substitution. After all substitutions,
     * this will contain the output string.
@@ -984,7 +983,7 @@ regex_replace(char *output, size_t len, const char *input, const void *regexs,
    const char *current = input;
    size_t current_length = strlen(input);
 
-   if (!num_regexs || !patterns)
+   if (!num_regexs || !regexs)
       error("regex_replace: compiled patterns are NULL or their count is 0\n");
 
    for (unsigned i = 0; i < num_regexs; i++) {
@@ -1006,7 +1005,7 @@ regex_replace(char *output, size_t len, const char *input, const void *regexs,
 
       PCRE2_SIZE next_length = capacity;
       int result = pcre2_substitute(
-         patterns[i], (PCRE2_SPTR)current, current_length, 0,
+         regexs[i], (PCRE2_SPTR)current, current_length, 0,
          PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL |
          PCRE2_SUBSTITUTE_OVERFLOW_LENGTH,
          NULL, NULL, (PCRE2_SPTR)replacement, PCRE2_ZERO_TERMINATED,
@@ -1022,7 +1021,7 @@ regex_replace(char *output, size_t len, const char *input, const void *regexs,
 
          next_length = capacity;
          result = pcre2_substitute(
-            patterns[i], (PCRE2_SPTR)current, current_length, 0,
+            regexs[i], (PCRE2_SPTR)current, current_length, 0,
             PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_LITERAL,
             NULL, NULL, (PCRE2_SPTR)replacement, PCRE2_ZERO_TERMINATED,
             (PCRE2_UCHAR *)next, &next_length);

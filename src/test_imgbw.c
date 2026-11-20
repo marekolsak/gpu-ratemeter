@@ -78,11 +78,11 @@ typedef struct {
    api_image *random_texture;
    api_sampler *sampler;
 
-   const void *shader_param_regexs_vs_quad;
-   const void *shader_param_regexs_vs_gen_triangles;
-   const void *shader_param_regexs_fs_mrt;
-   const void *shader_param_regexs_fs_gradient;
-   const void *shader_param_regexs_fs_random;
+   const compiled_regex **shader_param_regexs_vs_quad;
+   const compiled_regex **shader_param_regexs_vs_gen_triangles;
+   const compiled_regex **shader_param_regexs_fs_mrt;
+   const compiled_regex **shader_param_regexs_fs_gradient;
+   const compiled_regex **shader_param_regexs_fs_random;
 } misc_state;
 
 static api_shader *
