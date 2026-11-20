@@ -792,11 +792,11 @@ get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_inde
                  unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                  unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%ud%s.%s.%us.%s.fill_%s%s.region_%s",
+   snprintf(out, max_len, "%s.%ud%s.%s.%us.%s%s.fill_%s.region_%s",
             test_strings[test_index], img_type + 1,
             img_type == VK_IMAGE_TYPE_2D ? layer_count_strings[layer_count_option] : "",
             formats[format_index].name, samples, cache_miss ? "miss" : "hit",
-            fill_strings[fill_option], layout_strings[layout], region_strings[region_option]);
+            layout_strings[layout], fill_strings[fill_option], region_strings[region_option]);
 }
 
 static void
