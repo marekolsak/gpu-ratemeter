@@ -113,8 +113,8 @@ typedef struct {
 #endif
 
 #ifdef VK_PRIVATE
+   VmaAllocation vma;
    VkImage image;
-   VkDeviceMemory mem;
    uint64_t mem_size;
    unsigned layer_count;
    VkImageView render_compatible_view; /* 3D images use 2D array views */
@@ -676,6 +676,7 @@ typedef struct api_context {
    VkDevice device;
    VkQueue queue[api_num_queues];
    VkCommandPool cmd_pool[api_num_queues];
+   VmaAllocator vma;
    unsigned num_queue_family_indices;
    unsigned queue_family_indices[api_num_queues];
    unsigned queue_type_to_family[api_num_queues];

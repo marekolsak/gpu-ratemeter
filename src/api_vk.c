@@ -18,6 +18,7 @@
 #include <string.h>
 #include <strings.h>
 #include <shaderc/shaderc.h>
+#include <vk_mem_alloc.h>
 
 #define VK_PRIVATE
 #include "common.h"
@@ -601,14 +602,13 @@ vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned wi
    image->host_coherent = ctx->memory_properties.memoryTypes[mem_type_index].propertyFlags &
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
-   vk_check(vkAllocateMemory(ctx->device,
-                             &(VkMemoryAllocateInfo) {
-                                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                                .allocationSize = reqs.size,
-                                .memoryTypeIndex = mem_type_index,
-                             },
-                             NULL, &image->mem));
-   vk_check(vkBindImageMemory(ctx->device, image->image, image->mem, 0));
+   VmaAllocationCreateInfo allocation_info = {
+      .usage = VMA_MEMORY_USAGE_UNKNOWN,
+      .memoryTypeBits = 1u << mem_type_index,
+   };
+
+   vk_check(vmaAllocateMemoryForImage(ctx->vma, image->image, &allocation_info, &image->vma, NULL));
+   vk_check(vmaBindImageMemory(ctx->vma, image->vma, image->image));
 
    /* Only create an image view if the usage flags allow it. */
    if (usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -666,8 +666,9 @@ vk_destroy_image(api_context *ctx, api_image *image)
 {
    if (image->render_compatible_view)
       vkDestroyImageView(ctx->device, image->render_compatible_view, NULL);
+
+   vmaFreeMemory(ctx->vma, image->vma);
    vkDestroyImage(ctx->device, image->image, NULL);
-   vkFreeMemory(ctx->device, image->mem, NULL);
 
    if (image->heap == api_heap_device)
       atomic_fetch_sub(&ctx->device_mem_usage_mb, image->mem_size >> 20);
@@ -2443,7 +2444,7 @@ vk_upload_image_data(api_context *ctx, api_queue_type queue, api_image *image,
                                         VK_IMAGE_LAYOUT_PREINITIALIZED);
 
    void *map;
-   vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
+   vk_check(vmaMapMemory(ctx->vma, staging->vma, &map));
 
    for (unsigned y = 0; y < image->height; y++) {
       memcpy((uint8_t*)map + staging->linear_offset + y * staging->linear_row_pitch,
@@ -2451,16 +2452,10 @@ vk_upload_image_data(api_context *ctx, api_queue_type queue, api_image *image,
              image->width * get_pixel_size_from_format(image->format));
    }
 
-   if (!staging->host_coherent) {
-      vk_check(vkFlushMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
-                                            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                            .memory = staging->mem,
-                                            .offset = 0,
-                                            .size = VK_WHOLE_SIZE,
-                                         }));
-   }
+   if (!staging->host_coherent)
+      vk_check(vmaFlushAllocation(ctx->vma, staging->vma, 0, VK_WHOLE_SIZE));
 
-   vkUnmapMemory(ctx->device, staging->mem);
+   vmaUnmapMemory(ctx->vma, staging->vma);
 
    vk_begin_cmdbuf(ctx, queue);
    vkCmdPipelineBarrier2(ctx->current_cmd_buffer,
@@ -2524,20 +2519,14 @@ vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, uns
    vk_wait_for_idle(ctx);
 
    void *map;
-   vk_check(vkMapMemory(ctx->device, staging->mem, 0, staging->mem_size, 0, &map));
+   vk_check(vmaMapMemory(ctx->vma, staging->vma, &map));
 
-   if (!staging->host_coherent) {
-      vk_check(vkInvalidateMappedMemoryRanges(ctx->device, 1, &(VkMappedMemoryRange){
-                                                 .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                                                 .memory = staging->mem,
-                                                 .offset = 0,
-                                                 .size = VK_WHOLE_SIZE,
-                                              }));
-   }
+   if (!staging->host_coherent)
+      vk_check(vmaInvalidateAllocation(ctx->vma, staging->vma, 0, VK_WHOLE_SIZE));
 
    write_png_rgba8(filename, staging, staging->linear_row_pitch,
                    (uint8_t*)map + staging->linear_offset, write_alpha);
-   vkUnmapMemory(ctx->device, staging->mem);
+   vmaUnmapMemory(ctx->vma, staging->vma);
 }
 
 api_context *
@@ -3130,6 +3119,18 @@ vk_create_context(const program_options *options)
       GET_PROC_ADDR(vkCmdEndTransformFeedbackEXT);
    }
 #undef GET_PROC_ADDR
+
+   /* Create VMA. */
+   VmaAllocatorCreateInfo allocator_info = {
+      .flags = AMD_device_coherent_memory.deviceCoherentMemory ?
+                  VMA_ALLOCATOR_CREATE_AMD_DEVICE_COHERENT_MEMORY_BIT : 0,
+      .instance = instance,
+      .physicalDevice = physical_device,
+      .device = ctx->device,
+      .vulkanApiVersion = VK_API_VERSION_1_3,
+   };
+
+   vk_check(vmaCreateAllocator(&allocator_info, &ctx->vma));
 
    /* Get the queues. */
    for (unsigned i = 0; i < api_num_queues; i++) {
