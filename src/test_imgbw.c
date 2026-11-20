@@ -876,7 +876,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
       const unsigned width = 128;
 
       misc_state->random_texture =
-         ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+         ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                            width, width, 1, 1, VK_IMAGE_TILING_OPTIMAL,
                            api_heap_device,
                            VK_IMAGE_USAGE_TRANSFER_DST_BIT |
@@ -1247,7 +1247,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     assert(!multiple_attachments);
 
                                     sets[num_image_sets].ring[r].src =
-                                       ctx->create_image(ctx, NULL, img_type,
+                                       ctx->create_image(ctx, img_type,
                                                          formats[format_index].color_format ?
                                                             formats[format_index].color_format :
                                                             formats[format_index].zs_format,
@@ -1280,7 +1280,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  for (unsigned i = 0; i < formats[format_index].num_color_attachments; i++) {
                                     sets[num_image_sets].ring[r].dst_color[i] =
-                                       ctx->create_image(ctx, NULL, img_type, formats[format_index].color_format,
+                                       ctx->create_image(ctx, img_type, formats[format_index].color_format,
                                                          sets[num_image_sets].dst_width,
                                                          sets[num_image_sets].dst_height,
                                                          sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
@@ -1295,7 +1295,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  if (formats[format_index].zs_format) {
                                     sets[num_image_sets].ring[r].dst_zs =
-                                       ctx->create_image(ctx, NULL, img_type, formats[format_index].zs_format,
+                                       ctx->create_image(ctx, img_type, formats[format_index].zs_format,
                                                          sets[num_image_sets].dst_width,
                                                          sets[num_image_sets].dst_height,
                                                          sets[num_image_sets].dst_depth, dst_samples, dst_tiling,

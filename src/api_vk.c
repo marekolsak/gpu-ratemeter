@@ -545,10 +545,9 @@ vk_transition_image_layouts(api_context *ctx, api_queue_type queue, unsigned num
 }
 
 static api_image *
-vk_create_image(api_context *ctx, api_linear_allocator *a, VkImageType type, VkFormat format,
-                unsigned width, unsigned height, unsigned depth, unsigned samples,
-                VkImageTiling tiling, api_heap_type heap, VkImageUsageFlags usage,
-                VkImageLayout layout)
+vk_create_image(api_context *ctx, VkImageType type, VkFormat format, unsigned width, unsigned height,
+                unsigned depth, unsigned samples, VkImageTiling tiling, api_heap_type heap,
+                VkImageUsageFlags usage, VkImageLayout layout)
 {
    api_image *image = calloc(1, sizeof(api_image));
    image->type = type;
@@ -2438,7 +2437,7 @@ static void
 vk_upload_image_data(api_context *ctx, api_queue_type queue, api_image *image,
                      unsigned layer, unsigned stride_in_bytes, void *data)
 {
-   api_image *staging = vk_create_image(ctx, NULL, VK_IMAGE_TYPE_2D, image->format,
+   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D, image->format,
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,
                                         api_heap_host_cached, VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                         VK_IMAGE_LAYOUT_PREINITIALIZED);
@@ -2493,7 +2492,7 @@ static void
 vk_image_write_png(api_context *ctx, api_queue_type queue, api_image *image, unsigned layer,
                    const char *filename, bool write_alpha)
 {
-   api_image *staging = vk_create_image(ctx, NULL, VK_IMAGE_TYPE_2D,
+   api_image *staging = vk_create_image(ctx, VK_IMAGE_TYPE_2D,
                                         format_is_integer(image->format) ?
                                            VK_FORMAT_R8G8B8A8_UINT : VK_FORMAT_R8G8B8A8_UNORM,
                                         image->width, image->height, 1, 1, VK_IMAGE_TILING_LINEAR,

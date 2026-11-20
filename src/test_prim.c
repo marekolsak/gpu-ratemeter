@@ -1648,7 +1648,7 @@ test_prim(api_context *ctx)
    prim_test_state *state = calloc(1, sizeof(prim_test_state));
 
    /* Create the framebuffer. */
-   api_image *colorbuf = ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            /* 2 layers because we test gl_Layer. */
                                            FB_SIZE, FB_SIZE, 2, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device,

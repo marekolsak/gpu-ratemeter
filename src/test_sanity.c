@@ -135,7 +135,7 @@ test_sanity(api_context *ctx)
 {
    uint64_t vb_offsets[3];
 
-   api_image *colorbuf = ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
+   api_image *colorbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R8G8B8A8_UNORM,
                                            1024, 1024, 1, 1, VK_IMAGE_TILING_OPTIMAL,
                                            api_heap_device,
                                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |

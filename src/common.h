@@ -399,12 +399,6 @@ typedef struct {
 #endif
 } api_sampler;
 
-/* This reduces overhead of making thousands of temporary allocations. */
-typedef struct {
-#ifdef VK_PRIVATE
-#endif
-} api_linear_allocator;
-
 #define MAX_COMMAND_BUFFERS   256
 
 typedef enum {
@@ -541,11 +535,6 @@ typedef struct api_context {
    /* Functions. */
    void (*destroy_context)(struct api_context *ctx);
 
-   /* Optional allocation functions. */
-   api_linear_allocator *(*create_linear_allocator)(struct api_context *ctx, uint64_t size,
-                                                    api_heap_type heap);
-   void (*destroy_linear_allocator)(struct api_context *ctx, api_linear_allocator *a);
-
    /* Buffer functions. */
    api_buffer *(*create_buffer)(struct api_context *ctx, uint64_t size, api_heap_type heap,
                                 unsigned sparse_block_size);
@@ -568,10 +557,10 @@ typedef struct api_context {
                            uint64_t *offset_size_pairs, bool after_shader_writes);
 
    /* Image functions. */
-   api_image *(*create_image)(struct api_context *ctx, api_linear_allocator *a, VkImageType type,
-                              VkFormat format, unsigned width, unsigned height, unsigned depth,
-                              unsigned samples, VkImageTiling tiling, api_heap_type heap,
-                              VkImageUsageFlags usage, VkImageLayout layout);
+   api_image *(*create_image)(struct api_context *ctx, VkImageType type, VkFormat format,
+                              unsigned width, unsigned height, unsigned depth, unsigned samples,
+                              VkImageTiling tiling, api_heap_type heap, VkImageUsageFlags usage,
+                              VkImageLayout layout);
    void (*destroy_image)(struct api_context *ctx, api_image *image);
    void (*clear_image)(struct api_context *ctx, api_image *image, const api_image_box *box,
                        const api_clear_values *value);

@@ -182,7 +182,7 @@ run(api_context *ctx, test_stage stage, cl_test_state *state)
                                                         });
 
       for (unsigned i = 0; i < 2; i++) {
-         state->store_image[i] = ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_1D, VK_FORMAT_R32_UINT, 16, 1,
+         state->store_image[i] = ctx->create_image(ctx, VK_IMAGE_TYPE_1D, VK_FORMAT_R32_UINT, 16, 1,
                                                    1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device,
                                                    VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
          state->set[i] = ctx->create_descriptor_set(ctx, state->layout);
