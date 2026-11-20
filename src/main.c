@@ -32,8 +32,6 @@
  *   - default, concurrent
  *   - default, general layout
  *   - radeonsi
- * - new:
- *   - general layout
  * - copy: buffer-to-image, image-to-buffer, indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
@@ -146,6 +144,7 @@ static const option_desc common_options[] = {
    {OPTION_BOOL, "-gl-tiling-linear", offsetof(program_options, gl_tiling_linear)},
 
    /* Vulkan only */
+   {OPTION_BOOL, "-general", offsetof(program_options, general)},
    {OPTION_BOOL, "-no-validator", offsetof(program_options, no_validator)},
    {OPTION_BOOL, "-top", offsetof(program_options, top_of_pipe_timestamps)},
    {OPTION_UINT64, "-device=", offsetof(program_options, device)},

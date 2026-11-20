@@ -1067,7 +1067,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                         if ((test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
                              test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL) &&
-                            !ctx->has_image_layout_transitions)
+                            (!ctx->has_image_layout_transitions || ctx->options.general))
                            unsupported = true;
 
                         if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&

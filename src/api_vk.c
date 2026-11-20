@@ -513,6 +513,9 @@ vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images, boo
 {
    VkImageLayout *layouts = alloca(num_images * sizeof(VkImageLayout));
 
+   if (ctx->options.general)
+      layout = 0; /* don't change the layout if they are all general */
+
    if (layout) {
       for (unsigned i = 0; i < num_images; i++)
          layouts[i] = layout;
@@ -683,6 +686,12 @@ vk_destroy_image(api_context *ctx, api_image *image)
    free(image);
 }
 
+static VkImageLayout
+get_image_layout(api_context *ctx, VkImageLayout layout)
+{
+   return ctx->options.general ? VK_IMAGE_LAYOUT_GENERAL : layout;
+}
+
 static void
 vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
                const api_clear_values *value)
@@ -690,11 +699,12 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
    assert(!box);
 
    vk_transition_image_layouts(ctx, api_num_queues, 1, &image,
-                               (VkImageLayout[1]){VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL});
+                               (VkImageLayout[1]){get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)});
 
    if (format_is_depth_or_stencil(image->format)) {
       vkCmdClearDepthStencilImage(ctx->current_cmd_buffer, image->image,
-                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value->zs, 1,
+                                  get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+                                  &value->zs, 1,
                                   &(VkImageSubresourceRange){
                                      .aspectMask = get_image_aspect(image),
                                      .levelCount = 1,
@@ -702,7 +712,8 @@ vk_clear_image(api_context *ctx, api_image *image, const api_image_box *box,
                                   });
    } else {
       vkCmdClearColorImage(ctx->current_cmd_buffer, image->image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value->color, 1,
+                           get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+                           &value->color, 1,
                            &(VkImageSubresourceRange){
                               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                               .levelCount = 1,
@@ -743,8 +754,8 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
    };
 
    vk_transition_image_layouts(ctx, api_num_queues, 2, (api_image*[2]){desc->src, desc->dst},
-                               (VkImageLayout[2]){VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL});
+                               (VkImageLayout[2]){get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+                                                  get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)});
 
    if (desc->is_copy || is_resolve) {
       assert(desc->dst_box.width == desc->src_box.width);
@@ -767,9 +778,9 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
                                   .resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
                                } : NULL,
                             .srcImage = desc->src->image,
-                            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            .srcImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
                             .dstImage = desc->dst->image,
-                            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            .dstImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
                             .regionCount = 1,
                             .pRegions = &(VkImageResolve2){
                                .sType = VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2,
@@ -785,9 +796,9 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
          vkCmdCopyImage2(ctx->current_cmd_buffer, &(VkCopyImageInfo2){
                             .sType = VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2,
                             .srcImage = desc->src->image,
-                            .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            .srcImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
                             .dstImage = desc->dst->image,
-                            .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            .dstImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
                             .regionCount = 1,
                             .pRegions = &(VkImageCopy2){
                                .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
@@ -803,9 +814,9 @@ vk_blit_image(api_context *ctx, api_blit_desc *desc)
       vkCmdBlitImage2(ctx->current_cmd_buffer, &(VkBlitImageInfo2){
                          .sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2,
                          .srcImage = desc->src->image,
-                         .srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         .srcImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
                          .dstImage = desc->dst->image,
-                         .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         .dstImageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
                          .regionCount = 1,
                          .pRegions = &(VkImageBlit2){
                             .sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2,
@@ -850,8 +861,11 @@ vk_destroy_sampler(api_context *ctx, api_sampler *sampler)
 }
 
 static unsigned
-get_attachment_optimal_layout(api_image *image)
+get_attachment_optimal_layout(api_context *ctx, api_image *image)
 {
+   if (ctx->options.general)
+      return VK_IMAGE_LAYOUT_GENERAL;
+
    if (format_has_depth(image->format) && format_has_stencil(image->format))
       return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
    else if (format_has_depth(image->format))
@@ -889,8 +903,8 @@ vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_imag
             .format = colorbufs[i]->format,
             .samples = colorbufs[i]->samples,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .initialLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+            .finalLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
          };
 
          att_views[fb->num_attachments] = colorbufs[i]->render_compatible_view;
@@ -899,7 +913,7 @@ vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_imag
          color_att_ref[i] = (VkAttachmentReference2){
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
             .attachment = fb->colorbufs_att_index[i],
-            .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .layout = get_image_layout(ctx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
          };
 
@@ -910,7 +924,7 @@ vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_imag
          assert(zsbuf->type != VK_IMAGE_TYPE_3D);
          assert(fb->num_attachments < ARRAY_SIZE(att_descs));
 
-         VkImageLayout layout = get_attachment_optimal_layout(zsbuf);
+         VkImageLayout layout = get_attachment_optimal_layout(ctx, zsbuf);
 
          att_descs[fb->num_attachments] = (VkAttachmentDescription2){
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
@@ -927,7 +941,7 @@ vk_create_framebuffer(api_context *ctx, unsigned num_color_attachments, api_imag
          zs_att_ref = (VkAttachmentReference2) {
             .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
             .attachment = fb->zsbuf_att_index,
-            .layout = get_attachment_optimal_layout(zsbuf),
+            .layout = get_attachment_optimal_layout(ctx, zsbuf),
             .aspectMask = get_image_aspect(zsbuf),
          };
 
@@ -1288,7 +1302,7 @@ vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue
    VkImageLayout *need_layouts = alloca(num_desc * sizeof(need_layouts[0]));
 
    for (unsigned i = 0; i < num_desc; i++)
-      need_layouts[i] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      need_layouts[i] = get_image_layout(ctx, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
    vk_transition_image_layouts(ctx, queue, num_desc, images, need_layouts);
 
@@ -1300,7 +1314,7 @@ vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue
 
       image_infos[i].sampler = samplers[i]->sampler;
       image_infos[i].imageView = images[i]->render_compatible_view;
-      image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      image_infos[i].imageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
    }
 
    vkUpdateDescriptorSets(ctx->device, 1,
@@ -1965,13 +1979,15 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
 
    for (unsigned i = 0; i < desc->fb->num_color_attachments; i++) {
       transition_images[num_transition_images] = desc->fb->colorbufs[i];
-      transition_layouts[num_transition_images] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      transition_layouts[num_transition_images] =
+         get_image_layout(ctx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
       num_transition_images++;
    }
 
    if (desc->fb->zsbuf) {
       transition_images[num_transition_images] = desc->fb->zsbuf;
-      transition_layouts[num_transition_images] = get_attachment_optimal_layout(desc->fb->zsbuf);
+      transition_layouts[num_transition_images] =
+         get_attachment_optimal_layout(ctx, desc->fb->zsbuf);
       num_transition_images++;
    }
 
@@ -1990,7 +2006,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
          color_att[i] = (VkRenderingAttachmentInfo){
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = desc->fb->colorbufs[i]->render_compatible_view,
-            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .imageLayout = get_image_layout(ctx, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
             .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
                                     VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -2006,7 +2022,7 @@ vk_begin_render_pass(api_context *ctx, const api_render_pass_desc *desc)
          zs_att = (VkRenderingAttachmentInfo){
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = desc->fb->zsbuf->render_compatible_view,
-            .imageLayout = get_attachment_optimal_layout(desc->fb->zsbuf),
+            .imageLayout = get_attachment_optimal_layout(ctx, desc->fb->zsbuf),
             .loadOp = desc->clear ? VK_ATTACHMENT_LOAD_OP_CLEAR :
                                     VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -2681,6 +2697,13 @@ vk_create_context(const program_options *options)
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
    };
 
+   VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR KHR_unified_image_layouts = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR,
+   };
+   VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR enabled_KHR_unified_image_layouts = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR,
+   };
+
    /* EXT extensions. */
    VkPhysicalDeviceExtendedDynamicState2FeaturesEXT EXT_extended_dynamic_state2 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT,
@@ -2770,6 +2793,7 @@ vk_create_context(const program_options *options)
    check_add_ext(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME, KHR_pipeline_executable_properties);
    check_add_ext_no_features(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
    check_add_ext(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, KHR_shader_clock);
+   check_add_ext(VK_KHR_UNIFIED_IMAGE_LAYOUTS_EXTENSION_NAME, KHR_unified_image_layouts);
 
    check_add_ext_no_features(VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME);
    check_add_ext(VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME, EXT_extended_dynamic_state2);
@@ -3021,6 +3045,9 @@ vk_create_context(const program_options *options)
 
    optional(KHR_shader_clock.shaderSubgroupClock);
    //optional(KHR_shader_clock.shaderDeviceClock);
+
+   optional(KHR_unified_image_layouts.unifiedImageLayouts);
+   //optional(KHR_unified_image_layouts.unifiedImageLayoutsVideo);
 
    if (ctx->options.api_flags & API_VK_DYNAMIC_STATE) {
       require(Vulkan13.dynamicRendering);

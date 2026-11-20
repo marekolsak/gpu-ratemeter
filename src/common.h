@@ -432,17 +432,18 @@ typedef struct {
    /* BOOL options. */
    bool bda;
    bool compute;
-   bool subgroup_time;
-   bool report_time;
+   bool general;
    bool gl_tiling_linear;
    bool int8;
    bool lean;
    bool no_validator;
    bool pix;
    bool rdna4_timestamp_wa;
+   bool report_time;
    bool samplerate;
    bool sparse_bound;
    bool sparse_unbound;
+   bool subgroup_time;
    bool top_of_pipe_timestamps;
    bool transfer;
 
@@ -451,10 +452,10 @@ typedef struct {
    uint64_t clock_bits;
    uint64_t device; /* device index */
    uint64_t freq_mhz;
-   uint64_t max_valid_result;
    uint64_t max_size;
-   uint64_t spacing;
+   uint64_t max_valid_result;
    uint64_t report_time_per_invocation_count;
+   uint64_t spacing;
 
    /* REGEX regular expression options. */
    const compiled_regex *regex_format;
