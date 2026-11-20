@@ -65,7 +65,9 @@ typedef struct {
    api_shader *fs_fragpos_texture_fs[ARRAY_SIZE(formats)];
 
    api_descriptor_set_layout *layout_draw_triangles;
-   api_gfx_pipeline *pipeline_draw_solid[MAX_FB_SETS];
+   api_descriptor_set_layout *layout_draw_textured;
+   api_descriptor_set *desc_draw_textured;
+   api_gfx_pipeline *pipeline_draw_after_clear[MAX_FB_SETS][2]; /* solid / textured */
    api_gfx_pipeline *pipeline_draw_gradient_random[MAX_FB_SETS][8][2]; /* [last samplemask bit][random] */
    api_gfx_pipeline *pipeline_draw_triangles[MAX_FB_SETS][2]; /* color passthrough / textured */
 
@@ -501,18 +503,20 @@ set_random_pixels(api_context *ctx, misc_state *state, api_image *image, api_fra
 }
 
 static void
-draw_solid(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_set,
-           unsigned fb_config_index)
+draw_solid_or_textured(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb_set,
+                       unsigned fb_config_index, bool textured)
 {
+   api_gfx_pipeline **pipeline = &state->pipeline_draw_after_clear[fb_set][textured];
    bool layered = fb->layers > 1;
    api_shader *vs = get_passthrough_vs(ctx, state, layered);
-   api_shader *fs = get_solid_color_fs(ctx, state, fb, fb_config_index);
-   api_gfx_pipeline **pipeline = &state->pipeline_draw_solid[fb_set];
+   api_shader *fs = textured ? get_fragpos_texture_fs(ctx, state, fb, fb_config_index) :
+                               get_solid_color_fs(ctx, state, fb, fb_config_index);
 
    if (!*pipeline) {
       *pipeline = ctx->create_gfx_pipeline(ctx,
                                            &(api_gfx_pipeline_desc){
                                               .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                              .desc_set_layout = state->layout_draw_textured,
                                               .vs = vs,
                                               .fs = fs,
                                               .vrs_fragment_size = {1, 1},
@@ -533,6 +537,9 @@ draw_solid(api_context *ctx, misc_state *state, api_framebuffer *fb, unsigned fb
                                               .fb = fb,
                                            });
    }
+
+   if (textured)
+      ctx->bind_descriptor_set(ctx, state->desc_draw_textured);
 
    ctx->bind_gfx_pipeline(ctx, *pipeline);
    ctx->draw(ctx, &(api_draw_desc){.count = 4, .instance_count = fb->layers});
@@ -649,7 +656,8 @@ draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned tria
 enum {
    TEST_CLEAR_FB,
    TEST_CLEAR_ATTACHMENTS,
-   TEST_CLEAR_FB_THEN_DRAW,
+   TEST_CLEAR_FB_THEN_DRAW_SOLID,
+   TEST_CLEAR_FB_THEN_DRAW_TEXTURED,
    TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
@@ -664,7 +672,8 @@ enum {
 static const char *test_strings[] = {
    [TEST_CLEAR_FB] = "clear_framebuffer",
    [TEST_CLEAR_ATTACHMENTS] = "clear_attachments",
-   [TEST_CLEAR_FB_THEN_DRAW] = "clear_fb_then_draw",
+   [TEST_CLEAR_FB_THEN_DRAW_SOLID] = "clear_fb_then_draw_solid",
+   [TEST_CLEAR_FB_THEN_DRAW_TEXTURED] = "clear_fb_then_draw_textured",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
@@ -805,7 +814,7 @@ print_table_row(api_context *ctx, unsigned max_size, bool header, unsigned test_
                 unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                 unsigned region_option)
 {
-   const unsigned name_indent = 90;
+   const unsigned name_indent = 95;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
@@ -896,12 +905,29 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                    .wrap_u = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                    .wrap_v = VK_SAMPLER_ADDRESS_MODE_REPEAT,
                                                 });
+
+      /* Initialize the descriptor set for clear_then_draw_textured tests. */
+      if (!misc_state->layout_draw_textured) {
+         misc_state->layout_draw_textured =
+            ctx->create_descriptor_set_layout(ctx, &(api_descriptor_set_layout_desc){
+                                                 .combined_image_sampler[0].array_size = 1,
+                                                 .combined_image_sampler[0].vk_binding = 1,
+                                              });
+
+         misc_state->desc_draw_textured =
+            ctx->create_descriptor_set(ctx, misc_state->layout_draw_textured);
+         ctx->set_combined_image_sampler_descriptors(ctx, api_queue_gfx,
+                                                     misc_state->desc_draw_textured, 0, 1,
+                                                     &misc_state->random_texture,
+                                                     &misc_state->sampler);
+      }
    }
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
       bool is_clear = test_index == TEST_CLEAR_FB ||
                       test_index == TEST_CLEAR_ATTACHMENTS ||
-                      test_index == TEST_CLEAR_FB_THEN_DRAW ||
+                      test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+                      test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
                       test_index == TEST_CLEAR_IMAGE;
 
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
@@ -917,6 +943,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
             /* Z/S blits can't have linear filtering. */
             if ((test_index == TEST_BLIT_MINIFY_LINEAR || test_index == TEST_BLIT_MAGNIFY_LINEAR) &&
                 formats[format_index].zs_format)
+               continue;
+
+            if (test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED && formats[format_index].zs_format)
                continue;
 
             bool multiple_attachments = formats[format_index].num_color_attachments +
@@ -1042,8 +1071,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            unsupported = true;
 
                         /* Layered image initialization and draw require the gl_Layer VS output. */
-                        if ((test_index == TEST_CLEAR_FB_THEN_DRAW || test_index == TEST_COPY ||
-                             is_blit(test_index) || test_index == TEST_RESOLVE) &&
+                        if ((test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+                             test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+                             test_index == TEST_COPY ||
+                             is_blit(test_index) ||
+                             test_index == TEST_RESOLVE) &&
                             (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                            unsupported = true;
 
@@ -1488,8 +1520,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
                               bool yflip = region_option == REGION_FULL_YFLIP;
 
-                              /* Skip invalid and unimportant tests. */
-                              if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW ||
+                              /* Skip invalid and less useful tests. */
+                              if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+                                   test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
                                    layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
                                    is_scaled_blit(test_index) || ctx->options.queue == api_queue_transfer) &&
                                   region_option != REGION_FULL)
@@ -1625,7 +1658,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        switch (test_index) {
                                        case TEST_CLEAR_FB:
                                        case TEST_CLEAR_ATTACHMENTS:
-                                       case TEST_CLEAR_FB_THEN_DRAW:
+                                       case TEST_CLEAR_FB_THEN_DRAW_SOLID:
+                                       case TEST_CLEAR_FB_THEN_DRAW_TEXTURED:
                                           ctx->begin_render_pass(ctx,
                                                                  &(api_render_pass_desc) {
                                                                     .fb = sets[set].ring[ring_elem].dst_fb,
@@ -1639,8 +1673,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                                        .box = dst_box,
                                                                        .clear_values = clear_values,
                                                                     });
-                                          } else if (test_index == TEST_CLEAR_FB_THEN_DRAW) {
-                                             draw_solid(ctx, misc_state, sets[set].ring[ring_elem].dst_fb, set, format_index);
+                                          } else if (test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+                                                     test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED) {
+                                             draw_solid_or_textured(ctx, misc_state,
+                                                                    sets[set].ring[ring_elem].dst_fb,
+                                                                    set, format_index,
+                                                                    test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED);
                                           }
 
                                           ctx->end_render_pass(ctx);
@@ -1706,7 +1744,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     uint64_t bytes = bpe * (num_dst_pixels * dst_samples +
                                                             num_src_pixels * src_samples);
 
-                                    if (test_index == TEST_CLEAR_FB_THEN_DRAW)
+                                    if (test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+                                        test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED)
                                        bytes *= 2;
 
                                     uint64_t items = ctx->options.pix ? num_dst_pixels : bytes;
@@ -1730,11 +1769,13 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         if (stage == RUN && !unsupported) {
                            ctx->wait_for_idle(ctx);
 
-                           /* Release draw_solid pipelines because they are tied to specific FB states. */
-                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_solid); i++) {
-                              if (misc_state->pipeline_draw_solid[i]) {
-                                 ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_solid[i]);
-                                 misc_state->pipeline_draw_solid[i] = NULL;
+                           /* Release draw_solid/textured pipelines because they are tied to specific FB states. */
+                           for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_after_clear); i++) {
+                              for (unsigned j = 0; j < 2; j++) {
+                                 if (misc_state->pipeline_draw_after_clear[i][j]) {
+                                    ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_after_clear[i][j]);
+                                    misc_state->pipeline_draw_after_clear[i][j] = NULL;
+                                 }
                               }
                            }
 

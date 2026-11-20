@@ -20,8 +20,6 @@ layout(location = 3) out <vec_type3> fs_out3;
 #error "n is too large"
 #endif
 
-layout(location = 0) in vec4 vColor;
-
 #ifdef VULKAN
 layout(binding = 1)
 #else

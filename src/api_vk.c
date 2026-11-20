@@ -49,7 +49,7 @@ enable_validation_layer(api_context *ctx)
    for (unsigned i = 0; i < count; i++) {
       if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation")) {
          printf("Note: The Vulkan validation layer is enabled. If there are no errors, "
-                "use -no-validator for faster execution times.\n");
+                "use -no-validator for faster execution.\n");
          return true;
       }
    }
