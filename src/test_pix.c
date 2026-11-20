@@ -1123,12 +1123,12 @@ run_test_pix(api_context *ctx, unsigned samples,
       unsigned num_colorbufs = 0;
 
       if (format) {
-         fbs[f].colorbuf = ctx->create_image(ctx, image_type, format, fb_size,
+         fbs[f].colorbuf = ctx->create_image(ctx, NULL, image_type, format, fb_size,
                                              fb_size, num_layers, samples, layout,
                                              api_heap_device, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                                              VK_IMAGE_LAYOUT_UNDEFINED);
 
-         fbs[f].colorbuf_raster = ctx->create_image(ctx, image_type, format, fb_raster_size,
+         fbs[f].colorbuf_raster = ctx->create_image(ctx, NULL, image_type, format, fb_raster_size,
                                                     fb_raster_size, num_layers, samples, layout,
                                                     api_heap_device,
                                                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -1145,7 +1145,7 @@ run_test_pix(api_context *ctx, unsigned samples,
                                                             samples, view_mask);
 
       if (test_flavor != TEST_IMAGE_3D && test_flavor != TEST_LINEAR) {
-         fbs[f].zsbuf = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
+         fbs[f].zsbuf = ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT, fb_size,
                                           fb_size, num_layers, samples, VK_IMAGE_TILING_OPTIMAL,
                                           api_heap_device, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                           VK_IMAGE_LAYOUT_UNDEFINED);
@@ -1612,7 +1612,7 @@ test_pix(api_context *ctx)
    /* Create an image for image stores. It's a dummy image because we are not measuring memory
     * throughput for the image store case.
     */
-   api_image *store_image = ctx->create_image(ctx, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
+   api_image *store_image = ctx->create_image(ctx, NULL, VK_IMAGE_TYPE_2D, VK_FORMAT_R32_SFLOAT, 16, 16,
                                               1, 1, VK_IMAGE_TILING_OPTIMAL, api_heap_device,
                                               VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_LAYOUT_UNDEFINED);
 

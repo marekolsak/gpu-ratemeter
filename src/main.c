@@ -24,15 +24,19 @@
  * - vkCmdUpdateBuffer
  *
  * imgbw:
- * - clear_framebuffer/attachment/image:
- *   - clear non-zero mipmap levels
- *   - D32F clear with Z outside [0, 1]
- * - copy/blit:
- *   - buffer-to-image, image-to-buffer
- *   - indirect buffer-to-image (VK_KHR_copy_memory_indirect)
- * - add -pix option to print pixel throughput
- * - cache miss throughput
- * - (maybe) no barrier
+ * - radv runner and spreadsheet tool (vkd -no-validator):
+ *   - default
+ *   - fragment
+ *   - compute
+ *   - fast clear
+ *   - default, concurrent
+ *   - default, general layout
+ *   - radeonsi
+ * - new:
+ *   - clear_fb_then_transition_to_sampled
+ *   - clear_fb_then_transition_to_storage
+ *   - general layout
+ * - copy: buffer-to-image, image-to-buffer, indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
  * - finish porting from GL
