@@ -484,6 +484,7 @@ typedef struct api_context {
    bool buffer_barrier_has_gl_semantics;
    double timestamp_period_in_seconds;
    unsigned max_memory_allocations;
+   uint64_t device_memory_size;
 
    /* Feature properties. */
    bool has_blit_image_3d;

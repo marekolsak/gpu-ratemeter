@@ -1804,6 +1804,14 @@ gl_create_context(const program_options *options)
    ctx->has_vs_tes_layer_output = GLAD_GL_ARB_shader_viewport_layer_array;
    ctx->has_xfb = true;
 
+   if (GLAD_GL_NVX_gpu_memory_info) {
+      GLint memory_kb;
+      glGetIntegerv(GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX, &memory_kb);
+      ctx->device_memory_size = (uint64_t)memory_kb * 1024;
+   } else {
+      ctx->device_memory_size = (uint64_t)2 << 30; /* 2 GB (conservative) */
+   }
+
    glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint*)&ctx->max_image_dim_1d);
    ctx->max_image_dim_2d = ctx->max_image_dim_1d;
    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, (GLint*)&ctx->max_image_dim_3d);

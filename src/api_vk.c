@@ -3229,6 +3229,9 @@ vk_create_context(const program_options *options)
    ctx->non_coherent_atom_size = device_props.properties.limits.nonCoherentAtomSize;
    ctx->max_memory_allocations = device_props.properties.limits.maxMemoryAllocationCount;
 
+   unsigned heap_index = ctx->memory_properties.memoryTypes[vk_find_heap(ctx, ~0, api_heap_device)].heapIndex;
+   ctx->device_memory_size = ctx->memory_properties.memoryHeaps[heap_index].size;
+
    ctx->has_blit_image_3d = true;
    ctx->has_blit_image_msaa = false;
    ctx->has_buffer_device_address = Vulkan12.bufferDeviceAddress;
