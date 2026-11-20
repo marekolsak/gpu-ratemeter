@@ -1809,7 +1809,7 @@ gl_create_context(const program_options *options)
       glGetIntegerv(GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX, &memory_kb);
       ctx->device_memory_size = (uint64_t)memory_kb * 1024;
    } else {
-      ctx->device_memory_size = (uint64_t)2 << 30; /* 2 GB (conservative) */
+      ctx->device_memory_size = 2 * GB; /* conservative */
    }
 
    glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint*)&ctx->max_image_dim_1d);

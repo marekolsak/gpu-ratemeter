@@ -22,7 +22,10 @@
 #define EXECUTION_SIZE     (256 * 1024 * 1024)
 #define MAX_RUNS           4096
 
-#define MAX_FB_SETS        ((LOG2_POT(MAX_SIZE) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
+/* This is the number of columns. */
+#define MAX_FB_SETS_LIMITED(max_size)  ((LOG2_POT(max_size) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
+
+#define MAX_FB_SETS        MAX_FB_SETS_LIMITED(MAX_SIZE)
 #define MAX_RING_SIZE      (MAX_FB_SETS * MAX_SIZE / MIN_SIZE)
 #define MAX_DESC_SETS      (4 * MAX_FB_SETS)
 
@@ -797,16 +800,17 @@ get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_inde
 }
 
 static void
-print_table_row(api_context *ctx, bool header, unsigned test_index, VkImageType img_type,
-                unsigned format_index, unsigned samples, unsigned layer_count_option,
-                bool cache_miss, unsigned layout, unsigned fill_option, unsigned region_option)
+print_table_row(api_context *ctx, unsigned max_size, bool header, unsigned test_index,
+                VkImageType img_type, unsigned format_index, unsigned samples,
+                unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
+                unsigned region_option)
 {
    const unsigned name_indent = 90;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
 
-      for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
+      for (uint64_t size = MIN_SIZE; size <= max_size; size <<= SIZE_LSHIFT_STEP) {
          unsigned shift = size >= (1 << 20) ? 20 : 10;
 
          fprintf(ctx->output, ",%8u%cB", (unsigned)(size >> shift), shift == 20 ? 'M' : 'K');
@@ -848,10 +852,10 @@ static const VkClearColorValue solid_color_uint = {.uint32 = {23, 45, 89, 107}};
 
 static void
 run(api_context *ctx, test_stage stage, unsigned *num_tests,
-    api_query_pool *timestamps)
+    api_query_pool *timestamps, unsigned max_size)
 {
    if (stage == REPORT)
-      print_table_row(ctx, true, 0, 0, 0, 0, 0, false, 0, 0, 0);
+      print_table_row(ctx, max_size, true, 0, 0, 0, 0, 0, false, 0, 0, 0);
 
    misc_state *misc_state = calloc(1, sizeof(misc_state[0]));
    atomic_uint num_visited_tests = 0;
@@ -1090,7 +1094,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         unsigned num_allocated_srcs = 0;
                         unsigned num_image_sets = 0;
 
-                        for (uint64_t size = MIN_SIZE; size <= MAX_SIZE; size <<= SIZE_LSHIFT_STEP) {
+                        for (uint64_t size = MIN_SIZE; size <= max_size; size <<= SIZE_LSHIFT_STEP) {
                            unsigned eff_size = size >> (DEBUG_DUMP_IMAGES ? 4 : 0);
                            unsigned num_pixels = eff_size / bpe_total;
                            unsigned width = 1, height = 1, depth = 1;
@@ -1166,7 +1170,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                             */
                            if (cache_miss) {
                               sets[num_image_sets].exceeds_limits |=
-                                 (MAX_SIZE / size) * 5 >= ctx->max_memory_allocations / 4;
+                                 (max_size / size) * 5 >= ctx->max_memory_allocations / 4;
                            }
 
                            /* Check against limits. */
@@ -1198,7 +1202,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                   * the cache isn't enormous. HW fast clear and compression might be
                                   * able to defeat this in some cases.
                                   */
-                                 sets[num_image_sets].ring_size = MAX_SIZE / size;
+                                 sets[num_image_sets].ring_size = max_size / size;
                                  assert(sets[num_image_sets].ring_size);
                               } else {
                                  sets[num_image_sets].ring_size = 1;
@@ -1505,7 +1509,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  continue;
 
                               if (stage == REPORT) {
-                                 print_table_row(ctx, false, test_index, img_type, format_index, samples,
+                                 print_table_row(ctx, max_size, false, test_index, img_type, format_index, samples,
                                                  layer_count_option, cache_miss, layout, fill_option, region_option);
                               }
 
@@ -1789,7 +1793,19 @@ test_imgbw(api_context *ctx)
 {
    unsigned num_tests = 0;
 
-   run(ctx, INIT_AND_COUNT_TESTS, &num_tests, NULL);
+   /* 1 GB headroom for other allocations (such as command buffers). */
+   const uint64_t other_allocations = 1 * GB;
+   unsigned max_size;
+
+   for (max_size = MAX_SIZE; max_size >= MIN_SIZE; max_size >>= SIZE_LSHIFT_STEP) {
+      if (max_size * MAX_FB_SETS_LIMITED(max_size) + other_allocations <= ctx->device_memory_size)
+         break;
+   }
+
+   if (max_size < MIN_SIZE)
+      error("Not enough device memory for this test. At least 2 GB is recommended.");
+
+   run(ctx, INIT_AND_COUNT_TESTS, &num_tests, NULL, max_size);
 
    if (!num_tests)
       return;
@@ -1798,9 +1814,9 @@ test_imgbw(api_context *ctx)
 
    printf("Executing tests ...");
    fflush(stdout);
-   run(ctx, RUN, &num_tests, timestamps);
+   run(ctx, RUN, &num_tests, timestamps, max_size);
    puts("");
 
    ctx->get_query_results(ctx, timestamps);
-   run(ctx, REPORT, NULL, timestamps);
+   run(ctx, REPORT, NULL, timestamps, max_size);
 }

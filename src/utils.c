@@ -60,7 +60,7 @@ print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
       if (ctx->options.freq_mhz)
          result *= ctx->options.freq_mhz * 1000000.0;
       else
-         result *= 1000000000;
+         result *= GIGA;
    } else {
       /* If the frequency is set, print the results in units per clock cycle, else print it
        * in billions per second.
@@ -68,7 +68,7 @@ print_result_from_next_timestamps(api_context *ctx, api_query_pool *pool,
       if (ctx->options.freq_mhz)
          result *= 1.0 / (ctx->options.freq_mhz * 1000000.0);
       else
-         result *= 1.0 / 1000000000;
+         result *= 1.0 / GIGA;
    }
 
    /* If the base rate is set, print the results as % of the base rate. */

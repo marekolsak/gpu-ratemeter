@@ -28,6 +28,9 @@
 extern "C" {
 #endif
 
+#define GB     ((uint64_t)1024 * 1024 * 1024)
+#define GIGA   ((uint64_t)1000000000)
+
 #define ARRAY_SIZE(x)               (sizeof(x) / sizeof(x[0]))
 #define ALIGN_POT(x, pot_align)     (((x) + (pot_align) - 1) & ~((pot_align) - 1))
 #define ALIGN_NPOT(x, npot_align)   (((x) + (npot_align) - 1) / (npot_align) * (npot_align))

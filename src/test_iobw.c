@@ -257,7 +257,7 @@ print_result(api_context *ctx, iobw_test_state *state, unsigned vertex_size, tes
    if (test == TEST_TCS_PATCH_OUT)
       verts_per_sec /= 3;
    double bytes_per_sec = verts_per_sec * vertex_size;
-   double GBps = bytes_per_sec / (1024 * 1024 * 1024);
+   double GBps = bytes_per_sec / GB;
    printf(", %8.2f", GBps);
 }
 
