@@ -36,7 +36,7 @@
    } while(0)
 
 static bool
-vk_has_validation_layer(api_context *ctx)
+enable_validation_layer(api_context *ctx)
 {
    if (ctx->options.no_validator)
       return false;
@@ -47,8 +47,11 @@ vk_has_validation_layer(api_context *ctx)
    vk_check(vkEnumerateInstanceLayerProperties(&count, props));
 
    for (unsigned i = 0; i < count; i++) {
-      if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation"))
+      if (!strcmp(props[i].layerName, "VK_LAYER_KHRONOS_validation")) {
+         printf("Note: The Vulkan validation layer is enabled. If there are no errors, "
+                "use -no-validator for faster execution times.\n");
          return true;
+      }
    }
 
    fprintf(stderr, "Note: VK_LAYER_KHRONOS_validation not found.\n");
@@ -2552,7 +2555,7 @@ vk_create_context(const program_options *options)
                                    .pApplicationName = "main",
                                    .apiVersion = VK_MAKE_VERSION(1, 3, 0),
                                 },
-                                .enabledLayerCount = vk_has_validation_layer(ctx) ? 1 : 0,
+                                .enabledLayerCount = enable_validation_layer(ctx) ? 1 : 0,
                                 .ppEnabledLayerNames = (const char *[1]) {
                                    "VK_LAYER_KHRONOS_validation",
                                 },
