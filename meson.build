@@ -28,6 +28,12 @@ dep_vk_util_headers = dependency(
   required : false,
 )
 
+dep_vma = dependency(
+  'VulkanMemoryAllocator',
+  method : 'cmake',
+  modules : ['GPUOpen::VulkanMemoryAllocator'],
+)
+
 python3 = find_program('python3')
 
 shaders_header = custom_target(
@@ -67,12 +73,12 @@ gpu_ratemeter_files = files(
   'src/test_sanity.c',
   'src/test_sparsebind.c',
   'src/utils.c',
+  'src/vma.cpp',
 )
 
 all_args = [
   '-fno-omit-frame-pointer',
 
-  '-Werror=int-conversion',
   '-Werror=format',
   '-Werror=return-type',
   '-Wall',
@@ -86,6 +92,7 @@ all_args = [
 ]
 
 c_args = [
+  '-Werror=int-conversion',
   '-Werror=implicit-function-declaration',
   '-Werror=missing-prototypes',
   '-Werror=incompatible-pointer-types',
@@ -101,5 +108,5 @@ gpu_ratemeter = executable(
   c_args : cc.get_supported_arguments(all_args + c_args),
   cpp_args : cpp.get_supported_arguments(all_args),
   dependencies : [dep_m, dep_pcre2, dep_libpng, dep_openmp,
-                  dep_egl, dep_shaderc, dep_vulkan],
+                  dep_egl, dep_shaderc, dep_vulkan, dep_vma],
 )
