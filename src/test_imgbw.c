@@ -916,8 +916,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
             /* Z/S blits can't have linear filtering. */
             if ((test_index == TEST_BLIT_MINIFY_LINEAR || test_index == TEST_BLIT_MAGNIFY_LINEAR) &&
-                formats[format_index].zs_format &&
-                format_is_depth_or_stencil(formats[format_index].zs_format))
+                formats[format_index].zs_format)
                continue;
 
             bool multiple_attachments = formats[format_index].num_color_attachments +
