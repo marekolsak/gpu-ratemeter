@@ -33,8 +33,6 @@
  *   - default, general layout
  *   - radeonsi
  * - new:
- *   - clear_fb_then_transition_to_sampled
- *   - clear_fb_then_transition_to_storage
  *   - general layout
  * - copy: buffer-to-image, image-to-buffer, indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  *

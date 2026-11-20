@@ -499,6 +499,7 @@ typedef struct api_context {
    bool has_clear_image_region;
    bool has_depth_msaa_resolve;
    bool has_fully_covered;
+   bool has_image_layout_transitions;
    bool has_multiview;
    bool has_pipeline_subgroup_size_query;
    bool has_resolve_image_layers;
@@ -570,7 +571,8 @@ typedef struct api_context {
    void (*image_write_png)(struct api_context *ctx, api_queue_type queue, api_image *image,
                            unsigned layer, const char *filename, bool write_alpha);
    void (*barrier_images)(struct api_context *ctx, unsigned num_images, api_image **images,
-                          bool after_shader_writes, api_queue_type src_queue, api_queue_type dst_queue);
+                          bool after_shader_writes, api_queue_type src_queue, api_queue_type dst_queue,
+                          VkImageLayout layout);
 
    /* Sampler functions. */
    api_sampler *(*create_sampler)(struct api_context *ctx, const api_sampler_desc *desc);

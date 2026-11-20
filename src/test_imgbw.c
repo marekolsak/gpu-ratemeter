@@ -658,6 +658,8 @@ enum {
    TEST_CLEAR_ATTACHMENTS,
    TEST_CLEAR_FB_THEN_DRAW_SOLID,
    TEST_CLEAR_FB_THEN_DRAW_TEXTURED,
+   TEST_CLEAR_FB_THEN_TRANSITION_READ,
+   TEST_CLEAR_FB_THEN_TRANSITION_GENERAL,
    TEST_CLEAR_IMAGE,
    TEST_COPY,
    TEST_BLIT,
@@ -674,6 +676,8 @@ static const char *test_strings[] = {
    [TEST_CLEAR_ATTACHMENTS] = "clear_attachments",
    [TEST_CLEAR_FB_THEN_DRAW_SOLID] = "clear_fb_then_draw_solid",
    [TEST_CLEAR_FB_THEN_DRAW_TEXTURED] = "clear_fb_then_draw_textured",
+   [TEST_CLEAR_FB_THEN_TRANSITION_READ] = "clear_fb_then_transition_read",
+   [TEST_CLEAR_FB_THEN_TRANSITION_GENERAL] = "clear_fb_then_transition_general",
    [TEST_CLEAR_IMAGE] = "clear_image",
    [TEST_COPY] = "copy",
    [TEST_BLIT] = "blit",
@@ -721,9 +725,9 @@ enum {
 };
 
 static const char *region_strings[] = {
-   [REGION_FULL] = "full",
-   [REGION_PARTIAL] = "partial",
-   [REGION_FULL_YFLIP] = "yflip",
+   [REGION_FULL] = ".region_full",
+   [REGION_PARTIAL] = ".region_partial",
+   [REGION_FULL_YFLIP] = ".region_yflip",
 };
 
 enum {
@@ -795,17 +799,31 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
    }
 }
 
+static bool
+region_always_full(api_context *ctx, unsigned test_index, unsigned layout)
+{
+   return test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+          test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+          test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
+          test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
+          layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
+          is_scaled_blit(test_index) || ctx->options.queue == api_queue_transfer;
+}
+
 static void
 get_subtest_name(api_context *ctx, char *out, size_t max_len, unsigned test_index,
                  VkImageType img_type, unsigned format_index, unsigned samples,
                  unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                  unsigned region_option)
 {
-   snprintf(out, max_len, "%s.%ud%s.%s.%us.%s%s.fill_%s.region_%s",
+   bool print_region = !region_always_full(ctx, test_index, layout);
+
+   snprintf(out, max_len, "%s.%ud%s.%s.%us.%s%s.fill_%s%s",
             test_strings[test_index], img_type + 1,
             img_type == VK_IMAGE_TYPE_2D ? layer_count_strings[layer_count_option] : "",
             formats[format_index].name, samples, cache_miss ? "miss" : "hit",
-            layout_strings[layout], fill_strings[fill_option], region_strings[region_option]);
+            layout_strings[layout], fill_strings[fill_option],
+            print_region ? region_strings[region_option] : "");
 }
 
 static void
@@ -814,7 +832,7 @@ print_table_row(api_context *ctx, unsigned max_size, bool header, unsigned test_
                 unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                 unsigned region_option)
 {
-   const unsigned name_indent = 95;
+   const unsigned name_indent = 100;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
@@ -845,12 +863,12 @@ transfer_ownership(api_context *ctx, unsigned num_images, api_image **images,
 
    /* Release queue ownership. */
    ctx->begin_cmdbuf(ctx, src_queue);
-   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue);
+   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue, 0);
    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
    /* Acquire queue ownership. */
    ctx->begin_cmdbuf(ctx, dst_queue);
-   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue);
+   ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue, 0);
    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
@@ -928,6 +946,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                       test_index == TEST_CLEAR_ATTACHMENTS ||
                       test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
                       test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+                      test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
+                      test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
                       test_index == TEST_CLEAR_IMAGE;
 
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
@@ -945,7 +965,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                 formats[format_index].zs_format)
                continue;
 
-            if (test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED && formats[format_index].zs_format)
+            if ((test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+                 test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL) && formats[format_index].zs_format)
                continue;
 
             bool multiple_attachments = formats[format_index].num_color_attachments +
@@ -1044,6 +1065,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         /* Report n/a for unsupported tests. */
                         bool unsupported = false;
 
+                        if ((test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
+                             test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL) &&
+                            !ctx->has_image_layout_transitions)
+                           unsupported = true;
+
                         if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
                             formats[format_index].color_format &&
                             (img_type == VK_IMAGE_TYPE_3D ?
@@ -1073,11 +1099,23 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         /* Layered image initialization and draw require the gl_Layer VS output. */
                         if ((test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
                              test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+                             test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
+                             test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
                              test_index == TEST_COPY ||
                              is_blit(test_index) ||
                              test_index == TEST_RESOLVE) &&
                             (img_type == VK_IMAGE_TYPE_3D || layers > 1) && !ctx->has_vs_tes_layer_output)
                            unsupported = true;
+
+                        if (test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL) {
+                           if (formats[format_index].color_format &&
+                               !(ctx->storage_image_format_sample_count_support[formats[format_index].color_format] & samples))
+                              unsupported = true;
+
+                           if (formats[format_index].zs_format &&
+                               !(ctx->storage_image_format_sample_count_support[formats[format_index].zs_format] & samples))
+                              unsupported = true;
+                        }
 
                         const unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : samples;
                         const unsigned src_samples = is_clear ? 0 : samples;
@@ -1242,6 +1280,12 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               sets[num_image_sets].ring = calloc(sets[num_image_sets].ring_size,
                                                                  sizeof(ring_element_struct));
 
+                              VkImageUsageFlags dst_usage =
+                                 (test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ?
+                                     VK_IMAGE_USAGE_SAMPLED_BIT : 0) |
+                                 (test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ?
+                                     VK_IMAGE_USAGE_STORAGE_BIT : 0);
+
                               for (unsigned r = 0; r < sets[num_image_sets].ring_size; r++) {
                                  if (!is_clear) {
                                     assert(!multiple_attachments);
@@ -1286,7 +1330,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                          sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
                                                          api_heap_device,
                                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | dst_usage,
                                                          VK_IMAGE_LAYOUT_UNDEFINED);
 
                                     sets[num_image_sets].ring[r].all[sets[num_image_sets].ring[r].num_all_images++] =
@@ -1301,7 +1345,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                          sets[num_image_sets].dst_depth, dst_samples, dst_tiling,
                                                          api_heap_device,
                                                          VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | dst_usage,
                                                          VK_IMAGE_LAYOUT_UNDEFINED);
 
                                     sets[num_image_sets].ring[r].all[sets[num_image_sets].ring[r].num_all_images++] =
@@ -1497,7 +1541,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               }
 
                               ctx->barrier_images(ctx, num_allocated_srcs, allocated_srcs, false,
-                                                  api_queue_gfx, api_queue_gfx);
+                                                  api_queue_gfx, api_queue_gfx, 0);
                               ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 
                               if (DEBUG_DUMP_IMAGES) {
@@ -1521,10 +1565,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                               bool yflip = region_option == REGION_FULL_YFLIP;
 
                               /* Skip invalid and less useful tests. */
-                              if ((test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
-                                   test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
-                                   layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
-                                   is_scaled_blit(test_index) || ctx->options.queue == api_queue_transfer) &&
+                              if (region_always_full(ctx, test_index, layout) &&
                                   region_option != REGION_FULL)
                                  continue;
 
@@ -1560,7 +1601,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  if (report_na || sets[set].exceeds_limits) {
                                     if (stage == RUN)
-                                       print_progress(*num_tests, &num_visited_tests, 20);
+                                       print_progress(*num_tests, &num_visited_tests, 50);
 
                                     if (stage == REPORT)
                                        fprintf(ctx->output, ",%10s", "n/a");
@@ -1660,6 +1701,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                        case TEST_CLEAR_ATTACHMENTS:
                                        case TEST_CLEAR_FB_THEN_DRAW_SOLID:
                                        case TEST_CLEAR_FB_THEN_DRAW_TEXTURED:
+                                       case TEST_CLEAR_FB_THEN_TRANSITION_READ:
+                                       case TEST_CLEAR_FB_THEN_TRANSITION_GENERAL:
                                           ctx->begin_render_pass(ctx,
                                                                  &(api_render_pass_desc) {
                                                                     .fb = sets[set].ring[ring_elem].dst_fb,
@@ -1684,7 +1727,11 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                           ctx->end_render_pass(ctx);
                                           ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
                                                               sets[set].ring[ring_elem].all, false, ctx->options.queue,
-                                                              ctx->options.queue);
+                                                              ctx->options.queue,
+                                                              test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ?
+                                                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
+                                                                 test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ?
+                                                                    VK_IMAGE_LAYOUT_GENERAL : 0);
                                           break;
 
                                        case TEST_CLEAR_IMAGE:
@@ -1694,7 +1741,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                            &clear_values);
                                           ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
                                                               sets[set].ring[ring_elem].all, false, ctx->options.queue,
-                                                              ctx->options.queue);
+                                                              ctx->options.queue, 0);
                                           break;
 
                                        case TEST_COPY:
@@ -1717,7 +1764,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                           });
                                           ctx->barrier_images(ctx, sets[set].ring[ring_elem].num_all_images,
                                                               sets[set].ring[ring_elem].all, false, ctx->options.queue,
-                                                              ctx->options.queue);
+                                                              ctx->options.queue, 0);
                                           break;
                                        }
 
@@ -1733,7 +1780,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  }
 
                                  if (stage == RUN)
-                                    print_progress(*num_tests, &num_visited_tests, 20);
+                                    print_progress(*num_tests, &num_visited_tests, 50);
 
                                  /* Get results. */
                                  if (stage == REPORT) {

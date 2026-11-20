@@ -509,9 +509,16 @@ barrier_images(api_context *ctx, unsigned num_images, api_image **images, VkImag
 
 static void
 vk_barrier_images(api_context *ctx, unsigned num_images, api_image **images, bool after_shader_writes,
-                  api_queue_type src_queue, api_queue_type dst_queue)
+                  api_queue_type src_queue, api_queue_type dst_queue, VkImageLayout layout)
 {
-   barrier_images(ctx, num_images, images, NULL, src_queue, dst_queue);
+   VkImageLayout *layouts = alloca(num_images * sizeof(VkImageLayout));
+
+   if (layout) {
+      for (unsigned i = 0; i < num_images; i++)
+         layouts[i] = layout;
+   }
+
+   barrier_images(ctx, num_images, images, layout ? layouts : NULL, src_queue, dst_queue);
 }
 
 static void
@@ -1281,7 +1288,7 @@ vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue
    VkImageLayout *need_layouts = alloca(num_desc * sizeof(need_layouts[0]));
 
    for (unsigned i = 0; i < num_desc; i++)
-      need_layouts[i] = VK_IMAGE_LAYOUT_GENERAL;
+      need_layouts[i] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
    vk_transition_image_layouts(ctx, queue, num_desc, images, need_layouts);
 
@@ -1293,7 +1300,7 @@ vk_set_combined_image_sampler_descriptors(api_context *ctx, api_queue_type queue
 
       image_infos[i].sampler = samplers[i]->sampler;
       image_infos[i].imageView = images[i]->render_compatible_view;
-      image_infos[i].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+      image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
    }
 
    vkUpdateDescriptorSets(ctx->device, 1,
@@ -2896,7 +2903,7 @@ vk_create_context(const program_options *options)
    //require(Vulkan10.features.shaderTessellationAndGeometryPointSize);
    //require(Vulkan10.features.shaderImageGatherExtended);
    require(Vulkan10.features.shaderStorageImageExtendedFormats);
-   //require(Vulkan10.features.shaderStorageImageMultisample);
+   optional(Vulkan10.features.shaderStorageImageMultisample);
    require(Vulkan10.features.shaderStorageImageReadWithoutFormat);
    require(Vulkan10.features.shaderStorageImageWriteWithoutFormat);
    //require(Vulkan10.features.shaderUniformBufferArrayDynamicIndexing);
@@ -3242,6 +3249,7 @@ vk_create_context(const program_options *options)
    ctx->has_clear_image_region = false;
    ctx->has_depth_msaa_resolve = KHR_maintenance10.maintenance10;
    ctx->has_fully_covered = EXT_conservative_rasterization_props.fullyCoveredFragmentShaderInputVariable;
+   ctx->has_image_layout_transitions = true;
    ctx->has_multiview = Vulkan11.multiview;
    ctx->has_pipeline_subgroup_size_query = KHR_pipeline_executable_properties.pipelineExecutableInfo;
    ctx->has_resolve_image_layers = true;
