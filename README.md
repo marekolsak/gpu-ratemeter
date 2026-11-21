@@ -425,13 +425,21 @@ Decoding subtest names:
 
 ## Linux
 
-Dependencies: Vulkan, GL, EGL (surfaceless), libpcre2, libpng, libshaderc
+Requirements and dependencies:
+- meson, ninja, cmake (for dependency discovery), python3
+- C11 and C++17 compilers
+- Vulkan, VulkanMemoryAllocator
+- EGL (surfaceless), OpenGL (runtime only)
+- libpcre2-8
+- libpng
+- libshaderc
+- openmp
+- Vulkan Validation Layers (optional, runtime only)
+- VulkanUtilityLibraries (optional for development)
 
 ```
-mkdir build
-cd build
-meson setup ..
-ninja
+meson setup build
+ninja -Cbuild
 ```
 
 

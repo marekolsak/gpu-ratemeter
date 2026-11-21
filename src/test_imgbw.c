@@ -832,7 +832,7 @@ print_table_row(api_context *ctx, unsigned max_size, bool header, unsigned test_
                 unsigned layer_count_option, bool cache_miss, unsigned layout, unsigned fill_option,
                 unsigned region_option)
 {
-   const unsigned name_indent = 100;
+   const unsigned name_indent = 90;
 
    if (header) {
       fprintf(ctx->output, "%-*s", name_indent, "Size");
