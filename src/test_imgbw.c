@@ -27,7 +27,7 @@
 
 #define MAX_FB_SETS        MAX_FB_SETS_LIMITED(MAX_SIZE)
 #define MAX_RING_SIZE      (MAX_FB_SETS * MAX_SIZE / MIN_SIZE)
-#define MAX_DESC_SETS      (4 * MAX_FB_SETS)
+#define MAX_DESC_SETS      (5 * MAX_FB_SETS)
 
 #define DEBUG_DUMP_IMAGES  0
 
@@ -544,7 +544,8 @@ static void
 draw_triangles(api_context *ctx, misc_state *state, bool textured, unsigned triangle_size_index,
                api_framebuffer *fb, unsigned fb_set, unsigned fb_config_index)
 {
-   static const unsigned triangle_sizes[4] = {
+   static const unsigned triangle_sizes[] = {
+      64 * 64,
       32 * 32,
       16 * 16,
       8 * 8,
@@ -730,6 +731,7 @@ enum {
    FILL_SOLID,
    FILL_GRADIENT,
    FILL_RANDOM,
+   FILL_SMOOTH_64X64_TRIANGLES,
    FILL_SMOOTH_32X32_TRIANGLES,
    FILL_SMOOTH_16X16_TRIANGLES,
    FILL_SMOOTH_8X8_TRIANGLES,
@@ -746,6 +748,7 @@ static const char *fill_strings[] = {
    [FILL_SOLID] = "solid",
    [FILL_GRADIENT] = "gradient",
    [FILL_RANDOM] = "random",
+   [FILL_SMOOTH_64X64_TRIANGLES] = "smooth_64x64_tris",
    [FILL_SMOOTH_32X32_TRIANGLES] = "smooth_32x32_tris",
    [FILL_SMOOTH_16X16_TRIANGLES] = "smooth_16x16_tris",
    [FILL_SMOOTH_8X8_TRIANGLES] = "smooth_8x8_tris",
@@ -887,7 +890,7 @@ should_test_fill_and_region(api_context *ctx, unsigned test_index, VkImageType i
        fill_option != FILL_RANDOM)
       return false;
 
-   if ((fill_option == FILL_GRADIENT || fill_option >= FILL_SMOOTH_32X32_TRIANGLES) &&
+   if ((fill_option == FILL_GRADIENT || fill_option >= FILL_SMOOTH_64X64_TRIANGLES) &&
        formats[format_index].zs_format == VK_FORMAT_S8_UINT)
       return false;
 
@@ -905,7 +908,8 @@ should_test_fill_and_region(api_context *ctx, unsigned test_index, VkImageType i
     * by geometry density.
     */
    if (src_samples == 1 && !formats[format_index].zs_format &&
-       fill_option >= FILL_SMOOTH_16X16_TRIANGLES &&
+       fill_option >= FILL_SMOOTH_64X64_TRIANGLES &&
+       fill_option != FILL_SMOOTH_32X32_TRIANGLES &&
        fill_option != FILL_TEXTURED_32X32_TRIANGLES)
       return false;
 
@@ -1464,7 +1468,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                         fill_option <= FILL_RANDOM) {
                                        ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                                                  .fb = sets[set].ring[r].src_fb,
-                                                                 .clear = fill_option >= FILL_SMOOTH_32X32_TRIANGLES,
+                                                                 .clear = fill_option >= FILL_SMOOTH_64X64_TRIANGLES,
                                                               });
                                     }
 
@@ -1485,6 +1489,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                                          sets[set].ring[r].src_fb, set);
                                        break;
 
+                                    case FILL_SMOOTH_64X64_TRIANGLES:
                                     case FILL_SMOOTH_32X32_TRIANGLES:
                                     case FILL_SMOOTH_16X16_TRIANGLES:
                                     case FILL_SMOOTH_8X8_TRIANGLES:
@@ -1495,7 +1500,9 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     case FILL_TEXTURED_4X4_TRIANGLES:
                                        draw_triangles(ctx, misc_state,
                                                       fill_option >= FILL_TEXTURED_32X32_TRIANGLES,
-                                                      (fill_option - FILL_SMOOTH_32X32_TRIANGLES) % 4,
+                                                      fill_option >= FILL_TEXTURED_32X32_TRIANGLES ?
+                                                         fill_option - FILL_TEXTURED_32X32_TRIANGLES + 1 :
+                                                         fill_option - FILL_SMOOTH_64X64_TRIANGLES,
                                                       sets[set].ring[r].src_fb, set, format_index);
                                        break;
 
