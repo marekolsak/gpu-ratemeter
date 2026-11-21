@@ -20,6 +20,7 @@
  * time, though small sizes are also capped by MAX_RUNS.
  */
 #define EXECUTION_SIZE     (256 * 1024 * 1024)
+#define HIT_WARMUP_SIZE    (8 * 1024 * 1024)
 #define MAX_RUNS           4096
 
 /* This is the number of columns. */
@@ -1645,7 +1646,14 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  const unsigned num_runs =
                                     MAX2(MIN2(EXECUTION_SIZE / sets[set].size, MAX_RUNS), 1);
-                                 const unsigned num_warmup_runs = MAX2(num_runs / 4, 1);
+
+                                 /* For cache misses, warm up is only meant to initialize destinations
+                                  * to deterministic content and HW compression level and transition
+                                  * images from UNDEFINED layouts for result stability.
+                                  */
+                                 const unsigned num_warmup_runs =
+                                    cache_miss ? sets[set].ring_size :
+                                                 MAX2(HIT_WARMUP_SIZE / sets[set].size, 1);
 
                                  if (stage == RUN) {
                                     unsigned ring_elem = 0;
