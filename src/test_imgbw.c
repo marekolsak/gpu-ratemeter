@@ -20,8 +20,8 @@
  * time, though small sizes are also capped by MAX_RUNS.
  */
 #define EXECUTION_SIZE     (256 * 1024 * 1024)
-#define HIT_WARMUP_SIZE    (8 * 1024 * 1024)
-#define MAX_RUNS           4096
+#define HIT_WARMUP_SIZE    (4 * 1024 * 1024)
+#define MAX_RUNS           256
 
 /* This is the number of columns. */
 #define MAX_FB_SETS_LIMITED(max_size)  ((LOG2_POT(max_size) - LOG2_POT(MIN_SIZE)) / SIZE_LSHIFT_STEP + 1)
