@@ -24,14 +24,6 @@
  * - vkCmdUpdateBuffer
  *
  * imgbw:
- * - radv runner and spreadsheet tool (vkd -no-validator):
- *   - default
- *   - fragment
- *   - compute
- *   - fast clear
- *   - default, concurrent
- *   - default, general layout
- *   - radeonsi
  * - copy: buffer-to-image, image-to-buffer, indirect buffer-to-image (VK_KHR_copy_memory_indirect)
  *
  * iobw (Shader Input and Output Bandwidth in GB/s):
