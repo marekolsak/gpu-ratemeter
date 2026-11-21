@@ -122,6 +122,8 @@ All numeric options allow `K`, `M`, `G`, `T` suffixes for kilo, mega, giga, tera
 - `-compute`: execute on the compute queue
 - `-transfer`: execute on the transfer queue
 - `-pix`: report destination pixels/clock instead of GB/s (if `-freq=N` isn't set, it reports destination gigapixels/s)
+- `-exec-size=N`: to optimize execution times, set this to the ideal amount of memory accessed per test for result stability
+- `-llc-size=N`: to optimize execution times, set this to the size of the last level cache.
 
 #### `latency` parameters
 

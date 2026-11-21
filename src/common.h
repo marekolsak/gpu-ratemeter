@@ -451,7 +451,9 @@ typedef struct {
    uint64_t base_rate;
    uint64_t clock_bits;
    uint64_t device; /* device index */
+   uint64_t exec_size;
    uint64_t freq_mhz;
+   uint64_t llc_size;
    uint64_t max_size;
    uint64_t max_valid_result;
    uint64_t report_time_per_invocation_count;
