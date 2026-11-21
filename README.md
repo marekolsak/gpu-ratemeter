@@ -382,7 +382,6 @@ Decoding subtest fill identifiers in subtest names:
 - `fill_solid`: if clearing, the clear color is a non-trivial value (i.e. not 0/1); if copying, blitting, or resolving, the source image is pre-cleared to that value using a framebuffer clear
 - `fill_gradient`: using a draw, the source image is pre-filled with a gradual change of color; if the image uses a depth format, the fill is done by drawing a sloped quad to write Z naturally (exercising optimal Z compression)
 - `fill_random`: using a draw, the source image is pre-filled with random noise (defeating DCC); if `samples >= 2`, the draw sets all samples to the same random value (exercising ideal MSAA compression)
-- `N_unique_samples`: same as `fill_random`, but values are different between samples such that only N samples have unique values and the remaining samples are equal to one of the unique ones (testing MSAA compression)
 - `fill_smooth_NxN_tris`: the source image is initialized by drawing smooth-shaded colored triangles into it that each have roughly N*N pixel area
 - `fill_textured_NxN_tris`: the source image is initialized by drawing textured triangles into it that each have roughly N*N pixel area
 

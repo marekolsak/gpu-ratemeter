@@ -68,7 +68,7 @@ typedef struct {
    api_descriptor_set_layout *layout_draw_textured;
    api_descriptor_set *desc_draw_textured;
    api_gfx_pipeline *pipeline_draw_after_clear[MAX_FB_SETS][2]; /* solid / textured */
-   api_gfx_pipeline *pipeline_draw_gradient_random[MAX_FB_SETS][8][2]; /* [last samplemask bit][random] */
+   api_gfx_pipeline *pipeline_draw_gradient_random[MAX_FB_SETS][2]; /* [random] */
    api_gfx_pipeline *pipeline_draw_triangles[MAX_FB_SETS][2]; /* color passthrough / textured */
 
    api_buffer *ubo;
@@ -446,16 +446,13 @@ get_random_pixel_fs(api_context *ctx, misc_state *state, VkFormat format)
 
 static void
 generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
-                api_shader *fs, unsigned samplemask, unsigned set, bool random)
+                api_shader *fs, unsigned set, bool random)
 {
    bool layered = image->depth > 1;
    api_shader *vs = get_passthrough_vs(ctx, state, layered);
 
-   samplemask &= 0xff;
-
-   assert(samplemask);
    api_gfx_pipeline **pipeline =
-      &state->pipeline_draw_gradient_random[set][last_bit(samplemask) - 1][random];
+      &state->pipeline_draw_gradient_random[set][random];
 
    if (!*pipeline) {
       *pipeline =
@@ -465,7 +462,7 @@ generate_pixels(api_context *ctx, misc_state *state, api_image *image, api_frame
                                      .vs = vs,
                                      .fs = fs,
                                      .vrs_fragment_size = {1, 1},
-                                     .samplemask = samplemask,
+                                     .samplemask = ~0,
                                      .colormask = 0xf,
                                      .depth_enabled = true,
                                      .depth_write_enabled = true,
@@ -490,16 +487,14 @@ static void
 set_gradient_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
                     unsigned set)
 {
-   generate_pixels(ctx, state, image, fb, get_gradient_fs(ctx, state, image->format),
-                   (1 << image->samples) - 1, set, false);
+   generate_pixels(ctx, state, image, fb, get_gradient_fs(ctx, state, image->format), set, false);
 }
 
 static void
 set_random_pixels(api_context *ctx, misc_state *state, api_image *image, api_framebuffer *fb,
-                  unsigned samplemask, unsigned set)
+                  unsigned set)
 {
-   generate_pixels(ctx, state, image, fb, get_random_pixel_fs(ctx, state, image->format), samplemask,
-                   set, true);
+   generate_pixels(ctx, state, image, fb, get_random_pixel_fs(ctx, state, image->format), set, true);
 }
 
 static void
@@ -735,9 +730,6 @@ enum {
    FILL_SOLID,
    FILL_GRADIENT,
    FILL_RANDOM,
-   FILL_RANDOM_2UNIQUE_SAMPLES,
-   FILL_RANDOM_4UNIQUE_SAMPLES,
-   FILL_RANDOM_8UNIQUE_SAMPLES,
    FILL_SMOOTH_32X32_TRIANGLES,
    FILL_SMOOTH_16X16_TRIANGLES,
    FILL_SMOOTH_8X8_TRIANGLES,
@@ -754,9 +746,6 @@ static const char *fill_strings[] = {
    [FILL_SOLID] = "solid",
    [FILL_GRADIENT] = "gradient",
    [FILL_RANDOM] = "random",
-   [FILL_RANDOM_2UNIQUE_SAMPLES] = "2_unique_samples",
-   [FILL_RANDOM_4UNIQUE_SAMPLES] = "4_unique_samples",
-   [FILL_RANDOM_8UNIQUE_SAMPLES] = "8_unique_samples",
    [FILL_SMOOTH_32X32_TRIANGLES] = "smooth_32x32_tris",
    [FILL_SMOOTH_16X16_TRIANGLES] = "smooth_16x16_tris",
    [FILL_SMOOTH_8X8_TRIANGLES] = "smooth_8x8_tris",
@@ -892,14 +881,6 @@ should_test_fill_and_region(api_context *ctx, unsigned test_index, VkImageType i
 {
    /* Skip invalid and unimportant tests. */
    if (fill_option != FILL_SOLID && fill_option != FILL_BLACK && is_clear(test_index))
-      return false;
-
-   /* Skip tests with N unique samples for Z/S or if the number of samples
-    * is less.
-    */
-   if (fill_option >= FILL_RANDOM_2UNIQUE_SAMPLES +
-       (formats[format_index].zs_format ? 0 : LOG2_POT(src_samples)) &&
-       fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
       return false;
 
    if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
@@ -1480,7 +1461,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                  for (unsigned r = 0; r < sets[set].ring_size; r++) {
                                     if (fill_option >= FILL_GRADIENT &&
-                                        fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES) {
+                                        fill_option <= FILL_RANDOM) {
                                        ctx->begin_render_pass(ctx, &(api_render_pass_desc){
                                                                  .fb = sets[set].ring[r].src_fb,
                                                                  .clear = fill_option >= FILL_SMOOTH_32X32_TRIANGLES,
@@ -1501,39 +1482,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                                     case FILL_RANDOM:
                                        set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0, set);
-                                       break;
-
-                                    case FILL_RANDOM_2UNIQUE_SAMPLES:
-                                       assert(samples >= 2);
-                                       /* Make all samples equal. */
-                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0, set);
-                                       /* Make sample 0 different. */
-                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, 0x1, set);
-                                       break;
-
-                                    case FILL_RANDOM_4UNIQUE_SAMPLES:
-                                       assert(samples >= 4);
-                                       /* Make all samples equal. */
-                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0, set);
-                                       /* Make samples 0..2 different. */
-                                       for (unsigned i = 0; i <= 2; i++)
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, 1 << i, set);
-                                       break;
-
-                                    case FILL_RANDOM_8UNIQUE_SAMPLES:
-                                       assert(samples == 8);
-                                       /* Make all samples equal. */
-                                       set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                         sets[set].ring[r].src_fb, ~0, set);
-                                       /* Make samples 0..6 different. */
-                                       for (unsigned i = 0; i <= 6; i++)
-                                          set_random_pixels(ctx, misc_state, sets[set].ring[r].src,
-                                                            sets[set].ring[r].src_fb, 1 << i, set);
+                                                         sets[set].ring[r].src_fb, set);
                                        break;
 
                                     case FILL_SMOOTH_32X32_TRIANGLES:
@@ -1555,7 +1504,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                     }
 
                                     if (fill_option >= FILL_GRADIENT &&
-                                        fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
+                                        fill_option <= FILL_RANDOM)
                                        ctx->end_render_pass(ctx);
                                  }
                               }
@@ -1836,12 +1785,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                            /* Release pipeline_draw_gradient_random pipelines because they are tied to specific FB states. */
                            for (unsigned i = 0; i < ARRAY_SIZE(misc_state->pipeline_draw_gradient_random); i++) {
-                              for (unsigned j = 0; j < 8; j++) {
-                                 for (unsigned k = 0; k < 2; k++) {
-                                    if (misc_state->pipeline_draw_gradient_random[i][j][k]) {
-                                       ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_gradient_random[i][j][k]);
-                                       misc_state->pipeline_draw_gradient_random[i][j][k] = NULL;
-                                    }
+                              for (unsigned j = 0; j < 2; j++) {
+                                 if (misc_state->pipeline_draw_gradient_random[i][j]) {
+                                    ctx->destroy_gfx_pipeline(ctx, misc_state->pipeline_draw_gradient_random[i][j]);
+                                    misc_state->pipeline_draw_gradient_random[i][j] = NULL;
                                  }
                               }
                            }
