@@ -872,6 +872,87 @@ transfer_ownership(api_context *ctx, unsigned num_images, api_image **images,
    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
 }
 
+static bool
+is_clear(unsigned test_index)
+{
+   return test_index == TEST_CLEAR_FB ||
+          test_index == TEST_CLEAR_ATTACHMENTS ||
+          test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+          test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
+          test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
+          test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
+          test_index == TEST_CLEAR_IMAGE;
+}
+
+static bool
+should_test_fill_and_region(api_context *ctx, unsigned test_index, VkImageType img_type,
+                            unsigned format_index, unsigned samples, unsigned src_samples,
+                            bool cache_miss, unsigned layer_count_option, unsigned layout,
+                            unsigned fill_option, unsigned region_option)
+{
+   /* Skip invalid and unimportant tests. */
+   if (fill_option != FILL_SOLID && fill_option != FILL_BLACK && is_clear(test_index))
+      return false;
+
+   /* Skip tests with N unique samples for Z/S or if the number of samples
+    * is less.
+    */
+   if (fill_option >= FILL_RANDOM_2UNIQUE_SAMPLES +
+       (formats[format_index].zs_format ? 0 : LOG2_POT(src_samples)) &&
+       fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
+      return false;
+
+   if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
+       fill_option != FILL_RANDOM)
+      return false;
+
+   if ((fill_option == FILL_GRADIENT || fill_option >= FILL_SMOOTH_32X32_TRIANGLES) &&
+       formats[format_index].zs_format == VK_FORMAT_S8_UINT)
+      return false;
+
+   if (formats[format_index].zs_format &&
+       fill_option >= FILL_TEXTURED_32X32_TRIANGLES)
+      return false;
+
+   if (test_index == TEST_BLIT && fill_option != FILL_RANDOM &&
+       fill_option != FILL_SMOOTH_32X32_TRIANGLES &&
+       fill_option != FILL_TEXTURED_32X32_TRIANGLES)
+      return false;
+
+   /* For color formats with 1 sample, keep only 32x32 triangle fill options.
+    * Keep everything for MSAA and Z/S compression since those are affected
+    * by geometry density.
+    */
+   if (src_samples == 1 && !formats[format_index].zs_format &&
+       fill_option >= FILL_SMOOTH_16X16_TRIANGLES &&
+       fill_option != FILL_TEXTURED_32X32_TRIANGLES)
+      return false;
+
+   if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
+       (fill_option == FILL_BLACK || fill_option == FILL_SOLID))
+      return false;
+
+   if (region_always_full(ctx, test_index, layout) &&
+       region_option != REGION_FULL)
+      return false;
+
+   if (region_option == REGION_FULL_YFLIP && (is_clear(test_index) || test_index == TEST_COPY))
+      return false;
+
+   /* Check the subtest regex filter. */
+   if (ctx->options.regex_subtest_filter) {
+      char name[128];
+      get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
+                       samples, layer_count_option, cache_miss, layout, fill_option,
+                       region_option);
+
+      if (!regex_matches(ctx->options.regex_subtest_filter, name))
+         return false;
+   }
+
+   return true;
+}
+
 static const VkClearColorValue black_color_float = {.float32 = {0, 0, 0, 0}};
 static const VkClearColorValue solid_color_float = {.float32 = {0.2, 0.3, 0.4, 0.5}};
 static const VkClearColorValue black_color_uint = {.uint32 = {0, 0, 0, 0}};
@@ -942,14 +1023,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
    }
 
    for (unsigned test_index = 0; test_index < NUM_TESTS; test_index++) {
-      bool is_clear = test_index == TEST_CLEAR_FB ||
-                      test_index == TEST_CLEAR_ATTACHMENTS ||
-                      test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
-                      test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
-                      test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
-                      test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
-                      test_index == TEST_CLEAR_IMAGE;
-
       for (VkImageType img_type = VK_IMAGE_TYPE_2D; img_type <= VK_IMAGE_TYPE_3D; img_type++) {
          if (img_type != VK_IMAGE_TYPE_2D && is_scaled_blit(test_index))
             continue;
@@ -993,12 +1066,13 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                /* Reject subtests that are illegal on other queues. */
                if (ctx->options.queue != api_queue_gfx) {
-                  if (!is_clear && test_index != TEST_COPY)
+                  if (!is_clear(test_index) && test_index != TEST_COPY)
                      continue;
 
                   /* The compute queue only allows color clears. The transfer queue doesn't allow any clears. */
-                  if (is_clear && (test_index != TEST_CLEAR_IMAGE || formats[format_index].zs_format ||
-                                   ctx->options.queue == api_queue_transfer))
+                  if (is_clear(test_index) &&
+                      (test_index != TEST_CLEAR_IMAGE || formats[format_index].zs_format ||
+                       ctx->options.queue == api_queue_transfer))
                      continue;
 
                   /* Only single-sample Z/S copies are allowed. */
@@ -1015,39 +1089,14 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                      unsigned layers = layer_counts[layer_count_option];
 
                      for (unsigned layout = 0; layout < NUM_LAYOUTS; layout++) {
-                        bool filter_match = false;
-
-                        /* Check the subtest regex filter. We don't know the fill and region, so check
-                         * all of them.
-                         */
-                        for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
-                           for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
-                              char name[128];
-                              get_subtest_name(ctx, name, sizeof(name),
-                                               test_index, img_type, format_index, samples,
-                                               layer_count_option, cache_miss, layout, fill_option,
-                                               region_option);
-
-                              if (!ctx->options.regex_subtest_filter ||
-                                  regex_matches(ctx->options.regex_subtest_filter, name)) {
-                                 filter_match = true;
-                                 break;
-                              }
-                           }
-                           if (filter_match)
-                              break;
-                        }
-
-                        if (!filter_match)
-                           continue;
-
                         /* Skip invalid combinations and unimportant tests. */
                         if (layout != LAYOUT_DEFAULT &&
                             (test_index != TEST_COPY || samples >= 2 || multiple_attachments ||
                              formats[format_index].zs_format))
                            continue;
 
-                        if (multiple_attachments && (!is_clear || test_index == TEST_CLEAR_IMAGE))
+                        if (multiple_attachments &&
+                            (!is_clear(test_index) || test_index == TEST_CLEAR_IMAGE))
                            continue;
 
                         if (is_blit(test_index)) {
@@ -1061,6 +1110,26 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                 format_has_stencil(formats[format_index].zs_format)))
                               continue;
                         }
+
+                        const unsigned src_samples = is_clear(test_index) ? 0 : samples;
+                        bool match = false;
+
+                        for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
+                           for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
+                              if (should_test_fill_and_region(ctx, test_index, img_type, format_index,
+                                                              samples, src_samples, cache_miss,
+                                                              layer_count_option, layout, fill_option,
+                                                              region_option)) {
+                                 match = true;
+                                 break;
+                              }
+                           }
+                           if (match)
+                              break;
+                        }
+
+                        if (!match)
+                           continue;
 
                         /* Report n/a for unsupported tests. */
                         bool unsupported = false;
@@ -1118,7 +1187,6 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         }
 
                         const unsigned dst_samples = test_index == TEST_RESOLVE ? 1 : samples;
-                        const unsigned src_samples = is_clear ? 0 : samples;
                         const unsigned dst_tiling = layout == LAYOUT_DST_LINEAR ?
                                                        VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
                         const unsigned src_tiling = layout == LAYOUT_SRC_LINEAR ?
@@ -1287,7 +1355,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                      VK_IMAGE_USAGE_STORAGE_BIT : 0);
 
                               for (unsigned r = 0; r < sets[num_image_sets].ring_size; r++) {
-                                 if (!is_clear) {
+                                 if (!is_clear(test_index)) {
                                     assert(!multiple_attachments);
 
                                     sets[num_image_sets].ring[r].src =
@@ -1373,67 +1441,19 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                         }
 
                         for (unsigned fill_option = 0; fill_option < NUM_FILLS; fill_option++) {
-                           bool filter_match = false;
+                           bool match = false;
 
-                           /* Check the subtest regex filter. We don't know the region, so check all of
-                            * them.
-                            */
                            for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
-                              char name[128];
-                              get_subtest_name(ctx, name, sizeof(name),
-                                               test_index, img_type, format_index, samples,
-                                               layer_count_option, cache_miss, layout, fill_option, region_option);
-
-                              if (!ctx->options.regex_subtest_filter ||
-                                  regex_matches(ctx->options.regex_subtest_filter, name)) {
-                                 filter_match = true;
+                              if (should_test_fill_and_region(ctx, test_index, img_type, format_index,
+                                                              samples, src_samples, cache_miss,
+                                                              layer_count_option, layout, fill_option,
+                                                              region_option)) {
+                                 match = true;
                                  break;
                               }
                            }
 
-                           if (!filter_match)
-                              continue;
-
-                           /* Skip invalid and unimportant tests. */
-                           if (is_clear && fill_option != FILL_SOLID && fill_option != FILL_BLACK)
-                              continue;
-
-                           /* Skip tests with N unique samples for Z/S or if the number of samples
-                            * is less.
-                            */
-                           if (fill_option >= FILL_RANDOM_2UNIQUE_SAMPLES +
-                               (formats[format_index].zs_format ? 0 : LOG2_POT(samples)) &&
-                               fill_option <= FILL_RANDOM_8UNIQUE_SAMPLES)
-                              continue;
-
-                           if (img_type == VK_IMAGE_TYPE_3D && fill_option != FILL_SOLID &&
-                               fill_option != FILL_RANDOM)
-                              continue;
-
-                           if ((fill_option == FILL_GRADIENT || fill_option >= FILL_SMOOTH_32X32_TRIANGLES) &&
-                               formats[format_index].zs_format == VK_FORMAT_S8_UINT)
-                              continue;
-
-                           if (formats[format_index].zs_format &&
-                               fill_option >= FILL_TEXTURED_32X32_TRIANGLES)
-                              continue;
-
-                           if (test_index == TEST_BLIT && fill_option != FILL_RANDOM &&
-                               fill_option != FILL_SMOOTH_32X32_TRIANGLES &&
-                               fill_option != FILL_TEXTURED_32X32_TRIANGLES)
-                              continue;
-
-                           /* For color formats with 1 sample, keep only 32x32 triangle fill options.
-                            * Keep everything for MSAA and Z/S compression since those are affected
-                            * by geometry density.
-                            */
-                           if (src_samples == 1 && !formats[format_index].zs_format &&
-                               fill_option >= FILL_SMOOTH_16X16_TRIANGLES &&
-                               fill_option != FILL_TEXTURED_32X32_TRIANGLES)
-                              continue;
-
-                           if ((layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR) &&
-                               (fill_option == FILL_BLACK || fill_option == FILL_SOLID))
+                           if (!match)
                               continue;
 
                            api_clear_values clear_values = {0};
@@ -1451,7 +1471,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            /* Fill the source texture. */
-                           if (stage == RUN && !unsupported && !is_clear) {
+                           if (stage == RUN && !unsupported && !is_clear(test_index)) {
                               ctx->begin_cmdbuf(ctx, api_queue_gfx);
 
                               for (unsigned set = 0; set < num_image_sets; set++) {
@@ -1562,23 +1582,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                            }
 
                            for (unsigned region_option = 0; region_option < NUM_REGIONS; region_option++) {
-                              bool yflip = region_option == REGION_FULL_YFLIP;
-
-                              /* Skip invalid and less useful tests. */
-                              if (region_always_full(ctx, test_index, layout) &&
-                                  region_option != REGION_FULL)
-                                 continue;
-
-                              if (yflip && (is_clear || test_index == TEST_COPY))
-                                 continue;
-
-                              char name[128];
-                              get_subtest_name(ctx, name, sizeof(name), test_index, img_type, format_index,
-                                               samples, layer_count_option, cache_miss, layout, fill_option,
-                                               region_option);
-
-                              if (ctx->options.regex_subtest_filter &&
-                                  !regex_matches(ctx->options.regex_subtest_filter, name))
+                              if (!should_test_fill_and_region(ctx, test_index, img_type, format_index,
+                                                               samples, src_samples, cache_miss,
+                                                               layer_count_option, layout, fill_option,
+                                                               region_option))
                                  continue;
 
                               if (stage == REPORT) {
@@ -1588,7 +1595,8 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
 
                               bool report_na = unsupported;
 
-                              if (test_index == TEST_RESOLVE && yflip && !ctx->has_resolve_image_yflip)
+                              if (test_index == TEST_RESOLVE && region_option == REGION_FULL_YFLIP &&
+                                  !ctx->has_resolve_image_yflip)
                                  report_na = true;
 
                               if (test_index == TEST_CLEAR_IMAGE && region_option != REGION_FULL &&
@@ -1657,7 +1665,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                  assert(dst_box.y + dst_box.height <= sets[set].dst_height);
                                  assert(dst_box.z + dst_box.depth <= sets[set].dst_depth);
 
-                                 if (!is_clear) {
+                                 if (!is_clear(test_index)) {
                                     assert(src_box.width);
                                     assert(src_box.height);
                                     assert(src_box.depth > 0);
@@ -1735,7 +1743,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                                           break;
 
                                        case TEST_CLEAR_IMAGE:
-                                          assert(!yflip);
+                                          assert(region_option != REGION_FULL_YFLIP);
                                           ctx->clear_image(ctx, sets[set].ring[ring_elem].dst,
                                                            region_option == REGION_FULL ? NULL : &dst_box,
                                                            &clear_values);
