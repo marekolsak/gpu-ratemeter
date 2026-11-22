@@ -1017,6 +1017,10 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                 formats[format_index].zs_format)
                continue;
 
+            if (is_scaled_blit(test_index) && formats[format_index].zs_format &&
+                format_has_stencil(formats[format_index].zs_format))
+               continue;
+
             if ((test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
                  test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL) && formats[format_index].zs_format)
                continue;
