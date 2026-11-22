@@ -1017,7 +1017,7 @@ run(api_context *ctx, test_stage stage, unsigned *num_tests,
                 formats[format_index].zs_format)
                continue;
 
-            if (is_scaled_blit(test_index) && formats[format_index].zs_format &&
+            if (is_blit(test_index) && formats[format_index].zs_format &&
                 format_has_stencil(formats[format_index].zs_format))
                continue;
 
