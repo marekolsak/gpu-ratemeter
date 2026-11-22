@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Run seven imgbw configurations and save separate CSV results.
+Run imgbw configurations for RADV and save the CSV results in a directory.
 
 Recommended options:
 - navi48: -llc-size=64M -exec-size=256M
 - navi33: -llc-size=32M -exec-size=128M
 - navi23: -llc-size=32M -exec-size=128M
 - vega10: -llc-size=4M -exec-size=128M
-- polaris10: -llc-size=2M -exec-size=64M
-- bonaire: -llc-size=512K -exec-size=32M
-- pitcairn: -llc-size=512K -exec-size=32M
+- polaris10: -llc-size=2M -exec-size=128M
+- bonaire: -llc-size=512K -exec-size=64M
+- pitcairn: -llc-size=512K -exec-size=64M
 """
 
 import argparse
@@ -42,7 +42,7 @@ def main():
         ('3-fast-clear', {'radv_image_meta_path': '3'}, [], 'vkd.imgbw'),
         ('4-default-concurrent', {'RADV_EXPERIMENTAL': 'transfer_queue'}, ['-concurrent=gfx,compute,transfer'], 'vkd.imgbw'),
         ('5-default-general', {}, ['-general'], 'vkd.imgbw'),
-        ('6-radeonsi', {}, [], 'gl.imgbw'),
+        #('6-radeonsi', {}, [], 'gl.imgbw'),
     ]
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
