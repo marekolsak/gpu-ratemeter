@@ -57,7 +57,7 @@ def load_csv_files(directory):
     return labels, tables
 
 
-def write_value(sheet, row, column, text):
+def write_value(sheet, row, column, text, number_format):
     """Write numbers as numbers and preserve other CSV contents as text."""
     try:
         number = float(text)
@@ -65,7 +65,7 @@ def write_value(sheet, row, column, text):
         number = None
 
     if number is not None and math.isfinite(number):
-        sheet.write_number(row, column, number)
+        sheet.write_number(row, column, number, number_format)
     else:
         sheet.write_string(row, column, text)
 
@@ -85,6 +85,10 @@ def write_workbook(output, labels, tables):
         sheet = book.add_worksheet('imgbw')
         bold = book.add_format({'bold': True})
         percent = book.add_format({'num_format': '0.00%'})
+        # Display fewer decimal places for larger bandwidth values.
+        number_format = book.add_format({
+            'num_format': '[<10000]0.00;[<100000]0.0;0',
+        })
 
         sheet.freeze_panes(2, 1)
         sheet.set_column_pixels(0, 0, 580)
@@ -105,7 +109,7 @@ def write_workbook(output, labels, tables):
                 sheet.write_string(1, column, header, bold)
             for row, values in enumerate(rows[1:], start=2):
                 for column, value in enumerate(values, start=start):
-                    write_value(sheet, row, column, value)
+                    write_value(sheet, row, column, value, number_format)
 
         # Then append a matching set of tables containing normalized formulas.
         for index, (path, rows) in enumerate(tables):
