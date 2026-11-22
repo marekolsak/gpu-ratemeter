@@ -789,12 +789,21 @@ verify_content(api_context *ctx, api_image *image, unsigned test_index, unsigned
 }
 
 static bool
-region_always_full(api_context *ctx, unsigned test_index, unsigned layout)
+is_clear(unsigned test_index)
 {
-   return test_index == TEST_CLEAR_FB || test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
+   return test_index == TEST_CLEAR_FB ||
+          test_index == TEST_CLEAR_ATTACHMENTS ||
+          test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
           test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
           test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
           test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
+          test_index == TEST_CLEAR_IMAGE;
+}
+
+static bool
+region_always_full(api_context *ctx, unsigned test_index, unsigned layout)
+{
+   return (is_clear(test_index) && test_index != TEST_CLEAR_ATTACHMENTS) ||
           layout == LAYOUT_SRC_LINEAR || layout == LAYOUT_DST_LINEAR ||
           is_scaled_blit(test_index) || ctx->options.queue == api_queue_transfer;
 }
@@ -859,18 +868,6 @@ transfer_ownership(api_context *ctx, unsigned num_images, api_image **images,
    ctx->begin_cmdbuf(ctx, dst_queue);
    ctx->barrier_images(ctx, num_images, images, false, src_queue, dst_queue, 0);
    ctx->end_cmdbuf_and_submit(ctx, api_wait_all_queues, NULL, NULL);
-}
-
-static bool
-is_clear(unsigned test_index)
-{
-   return test_index == TEST_CLEAR_FB ||
-          test_index == TEST_CLEAR_ATTACHMENTS ||
-          test_index == TEST_CLEAR_FB_THEN_DRAW_SOLID ||
-          test_index == TEST_CLEAR_FB_THEN_DRAW_TEXTURED ||
-          test_index == TEST_CLEAR_FB_THEN_TRANSITION_READ ||
-          test_index == TEST_CLEAR_FB_THEN_TRANSITION_GENERAL ||
-          test_index == TEST_CLEAR_IMAGE;
 }
 
 static bool
