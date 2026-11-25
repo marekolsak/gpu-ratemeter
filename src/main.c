@@ -7,7 +7,7 @@
  *
  * HLSL plan:
  * - move shaders from .c files to src/shaders_glsl/
- * - use Astra to convert them to HLSL and save them in src/shader_hlsl/
+ * - use Astra to convert them to HLSL and save them in src/shaders_hlsl/
  *
  * Tests:
  * - rt: ray tracing performance in intersections/clock
