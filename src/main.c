@@ -6,7 +6,8 @@
 /* TODO:
  *
  * HLSL plan:
- * - use SPIRV-Cross to get HLSL (if it's broken, fix it with AI)
+ * - move shaders from .c files to src/shaders_glsl/
+ * - use Astra to convert them to HLSL and save them in src/shader_hlsl/
  *
  * Tests:
  * - rt: ray tracing performance in intersections/clock
@@ -16,9 +17,6 @@
  * APIs:
  * - DX12
  * - DX11
- *
- * Refactoring:
- * - move shaders to src/shaders/
  *
  * bufbw:
  * - vkCmdUpdateBuffer
